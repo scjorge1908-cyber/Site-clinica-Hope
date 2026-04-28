@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "Specialist": {
+      "title": "Specialist",
+      "description": "Professional specialist working at the clinic",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "spec": { "type": "string" },
+        "crp": { "type": "string" },
+        "img": { "type": "string" },
+        "desc": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "ageGroups": { "type": "array", "items": { "type": "string" } },
+        "shifts": { "type": "array", "items": { "type": "string" } },
+        "attendedAges": { "type": "array", "items": { "type": "number" } },
+        "agendaId": { "type": "string" }
+      },
+      "required": ["id", "name", "spec", "crp", "img", "desc", "tags", "ageGroups", "shifts"]
+    },
+    "Approach": {
+      "title": "Approach",
+      "description": "Therapeutic approach offered by the clinic",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "icon": { "type": "string" },
+        "description": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "title", "icon", "description", "details"]
+    },
+    "InsurancePlan": {
+      "title": "InsurancePlan",
+      "description": "Health insurance plan accepted by the clinic",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "logo": { "type": "string" }
+      },
+      "required": ["id", "name", "logo"]
+    },
+    "HomeSettings": {
+      "title": "HomeSettings",
+      "description": "Global settings for the landing page",
+      "type": "object",
+      "properties": {
+        "heroTitle": { "type": "string" },
+        "heroSubtitle": { "type": "string" },
+        "heroText": { "type": "string" }
+      },
+      "required": ["heroTitle", "heroSubtitle", "heroText"]
+    }
+  },
+  "firestore": {
+    "specialists": {
+      "schema": "Specialist",
+      "description": "Coleção de especialistas da clínica"
+    },
+    "approaches": {
+      "schema": "Approach",
+      "description": "Coleção de abordagens terapêuticas"
+    },
+    "settings": {
+      "schema": "HomeSettings",
+      "description": "Configurações globais do site (documento single 'site')"
+    },
+    "insurancePlans": {
+      "schema": "InsurancePlan",
+      "description": "Coleção de convênios/planos de saúde aceitos"
+    }
+  }
+}
