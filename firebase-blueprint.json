@@ -26,11 +26,10 @@
       "properties": {
         "id": { "type": "string" },
         "title": { "type": "string" },
-        "icon": { "type": "string" },
-        "description": { "type": "string" },
+        "desc": { "type": "string" },
         "details": { "type": "string" }
       },
-      "required": ["id", "title", "icon", "description", "details"]
+      "required": ["id", "title", "desc", "details"]
     },
     "InsurancePlan": {
       "title": "InsurancePlan",
@@ -50,7 +49,8 @@
       "properties": {
         "heroTitle": { "type": "string" },
         "heroSubtitle": { "type": "string" },
-        "heroText": { "type": "string" }
+        "heroText": { "type": "string" },
+        "logoUrl": { "type": "string" }
       },
       "required": ["heroTitle", "heroSubtitle", "heroText"]
     }

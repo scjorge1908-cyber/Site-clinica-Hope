@@ -56,5 +56,6 @@ export interface HomeSettings {
   heroTitle: string;
   heroSubtitle: string;
   heroText: string;
+  logoUrl?: string;
   insurancePlans?: InsurancePlan[];
 }

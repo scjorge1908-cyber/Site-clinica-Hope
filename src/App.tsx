@@ -130,12 +130,7 @@ const getCroppedImg = async (
     0, 0, pixelCrop.width, pixelCrop.height
   );
 
-  return new Promise((resolve) => {
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      resolve(URL.createObjectURL(blob));
-    }, 'image/jpeg');
-  });
+  return canvas.toDataURL('image/jpeg', 0.8);
 };
 
 export default function App() {
@@ -279,7 +274,7 @@ export default function App() {
               specialists={specialists}
             />
           )}
-          {currentScreen === Screen.SEO && <SEOScreen onNavigate={navigateTo} />}
+          {currentScreen === Screen.SEO && <SEOScreen onNavigate={navigateTo} settings={homeSettings} />}
           {currentScreen === Screen.CorpoClinico && (
             <CorpoClinicoScreen 
               onNavigate={navigateTo} 
@@ -288,12 +283,13 @@ export default function App() {
               settings={{ ...homeSettings, insurancePlans }}
             />
           )}
-          {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} />}
-          {currentScreen === Screen.Abordagens && <AbordagensScreen onNavigate={navigateTo} approaches={approaches} />}
+          {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} settings={homeSettings} />}
+          {currentScreen === Screen.Abordagens && <AbordagensScreen onNavigate={navigateTo} approaches={approaches} settings={homeSettings} />}
           {currentScreen === Screen.Login && (
             <LoginScreen 
               onNavigate={navigateTo} 
               onUnlock={() => setIsAdminUnlocked(true)} 
+              settings={homeSettings}
             />
           )}
           {currentScreen === Screen.Admin && (
@@ -320,9 +316,10 @@ interface LayoutProps {
   children: React.ReactNode;
   activeScreen: Screen;
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
+  settings?: HomeSettings;
 }
 
-function Layout({ children, activeScreen, onNavigate }: LayoutProps) {
+function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -348,8 +345,12 @@ function Layout({ children, activeScreen, onNavigate }: LayoutProps) {
             onClick={() => onNavigate(Screen.Home, 'push_back')}
             className="flex items-center gap-3 group"
           >
-            <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
-              <Spa size={24} />
+            <div className="w-10 h-10 bg-primary/10 rounded-xl overflow-hidden flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
+              {settings?.logoUrl ? (
+                <img src={settings.logoUrl} className="w-full h-full object-cover" alt="Logo" />
+              ) : (
+                <Spa size={24} />
+              )}
             </div>
             <span className="text-xl font-bold tracking-tight text-primary">Clínica Hope</span>
           </button>
@@ -404,7 +405,13 @@ function Layout({ children, activeScreen, onNavigate }: LayoutProps) {
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <div className="flex flex-col gap-6">
             <div className="flex items-center gap-3">
-              <Spa size={24} className="text-primary" />
+              <div className="w-8 h-8 bg-primary/10 rounded-lg overflow-hidden flex items-center justify-center text-primary">
+                {settings?.logoUrl ? (
+                  <img src={settings.logoUrl} className="w-full h-full object-cover" alt="Logo" />
+                ) : (
+                  <Spa size={18} />
+                )}
+              </div>
               <span className="font-bold text-primary text-xl tracking-tight">Clínica Hope</span>
             </div>
             <div className="flex flex-wrap gap-6 text-on-surface-variant text-sm font-medium">
@@ -444,7 +451,7 @@ interface HomeProps extends ScreenProps {
 
 function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps & { specialists: Specialist[] }) {
   return (
-    <Layout activeScreen={Screen.Home} onNavigate={onNavigate}>
+    <Layout activeScreen={Screen.Home} onNavigate={onNavigate} settings={settings}>
       {/* Modern Hero Section */}
       <section className="relative px-6 py-12 md:py-32 overflow-hidden bg-background">
         <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
@@ -655,9 +662,9 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
   );
 }
 
-function AbordagensScreen({ onNavigate, approaches }: { onNavigate: (screen: Screen, transition?: TransitionType) => void; approaches: Approach[] }) {
+function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (screen: Screen, transition?: TransitionType) => void; approaches: Approach[]; settings: HomeSettings }) {
   return (
-    <Layout activeScreen={Screen.Abordagens} onNavigate={onNavigate}>
+    <Layout activeScreen={Screen.Abordagens} onNavigate={onNavigate} settings={settings}>
       <header className="section-padding bg-background pt-32">
         <div className="max-w-7xl mx-auto text-center space-y-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
@@ -732,9 +739,9 @@ function AbordagensScreen({ onNavigate, approaches }: { onNavigate: (screen: Scr
   );
 }
 
-function SEOScreen({ onNavigate }: ScreenProps) {
+function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSettings }) {
   return (
-    <Layout activeScreen={Screen.SEO} onNavigate={onNavigate}>
+    <Layout activeScreen={Screen.SEO} onNavigate={onNavigate} settings={settings}>
       <header className="px-6 py-20 md:py-40 bg-surface-container-low overflow-hidden relative">
         <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-20 items-center relative z-10">
           <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} className="space-y-10">
@@ -853,7 +860,7 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings }: C
   };
 
   return (
-    <Layout activeScreen={Screen.CorpoClinico} onNavigate={onNavigate}>
+    <Layout activeScreen={Screen.CorpoClinico} onNavigate={onNavigate} settings={settings}>
       <header className="section-padding bg-background pt-32">
         <div className="max-w-7xl mx-auto text-center space-y-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
@@ -1012,9 +1019,9 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings }: C
   );
 }
 
-function AgendamentoScreen({ onNavigate }: ScreenProps) {
+function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSettings }) {
   return (
-    <Layout activeScreen={Screen.Agendamento} onNavigate={onNavigate}>
+    <Layout activeScreen={Screen.Agendamento} onNavigate={onNavigate} settings={settings}>
       <header className="section-padding bg-background pt-32">
         <div className="max-w-7xl mx-auto text-center space-y-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
@@ -1119,7 +1126,7 @@ function AgendamentoScreen({ onNavigate }: ScreenProps) {
   );
 }
 
-function LoginScreen({ onNavigate, onUnlock }: { onNavigate: (screen: Screen, transition?: TransitionType) => void; onUnlock: () => void }) {
+function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: Screen, transition?: TransitionType) => void; onUnlock: () => void; settings: HomeSettings }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -1135,7 +1142,7 @@ function LoginScreen({ onNavigate, onUnlock }: { onNavigate: (screen: Screen, tr
   };
 
   return (
-    <Layout activeScreen={Screen.Admin} onNavigate={onNavigate}>
+    <Layout activeScreen={Screen.Admin} onNavigate={onNavigate} settings={settings}>
       <div className="min-h-[70vh] flex items-center justify-center px-6">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
@@ -1201,7 +1208,8 @@ function LoginScreen({ onNavigate, onUnlock }: { onNavigate: (screen: Screen, tr
 function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUpdateSpecialists, approaches, onUpdateApproaches, user }: AdminScreenProps & { user: User | null }) {
   const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
-  const [croppingSpecId, setCroppingSpecId] = useState<string | null>(null);
+  const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | null>(null);
+  const [croppingItemId, setCroppingItemId] = useState<string | null>(null);
   const [cropImage, setCropImage] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -1225,7 +1233,7 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
 
   if (!user) {
     return (
-      <Layout activeScreen={Screen.Admin} onNavigate={onNavigate}>
+      <Layout activeScreen={Screen.Admin} onNavigate={onNavigate} settings={settings}>
         <div className="max-w-4xl mx-auto pt-48 pb-24 px-6 text-center">
           <div className="bg-white p-12 md:p-16 rounded-[3rem] border border-outline modern-shadow space-y-10">
             <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto text-primary">
@@ -1288,7 +1296,7 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
 
   if (!isAdmin) {
     return (
-      <Layout activeScreen={Screen.Admin} onNavigate={onNavigate}>
+      <Layout activeScreen={Screen.Admin} onNavigate={onNavigate} settings={settings}>
         <div className="max-w-4xl mx-auto py-32 px-6 text-center">
           <div className="bg-white p-16 rounded-[3rem] border border-accent/20 modern-shadow space-y-8">
             <div className="w-24 h-24 bg-accent/10 rounded-full flex items-center justify-center mx-auto text-accent">
@@ -1342,7 +1350,8 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
       const reader = new FileReader();
       reader.addEventListener('load', () => {
         setCropImage(reader.result as string);
-        setCroppingSpecId(specId);
+        setCroppingItemId(specId);
+        setCroppingType('specialist');
       });
       reader.readAsDataURL(e.target.files[0]);
     }
@@ -1353,12 +1362,23 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
   };
 
   const applyCrop = async () => {
-    if (cropImage && croppingSpecId && croppedAreaPixels) {
+    if (cropImage && croppedAreaPixels && croppingType) {
       try {
         const croppedImg = await getCroppedImg(cropImage, croppedAreaPixels);
-        updateSpecialist(croppingSpecId, { img: croppedImg });
-        setCroppingSpecId(null);
+        
+        if (croppingType === 'specialist' && croppingItemId) {
+          updateSpecialist(croppingItemId, { img: croppedImg });
+        } else if (croppingType === 'logo') {
+          onUpdateSettings({ ...settings, logoUrl: croppedImg });
+        } else if (croppingType === 'insurance' && croppingItemId) {
+          updateInsurance(croppingItemId, { logo: croppedImg });
+        }
+
+        setCroppingItemId(null);
+        setCroppingType(null);
         setCropImage(null);
+        setZoom(1);
+        setCrop({ x: 0, y: 0 });
       } catch (e) {
         console.error(e);
       }
@@ -1417,7 +1437,9 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
     if (e.target.files && e.target.files.length > 0) {
       const reader = new FileReader();
       reader.onload = () => {
-        updateInsurance(id, { logo: reader.result as string });
+        setCropImage(reader.result as string);
+        setCroppingItemId(id);
+        setCroppingType('insurance');
       };
       reader.readAsDataURL(e.target.files[0]);
     }
@@ -1463,6 +1485,17 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
     }
   };
 
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setCropImage(reader.result as string);
+        setCroppingType('logo');
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-surface p-6 md:p-12">
       <div className="max-w-6xl mx-auto">
@@ -1489,6 +1522,29 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
         <div className="bg-white rounded-[2.5rem] modern-shadow border border-outline p-10">
           {activeTab === 'home' && (
             <div className="space-y-8">
+              <div className="pb-8 border-b border-outline">
+                <h2 className="text-2xl font-display font-black text-primary mb-6">Identidade Visual</h2>
+                <div className="flex items-center gap-8">
+                  <div className="w-24 h-24 bg-surface border border-outline rounded-[2rem] overflow-hidden flex items-center justify-center text-primary relative group">
+                    {settings.logoUrl ? (
+                      <img src={settings.logoUrl} className="w-full h-full object-cover" alt="Logo Preview" />
+                    ) : (
+                      <Spa size={40} />
+                    )}
+                    <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity">
+                      <PhotoCamera size={24} />
+                      <span className="text-[10px] font-bold mt-1 uppercase">Trocar Logo</span>
+                      <input type="file" className="hidden" accept="image/*" onChange={handleLogoChange} />
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-bold text-primary">Logo da Clínica</p>
+                    <p className="text-xs text-on-surface-variant">Recomendado: Imagem quadrada (1:1) com fundo transparente ou sólido.</p>
+                    <button className="text-[10px] font-black uppercase text-accent tracking-widest hover:underline" onClick={() => onUpdateSettings({ ...settings, logoUrl: '' })}>Remover Logo</button>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-4">
                   <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Título Principal</label>
@@ -1721,7 +1777,7 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                onClick={() => { setCropImage(null); setCroppingSpecId(null); }}
+                onClick={() => { setCropImage(null); setCroppingItemId(null); setCroppingType(null); }}
                 className="absolute inset-0 bg-on-surface/80 backdrop-blur-md"
               />
               <motion.div 
@@ -1732,7 +1788,7 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
               >
                 <div className="p-8 border-b border-outline flex justify-between items-center">
                   <h3 className="text-xl font-display font-black text-primary">Ajustar e Cortar Foto</h3>
-                  <button onClick={() => { setCropImage(null); setCroppingSpecId(null); }} className="w-10 h-10 rounded-full bg-surface hover:bg-outline flex items-center justify-center transition-colors">
+                  <button onClick={() => { setCropImage(null); setCroppingItemId(null); setCroppingType(null); }} className="w-10 h-10 rounded-full bg-surface hover:bg-outline flex items-center justify-center transition-colors">
                     <Close size={20} />
                   </button>
                 </div>
@@ -1766,7 +1822,7 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
                   
                   <div className="flex gap-4">
                     <button 
-                      onClick={() => { setCropImage(null); setCroppingSpecId(null); }}
+                      onClick={() => { setCropImage(null); setCroppingItemId(null); setCroppingType(null); }}
                       className="flex-1 btn-modern-outline py-4"
                     >
                       Cancelar

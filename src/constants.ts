@@ -6,6 +6,7 @@ export const DEFAULT_HOME_SETTINGS: HomeSettings = {
   heroTitle: 'Onde o cuidado encontra a esperança.',
   heroSubtitle: 'Bem-vindo à Clínica Hope',
   heroText: 'Oferecemos um espaço seguro e acolhedor para o seu desenvolvimento emocional em Palhoça. Um convite ao reencontro com sua essência.',
+  logoUrl: 'https://images.unsplash.com/photo-1628157588553-5eeea00af15c?auto=format&fit=crop&q=80&w=300',
   insurancePlans: [
     { id: '1', name: 'Particular', logo: 'https://cdn-icons-png.flaticon.com/512/2854/2854580.png' },
     { id: '2', name: 'Unimed', logo: 'https://vagasprofissoes.com.br/wp-content/uploads/2019/12/Logo-Unimed.png' },

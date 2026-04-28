@@ -9,10 +9,11 @@ service cloud.firestore {
     // 2. Global Helpers
     function isSignedIn() { return request.auth != null; }
     function isAdmin() { 
-      return isSignedIn() && (
-        request.auth.token.email == 'scjorge1908@gmail.com' || // Admin email from runtime metadata
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
+      return isSignedIn() && 
+             request.auth.token.email_verified == true && (
+               request.auth.token.email == 'scjorge1908@gmail.com' || 
+               exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+             );
     }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
@@ -25,9 +26,9 @@ service cloud.firestore {
              data.name is string && data.name.size() <= 200 &&
              data.spec is string && data.spec.size() <= 200 &&
              data.crp is string && data.crp.size() <= 100 &&
-             data.img is string && data.img.size() <= 1000000 && // Large for base64 if needed
-             data.desc is string && data.desc.size() <= 2000 &&
-             data.tags is list && data.tags.size() <= 20 &&
+             data.img is string && data.img.size() <= 2000000 && // Increased for data URLs
+             data.desc is string && data.desc.size() <= 4000 &&
+             data.tags is list && data.tags.size() <= 50 &&
              data.ageGroups is list && data.ageGroups.size() <= 10 &&
              data.shifts is list && data.shifts.size() <= 5 &&
              (!data.keys().contains('attendedAges') || (data.attendedAges is list && data.attendedAges.size() <= 100)) &&
@@ -35,25 +36,26 @@ service cloud.firestore {
     }
 
     function isValidApproach(data) {
-      return data.keys().hasAll(['id', 'title', 'icon', 'description', 'details']) &&
+      return data.keys().hasAll(['id', 'title', 'desc', 'details']) &&
              data.id is string &&
              data.title is string && data.title.size() <= 200 &&
-             data.description is string && data.description.size() <= 1000 &&
-             data.details is string && data.details.size() <= 5000;
+             data.desc is string && data.desc.size() <= 2000 &&
+             data.details is string && data.details.size() <= 10000;
     }
 
     function isValidInsurance(data) {
       return data.keys().hasAll(['id', 'name', 'logo']) &&
              data.id is string &&
              data.name is string && data.name.size() <= 200 &&
-             data.logo is string && data.logo.size() <= 1000000;
+             data.logo is string && data.logo.size() <= 2000000;
     }
 
     function isValidSettings(data) {
       return data.keys().hasAll(['heroTitle', 'heroSubtitle', 'heroText']) &&
-             data.heroTitle is string && data.heroTitle.size() <= 500 &&
-             data.heroSubtitle is string && data.heroSubtitle.size() <= 500 &&
-             data.heroText is string && data.heroText.size() <= 2000 &&
+             data.heroTitle is string && data.heroTitle.size() <= 1000 &&
+             data.heroSubtitle is string && data.heroSubtitle.size() <= 1000 &&
+             data.heroText is string && data.heroText.size() <= 5000 &&
+             (!data.keys().contains('logoUrl') || (data.logoUrl is string && data.logoUrl.size() <= 2000000)) &&
              (!data.keys().contains('insurancePlans') || (data.insurancePlans is list));
     }
 
@@ -81,7 +83,9 @@ service cloud.firestore {
 
     match /settings/{docId} {
       allow read: if true;
-      allow write: if isAdmin() && isValidSettings(incoming());
+      allow create: if isAdmin() && isValidSettings(incoming());
+      allow update: if isAdmin() && isValidSettings(incoming());
+      allow delete: if isAdmin();
     }
   }
 }
