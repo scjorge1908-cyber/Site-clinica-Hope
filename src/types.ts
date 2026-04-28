@@ -36,7 +36,16 @@ export interface Specialist {
   shifts: Shift[];
   availableTimes?: { [day: string]: string[] };
   attendedAges?: number[];
-  agendaId?: string;
+  googleSheetsId?: string;
+  googleSheetsTab?: string;
+  googleAppsScriptUrl?: string;
+  schedule?: {
+    [day: string]: {
+      periods: {
+        [period in Shift]?: string[];
+      };
+    };
+  };
 }
 
 export interface Approach {
@@ -57,5 +66,6 @@ export interface HomeSettings {
   heroSubtitle: string;
   heroText: string;
   logoUrl?: string;
+  heroImageUrl?: string;
   insurancePlans?: InsurancePlan[];
 }

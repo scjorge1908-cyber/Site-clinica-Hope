@@ -28,9 +28,10 @@ import {
   Delete,
   Edit,
   Close,
-  Info
+  Info,
+  AssignmentTurnedIn
 } from './components/Icons';
-import { Instagram, Facebook, Linkedin as LinkedIn } from 'lucide-react';
+import { Instagram, Facebook, Linkedin as LinkedIn, Wifi, ConciergeBell, Volume2, Snowflake, ParkingCircle, ShieldCheck } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, User, signInWithEmailAndPassword } from 'firebase/auth';
@@ -48,7 +49,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan } from './types';
-import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, CLINICA_LOGO_URL } from './constants';
+import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL } from './constants';
 
 // Firebase Initialization
 const app = initializeApp(firebaseConfig);
@@ -144,6 +145,7 @@ export default function App() {
   const [homeSettings, setHomeSettings] = useState<HomeSettings>(DEFAULT_HOME_SETTINGS);
   const [specialists, setSpecialists] = useState<Specialist[]>(DEFAULT_SPECIALISTS);
   const [approaches, setApproaches] = useState<Approach[]>(DEFAULT_APPROACHES);
+  const [scrollIntent, setScrollIntent] = useState(false);
 
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>([]);
 
@@ -174,9 +176,9 @@ export default function App() {
     const unsubSettings = onSnapshot(doc(db, 'settings', 'site'), (s) => {
       if (s.exists()) {
         const data = s.data() as HomeSettings;
-        // Don't overwrite insurancePlans from settings if it's there (for migration safety)
+        // Merge with defaults to ensure new properties like heroImageUrl are present
         const { insurancePlans: _, ...rest } = data;
-        setHomeSettings(rest as HomeSettings);
+        setHomeSettings({ ...DEFAULT_HOME_SETTINGS, ...rest } as HomeSettings);
       }
     }, (err) => handleFirestoreError(err, OperationType.GET, 'settings/site'));
 
@@ -186,7 +188,15 @@ export default function App() {
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'insurancePlans'));
 
     const unsubSpecialists = onSnapshot(collection(db, 'specialists'), (snap) => {
-      const data = snap.docs.map(d => d.data() as Specialist);
+      const data = snap.docs.map(d => {
+        const item = d.data() as Specialist;
+        // Merge with default schedule if missing in database for consistency during updates
+        const defaultSpec = DEFAULT_SPECIALISTS.find(s => s.id === item.id);
+        if (!item.schedule && defaultSpec?.schedule) {
+          return { ...item, schedule: defaultSpec.schedule };
+        }
+        return item;
+      });
       if (data.length > 0) setSpecialists(data);
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'specialists'));
 
@@ -223,7 +233,8 @@ export default function App() {
     setApproaches(newApproaches);
   };
 
-  const navigateTo = (screen: Screen, transition: TransitionType = 'none') => {
+  const navigateTo = (screen: Screen, transition: TransitionType = 'none', scroll: boolean = false) => {
+    setScrollIntent(scroll);
     if (screen === Screen.Admin && !isAdminUnlocked) {
       setCurrentScreen(Screen.Login);
       setDirection(1);
@@ -269,7 +280,7 @@ export default function App() {
           {currentScreen === Screen.Home && (
             <HomeScreen 
               onNavigate={navigateTo} 
-              settings={homeSettings} 
+              settings={{ ...homeSettings, insurancePlans }} 
               approaches={approaches}
               specialists={specialists}
             />
@@ -281,6 +292,7 @@ export default function App() {
               specialists={specialists} 
               approaches={approaches}
               settings={{ ...homeSettings, insurancePlans }}
+              shouldScrollToList={scrollIntent}
             />
           )}
           {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} settings={homeSettings} />}
@@ -333,7 +345,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
     { id: Screen.Home, label: 'Início' },
     { id: Screen.SEO, label: 'A Clínica' },
     { id: Screen.Abordagens, label: 'Abordagens' },
-    { id: Screen.CorpoClinico, label: 'Equipe' },
+    { id: Screen.CorpoClinico, label: 'Especialistas' },
   ];
 
   return (
@@ -427,11 +439,31 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
                 Painel Admin
               </button>
             </div>
+            
+            {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
+              <div className="flex flex-wrap gap-6 pt-6 border-t border-outline-variant/20">
+                {settings.insurancePlans.map(plan => (
+                  <img 
+                    key={plan.id} 
+                    src={plan.logo} 
+                    alt={plan.name} 
+                    className="h-10 md:h-14 w-auto object-contain transition-all hover:scale-110" 
+                    title={plan.name}
+                  />
+                ))}
+              </div>
+            )}
           </div>
           <div className="md:text-right space-y-4">
-            <p className="text-on-surface-variant text-sm">© 2024 Clínica Hope. Todos os direitos reservados.</p>
+            <p className="text-on-surface-variant text-sm">© 2022 Clínica Hope. Todos os direitos reservados.</p>
             <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/40">Pagani, Palhoça – SC</p>
           </div>
+        </div>
+        <div className="max-w-7xl mx-auto px-6 mt-12 pt-8 border-t border-outline-variant/10">
+          <p className="text-[11px] text-on-surface-variant/50 text-center max-w-5xl mx-auto leading-relaxed">
+            Todos os profissionais atuam de forma autônoma e independente, sendo responsáveis por seus próprios atendimentos, conduzidos em conformidade com o Código de Ética Profissional do Psicólogo e com respeito ao sigilo profissional.
+            A responsabilidade técnica e ética pelos atendimentos é exclusiva de cada profissional, não cabendo à clínica ingerência sobre a condução dos casos.
+          </p>
         </div>
       </footer>
     </div>
@@ -441,7 +473,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
 
 // ---
 interface ScreenProps {
-  onNavigate: (screen: Screen, transition?: TransitionType) => void;
+  onNavigate: (screen: Screen, transition?: TransitionType, scroll?: boolean) => void;
 }
 
 interface HomeProps extends ScreenProps {
@@ -450,6 +482,15 @@ interface HomeProps extends ScreenProps {
 }
 
 function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps & { specialists: Specialist[] }) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setIndex((prev) => (prev + 1) % specialists.length);
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [specialists.length]);
+
   return (
     <Layout activeScreen={Screen.Home} onNavigate={onNavigate} settings={settings}>
       {/* Modern Hero Section */}
@@ -464,14 +505,14 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
               {settings.heroSubtitle}
             </span>
             <h1 className="text-5xl md:text-7xl font-extrabold text-primary leading-[1.1] tracking-tight">
-              {settings.heroTitle}
+              Clínica de Psicologia em Palhoça
             </h1>
             <p className="text-lg md:text-xl text-on-surface-variant font-medium leading-relaxed max-w-lg">
               {settings.heroText}
             </p>
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <button 
-                onClick={() => onNavigate(Screen.Agendamento, 'push')}
+                onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
                 className="btn-primary shadow-xl"
               >
                 Agendar Consulta
@@ -480,9 +521,20 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
                 onClick={() => onNavigate(Screen.Abordagens, 'push')}
                 className="btn-secondary"
               >
-                Nossas Abordagens
+                Abordagens
               </button>
             </div>
+
+            {settings.insurancePlans && settings.insurancePlans.length > 0 && (
+              <div className="pt-12 border-t border-outline-variant/30">
+                <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-on-surface-variant/50 mb-6 font-mono">Convênios que aceitamos</p>
+                <div className="flex flex-wrap gap-x-12 gap-y-6 items-center transition-all duration-500">
+                  {settings.insurancePlans.map(plan => (
+                    <img key={plan.id} src={plan.logo} alt={plan.name} className="h-10 md:h-14 w-auto object-contain hover:scale-110 transition-transform duration-300" title={plan.name} />
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
           
           <motion.div 
@@ -492,7 +544,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
           >
             <div className="aspect-square rounded-[4rem] overflow-hidden soft-shadow relative z-10 border border-outline-variant/30">
               <img 
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBFcpZ0zvgTNyZBiSKYzxT2xDJXnMXz8_r7z7ESPg6e_68_XijjD01XLwMcR4NIA05ClFmB0kT-C0-PwXni2zx1bcmn4bIr-28JWlAPufxkF0aZlQ55B-Tbu-a2VbJ9rLbcWfzA9TsxaJ-1xfJh0YhXidLL6ToBR6EFw-xLNDp8F_kFz01dFqMEBM0bUMhA5fnLjyo_iG1Wn8cDTaHvpUc-kz1Sq-XRqlPEQKHhwbRhIO7g0xEfR21uFWZFDIEBlKz4nV_0dyHATEg" 
+                src={settings.heroImageUrl} 
                 className="w-full h-full object-cover transition-transform duration-[5s] hover:scale-105"
                 alt="Clínica Interior"
               />
@@ -503,62 +555,12 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
         </div>
       </section>
 
-      {/* A Clínica Section (Bento Grid Style) */}
-      <section className="section-padding bg-surface-container-low">
-        <div className="max-w-7xl mx-auto space-y-16">
-          <div className="text-center space-y-4">
-            <h2 className="text-4xl md:text-5xl font-bold text-primary tracking-tight">Onde o cuidado floresce</h2>
-            <p className="text-on-surface-variant max-w-2xl mx-auto font-medium">Ambientes planejados com as melhores práticas de design sensorial para promover calma e foco no que realmente importa.</p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[300px]">
-            <div className="md:col-span-2 bg-white p-10 rounded-[3rem] soft-shadow border border-outline-variant/50 flex flex-col justify-between group overflow-hidden relative">
-              <div className="relative z-10">
-                <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-6 group-hover:scale-110 transition-transform">
-                  <Verified size={32} />
-                </div>
-                <h3 className="text-2xl font-bold text-primary mb-4">Acolhimento Humanizado</h3>
-                <p className="text-on-surface-variant leading-relaxed max-w-md">Do atendimento na recepção ao consultório, privilegiamos a escuta ativa e o respeito à sua história.</p>
-              </div>
-              <div className="absolute top-0 right-0 w-1/2 h-full opacity-10 group-hover:opacity-100 transition-opacity">
-                 <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuB8_m85XdaEaixcl2b0_WEi58LQoccqoVkXcIn2hbINlWb3cyLEVparNdja4L90EhXAPLCIg7in7qJOFQXvfs9szLpgRqay6pLkMjafkDVtDn_gL8ikSPPxep21FSvnIks0ueW9sIWbCpqLYJfcySLxy_u8upsz8RpgOF4KEpfZeDyEY8aUXSEZOkArD56ujP0q2GFXRTbTLXUo6AMsuu_zf-4N7jCQ0ZhIU4anH2ayRGI2vos0wOrSomOI_GIWSfLkIQTnvhwXu1A" className="w-full h-full object-cover rounded-l-[3rem]" />
-              </div>
-            </div>
-            
-            <div className="bg-primary-container p-10 rounded-[3rem] text-on-primary-container flex flex-col justify-center items-center text-center space-y-6">
-              <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center">
-                <VerifiedUser size={40} className="text-white" />
-              </div>
-              <h3 className="text-2xl font-bold text-white">Ética & Sigilo</h3>
-              <p className="text-sm opacity-80 leading-relaxed font-medium">Compromisso inegociável com a segurança de dados e normas éticas em cada sessão.</p>
-            </div>
-
-            <div className="bg-surface-container p-10 rounded-[3rem] flex flex-col justify-between group cursor-pointer hover:bg-secondary-container transition-colors">
-              <div className="w-12 h-12 bg-white rounded-[1.5rem] flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
-                <CalendarMonth size={24} />
-              </div>
-              <div className="space-y-4">
-                <h4 className="text-xl font-bold text-primary">Agendamento Multi-canal</h4>
-                <p className="text-xs font-medium text-on-surface-variant leading-relaxed">WhatsApp, Telefone ou Formulário. Escolha como quer iniciar seu cuidado.</p>
-              </div>
-            </div>
-
-            <div className="md:col-span-2 relative rounded-[3rem] overflow-hidden border border-outline-variant/30">
-               <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=2069" className="w-full h-full object-cover" />
-               <div className="absolute inset-0 bg-gradient-to-t from-primary/80 to-transparent flex items-end p-10">
-                  <p className="text-white text-lg font-bold">Unidade Pagani, Palhoça</p>
-               </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Simplified Approaches Section */}
       <section className="section-padding bg-white">
         <div className="max-w-7xl mx-auto space-y-20">
           <div className="flex flex-col md:flex-row justify-between items-end gap-8">
             <div className="space-y-4">
-              <h2 className="text-4xl font-bold text-primary tracking-tight">Nossas Abordagens</h2>
+              <h2 className="text-4xl font-bold text-primary tracking-tight">Abordagens</h2>
               <p className="text-on-surface-variant max-w-xl font-medium">Diferentes perspectivas clínicas para atender à sua complexidade individual.</p>
             </div>
             <button 
@@ -592,49 +594,97 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
         </div>
       </section>
 
-      {/* Compact Equipe Section */}
-      <section className="section-padding bg-surface-container-low border-y border-outline-variant/30">
+      {/* Compact Equipe Section - Carousel */}
+      <section className="section-padding bg-surface-container-low border-y border-outline-variant/30 overflow-hidden">
         <div className="max-w-7xl mx-auto space-y-16">
-          <div className="text-center space-y-4">
+          <div className="text-center">
             <h2 className="text-4xl font-bold text-primary tracking-tight">Especialistas</h2>
-            <p className="text-on-surface-variant max-w-xl mx-auto font-medium">Conheça os profissionais que compõem nosso corpo clínico especializado.</p>
           </div>
           
-          <div className="flex gap-8 overflow-x-auto pb-10 hide-scrollbar scroll-smooth snap-x">
-            {specialists.map(spec => (
-              <div key={spec.id} className="min-w-[320px] bg-white rounded-[3rem] overflow-hidden soft-shadow group snap-center border border-outline-variant/30 flex flex-col">
-                <div className="h-80 relative overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-700">
-                  <img src={spec.img} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" alt={spec.name} />
+          <div className="relative max-w-md mx-auto">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, x: 50 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -50 }}
+                transition={{ duration: 0.5, ease: "easeInOut" }}
+              >
+                {specialists.length > 0 && (
+                  <SpecialistCard 
+                    spec={specialists[index]} 
+                    insurancePlans={settings.insurancePlans || []} 
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Navigation Dots */}
+            <div className="flex justify-center gap-3 mt-10">
+              {specialists.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setIndex(i)}
+                  className={`h-1.5 rounded-full transition-all duration-500 ${
+                    index === i ? 'bg-primary w-8' : 'bg-outline-variant w-2'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      {/* Testimonials (Google My Business Style) */}
+      <section className="section-padding bg-white overflow-hidden">
+        <div className="max-w-7xl mx-auto space-y-12">
+          <div className="text-center space-y-4">
+            <div className="flex justify-center items-center gap-2 mb-4">
+              <div className="flex text-[#FBBC05]">
+                {[...Array(5)].map((_, i) => <Star key={i} size={20} fill="currentColor" />)}
+              </div>
+              <span className="font-bold text-on-surface-variant">5.0</span>
+            </div>
+            <h2 className="text-4xl font-bold text-primary tracking-tight">O que dizem nossos pacientes</h2>
+            <p className="text-on-surface-variant/70 font-medium">Avaliações reais compartilhadas no Google</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {DEFAULT_TESTIMONIALS.map(item => (
+              <div key={item.id} className="bg-surface-container-low p-8 rounded-[2.5rem] border border-outline-variant/30 flex flex-col justify-between hover:soft-shadow transition-all group">
+                <div className="space-y-6">
+                  <div className="flex justify-between items-start">
+                    <div className="flex gap-1 text-[#FBBC05]">
+                      {[...Array(item.rating)].map((_, i) => <Star key={i} size={14} fill="currentColor" />)}
+                    </div>
+                    <div className="w-5 h-5 opacity-40 group-hover:opacity-100 transition-opacity">
+                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/></svg>
+                    </div>
+                  </div>
+                  <p className="text-on-surface-variant font-medium leading-relaxed italic text-sm">"{item.text}"</p>
                 </div>
-                <div className="p-8 space-y-6 flex-grow flex flex-col justify-between">
-                  <div className="space-y-4">
-                    <h4 className="text-xl font-bold text-primary leading-none">{spec.name}</h4>
-                    <span className="text-secondary font-bold text-xs uppercase tracking-widest">{spec.spec}</span>
-                    <p className="text-xs text-on-surface-variant/60 font-mono tracking-widest uppercase">CRP {spec.crp}</p>
+                <div className="flex items-center gap-4 mt-8 pt-6 border-t border-outline-variant/10">
+                  <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-xs">
+                    {item.avatar}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {spec.ageGroups.slice(0, 2).map(g => (
-                      <span key={g} className="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">{g}</span>
-                    ))}
+                  <div>
+                    <h5 className="text-sm font-bold text-primary">{item.author}</h5>
+                    <p className="text-[10px] text-on-surface-variant/60 font-medium uppercase tracking-wider">{item.date}</p>
                   </div>
-                  <button 
-                    onClick={() => onNavigate(Screen.CorpoClinico, 'push')}
-                    className="w-full py-4 text-xs font-black uppercase tracking-[0.2em] text-primary border-t border-outline-variant/30 mt-4 group-hover:text-secondary group-hover:bg-secondary-container/20 transition-all"
-                  >
-                    Ver Perfil Completo
-                  </button>
                 </div>
               </div>
             ))}
           </div>
-          
-          <div className="text-center">
-            <button 
-              onClick={() => onNavigate(Screen.CorpoClinico, 'push')}
-              className="btn-primary !px-12 shadow-primary/20"
+
+          <div className="text-center pt-8">
+            <a 
+              href="https://maps.app.goo.gl/qnU86jo4xeY7dz7V8" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-3 text-sm font-bold text-primary hover:underline group"
             >
-              Encontrar meu Especialista <ArrowForward size={18} />
-            </button>
+              Ver todas as avaliações no Google <ArrowForward size={16} className="group-hover:translate-x-1 transition-transform" />
+            </a>
           </div>
         </div>
       </section>
@@ -645,13 +695,13 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
           <div className="relative z-10 space-y-8">
             <h2 className="text-4xl md:text-6xl font-bold tracking-tight">Pronto para dar o próximo passo?</h2>
             <p className="text-lg md:text-xl text-on-primary-container/80 max-w-2xl mx-auto font-medium">
-               A jornada do equilíbrio começa com um acolhimento respeitoso. Agende uma conversa inicial e tire todas as suas dúvidas.
+               A jornada do equilíbrio começa com um acolhimento respeitoso. Agende sua consulta e dê o seu primeiro passo!
             </p>
             <button 
-              onClick={() => onNavigate(Screen.Agendamento, 'push')}
+              onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
               className="bg-white text-primary px-12 py-6 rounded-2xl font-bold text-lg hover:shadow-2xl transition-all active:scale-95 group-hover:scale-105"
             >
-              Agendar minha consulta agora
+              Agendar agora!
             </button>
           </div>
           <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-[80px]"></div>
@@ -669,11 +719,11 @@ function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (s
         <div className="max-w-7xl mx-auto text-center space-y-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <span className="inline-block px-4 py-1.5 rounded-full bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest shadow-sm">
-              Nossas Fundamentações
+              Tipos de Terapia
             </span>
             <h1 className="text-5xl md:text-7xl font-extrabold text-primary tracking-tight mt-8">Ciência & <span className="text-secondary italic">Acolhimento</span></h1>
             <p className="text-lg md:text-xl text-on-surface-variant font-medium max-w-2xl mx-auto mt-8 leading-relaxed">
-              Diferentes perspectivas clínicas para uma compreensão integral da saúde mental.
+              Entenda as principais abordagens da psicologia, como funcionam e para quais situações cada uma pode ser mais indicada.
             </p>
           </motion.div>
         </div>
@@ -702,12 +752,6 @@ function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (s
                     {app.details}
                   </p>
                 </div>
-                <button 
-                  onClick={() => onNavigate(Screen.Agendamento, 'push')}
-                  className="btn-primary"
-                >
-                  Agendar com esta abordagem
-                </button>
               </div>
               
               <div className="flex-1 w-full flex justify-center">
@@ -732,7 +776,7 @@ function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (s
         <div className="max-w-5xl mx-auto text-center space-y-12">
            <h3 className="text-4xl md:text-5xl font-bold tracking-tight italic">"O segredo da mudança é a construção do novo."</h3>
            <div className="w-16 h-1.5 bg-secondary mx-auto rounded-full"></div>
-           <button onClick={() => onNavigate(Screen.Agendamento, 'push')} className="btn-secondary !bg-white !text-primary transform hover:scale-105">Iniciar Jornada</button>
+           <button onClick={() => onNavigate(Screen.CorpoClinico, 'push')} className="btn-secondary !bg-white !text-primary transform hover:scale-105">Iniciar Jornada</button>
         </div>
       </section>
     </Layout>
@@ -749,16 +793,28 @@ function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSetti
               Psicologia em Palhoça
             </span>
             <h1 className="text-6xl md:text-8xl font-black text-primary leading-tight tracking-tighter">
-              Seu Refúgio no <span className="text-secondary">Pagani</span>
+              Um ambiente pensado para o <span className="text-secondary">cuidado com você</span>
             </h1>
             <p className="text-xl text-on-surface-variant font-medium leading-relaxed max-w-xl">
-              Localizada no centro comercial de Palhoça, a Clínica Hope oferece discrição, acessibilidade e o máximo conforto para sua jornada terapêutica.
+              Localizada no Pagani, a Clínica Hope oferece um espaço acolhedor, reservado e cuidadosamente preparado para atendimentos psicológicos, proporcionando conforto, privacidade e uma experiência tranquila desde a chegada.
             </p>
             <div className="flex flex-wrap gap-4">
-               {['Acessível', 'Climatizado', 'Estacionamento Próprio'].map(tag => (
-                 <span key={tag} className="flex items-center gap-2 text-sm font-bold text-primary bg-white px-6 py-3 rounded-2xl shadow-sm border border-outline-variant/30">
-                    <Verified size={18} className="text-secondary" /> {tag}
-                 </span>
+               {[
+                 { icon: <Wifi size={20} />, label: 'Wi-Fi' },
+                 { icon: <ConciergeBell size={20} />, label: 'Recepção' },
+                 { icon: <Volume2 size={20} />, label: 'Isolamento Acústico' },
+                 { icon: <Snowflake size={20} />, label: 'Ar Condicionado' },
+                 { icon: <ParkingCircle size={20} />, label: 'Estacionamento' },
+                 { icon: <ShieldCheck size={20} />, label: 'Portaria 24h' }
+               ].map((item, index) => (
+                 <div key={index} className="group relative">
+                   <div className="p-4 bg-white rounded-2xl shadow-sm border border-outline-variant/30 text-primary hover:bg-secondary/10 hover:text-secondary transition-all duration-300">
+                     {item.icon}
+                   </div>
+                   <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                     {item.label}
+                   </span>
+                 </div>
                ))}
             </div>
           </motion.div>
@@ -792,9 +848,46 @@ function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSetti
         </div>
       </section>
 
-      <div className="w-full h-[500px] grayscale hover:grayscale-0 transition-all duration-1000">
-         <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuAFEuUOZS85uek4ySOsBKwdEtfvjR5sx16STxDw1deoYdbPG7sW7GG_i91spg0hjZ6dXoWoo0A5ExZcBQKHu0sy2NO-_6EQDcrDE0lgBKNL0CJojYEG_tEzHOWNXZR7nrOGnXbN1JNWVhE_BEHSlMli3TFxSxhiLRWFGMJcBRk9BlXyVdAmqpbDJmFgwK9cktVPvqpZWBlZMGYkLcQDeEhZS-fwqUCiC2P55d0zeu7Opuwr4rmMsf26sC5LTSTOKZ25_0r8YqYgenA" className="w-full h-full object-cover" alt="Mapa Localização" />
-      </div>
+      <section className="section-padding bg-surface-container-low border-t border-outline-variant/30">
+        <div className="max-w-7xl mx-auto space-y-16">
+          <div className="text-center space-y-4">
+            <h2 className="text-4xl font-bold text-primary tracking-tight">O que dizem sobre nós</h2>
+            <p className="text-on-surface-variant font-medium">Experiências reais compartilhas no Google</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {DEFAULT_TESTIMONIALS.map(item => (
+              <div key={item.id} className="bg-white p-8 rounded-[2.5rem] border border-outline-variant/30 flex flex-col justify-between hover:soft-shadow transition-all group">
+                <div className="space-y-6">
+                  <div className="flex gap-1 text-secondary">
+                    {[...Array(item.rating)].map((_, i) => <Star key={i} size={16} fill="currentColor" />)}
+                  </div>
+                  <p className="text-on-surface-variant font-medium leading-relaxed italic text-sm">"{item.text}"</p>
+                </div>
+                <div className="flex items-center gap-4 mt-8 pt-6 border-t border-outline-variant/10">
+                  <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-xs">
+                    {item.avatar}
+                  </div>
+                  <div>
+                    <h5 className="text-sm font-bold text-primary">{item.author}</h5>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-center pt-8">
+            <a 
+              href="https://maps.app.goo.gl/qnU86jo4xeY7dz7V8" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white border border-outline-variant/50 rounded-2xl text-primary font-bold text-sm hover:soft-shadow transition-all group"
+            >
+              Ver todas as avaliações no Google
+              <ArrowForward size={16} className="group-hover:translate-x-1 transition-transform" />
+            </a>
+          </div>
+        </div>
+      </section>
+
     </Layout>
   );
 }
@@ -803,9 +896,383 @@ interface CorpoClinicoProps extends ScreenProps {
   specialists: Specialist[];
   approaches: Approach[];
   settings: HomeSettings;
+  shouldScrollToList?: boolean;
 }
 
-function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings }: CorpoClinicoProps) {
+interface SpecialistCardProps {
+  spec: Specialist;
+  insurancePlans: InsurancePlan[];
+}
+
+function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(null);
+  const [isLoadingSheet, setIsLoadingSheet] = useState(false);
+  const [sheetError, setSheetError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (spec.googleAppsScriptUrl) {
+      const fetchSheetData = async () => {
+        setIsLoadingSheet(true);
+        setSheetError(null);
+        try {
+          const baseUrl = spec.googleAppsScriptUrl || '';
+          const url = baseUrl.includes('?') ? `${baseUrl}&mode=agenda` : `${baseUrl}?mode=agenda`;
+          
+          const response = await fetch(url);
+          if (!response.ok) throw new Error('Falha ao conectar com o servidor da agenda');
+          
+          const data = await response.json();
+          
+          // Assuming the Apps Script returns an array of objects
+          // [{ "Dia da Semana": "Segunda", "Horário": "08:00", "Paciente": "💚", ... }]
+          const newSchedule: NonNullable<Specialist['schedule']> = {};
+
+          data.forEach((row: any) => {
+            const dayRaw = row["Dia da Semana"] || row["dia"] || row["Day"];
+            const time = row["Horário"] || row["horario"] || row["Time"];
+            const status = row["Paciente"] || row["paciente"] || row["Status"];
+            
+            if (!dayRaw || !time) return;
+
+            const dayMap: {[key: string]: string} = {
+              'segunda': 'Segunda', 'segunda-feira': 'Segunda',
+              'terça': 'Terça', 'terça-feira': 'Terça',
+              'quarta': 'Quarta', 'quarta-feira': 'Quarta',
+              'quinta': 'Quinta', 'quinta-feira': 'Quinta',
+              'sexta': 'Sexta', 'sexta-feira': 'Sexta',
+              'sábado': 'Sábado', 'sabado': 'Sábado'
+            };
+            const dayKey = dayRaw.toString().toLowerCase().trim();
+            const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
+            
+            // FILTER: Only free slots
+            if (status === '💚' || (status && status.toString().includes('💚'))) {
+              if (!newSchedule[day]) {
+                newSchedule[day] = { periods: {} };
+              }
+
+              const hourMatch = time.toString().match(/(\d{1,2})/);
+              if (hourMatch) {
+                const hour = parseInt(hourMatch[1]);
+                let shift: Shift = Shift.Afternoon;
+                
+                if (hour >= 7 && hour < 13) shift = Shift.Morning;
+                else if (hour >= 13 && hour < 18) shift = Shift.Afternoon;
+                else if (hour >= 18 && hour <= 22) shift = Shift.Night;
+
+                if (!newSchedule[day].periods[shift]) {
+                  newSchedule[day].periods[shift] = [];
+                }
+                
+                if (!newSchedule[day].periods[shift]?.includes(time)) {
+                  newSchedule[day].periods[shift]?.push(time);
+                }
+              }
+            }
+          });
+
+          // Sort times within periods
+          Object.keys(newSchedule).forEach(day => {
+            Object.keys(newSchedule[day].periods).forEach(p => {
+              const shift = p as Shift;
+              newSchedule[day].periods[shift]?.sort();
+            });
+          });
+
+          if (Object.keys(newSchedule).length > 0) {
+            setSheetSchedule(newSchedule);
+          } else {
+            setSheetError('Nenhum horário livre encontrado');
+          }
+        } catch (error) {
+          console.error('Erro ao buscar dados da planilha:', error);
+          setSheetError(error instanceof Error ? error.message : 'Erro na integração');
+        } finally {
+          setIsLoadingSheet(false);
+        }
+      };
+
+      fetchSheetData();
+      const interval = setInterval(fetchSheetData, 300000);
+      return () => clearInterval(interval);
+    } else if (spec.googleSheetsId) {
+      // Fallback to direct CSV if still present and Apps Script URL is not
+      const fetchSheetData = async () => {
+        setIsLoadingSheet(true);
+        setSheetError(null);
+        try {
+          let sheetId = spec.googleSheetsId || '';
+          if (sheetId.includes('/d/')) {
+            const parts = sheetId.split('/d/');
+            if (parts.length > 1) sheetId = parts[1].split('/')[0];
+          }
+          const tabName = spec.googleSheetsTab || 'Agenda';
+          const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}`;
+          const response = await fetch(url);
+          if (!response.ok) throw new Error('Acesso negado à planilha');
+          const csvText = await response.text();
+          
+          const rows = csvText.split(/\r?\n/)
+            .map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim()))
+            .filter(row => row.length >= 3 && row[0] !== '');
+
+          const newSchedule: NonNullable<Specialist['schedule']> = {};
+          rows.slice(1).forEach(row => {
+            const [dayRaw, time, status] = row;
+            if (!dayRaw || !time) return;
+            const dayMap: {[key: string]: string} = {
+              'segunda': 'Segunda', 'segunda-feira': 'Segunda',
+              'terça': 'Terça', 'terça-feira': 'Terça',
+              'quarta': 'Quarta', 'quarta-feira': 'Quarta',
+              'quinta': 'Quinta', 'quinta-feira': 'Quinta',
+              'sexta': 'Sexta', 'sexta-feira': 'Sexta',
+              'sábado': 'Sábado', 'sabado': 'Sábado'
+            };
+            const dayKey = dayRaw.toLowerCase().trim();
+            const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
+            if (status && status.includes('💚')) {
+              if (!newSchedule[day]) newSchedule[day] = { periods: {} };
+              const hourMatch = time.match(/(\d{1,2})/);
+              if (hourMatch) {
+                const hour = parseInt(hourMatch[1]);
+                let shift: Shift = Shift.Afternoon;
+                if (hour >= 7 && hour < 13) shift = Shift.Morning;
+                else if (hour >= 13 && hour < 18) shift = Shift.Afternoon;
+                else if (hour >= 18 && hour <= 22) shift = Shift.Night;
+                if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
+                if (!newSchedule[day].periods[shift]?.includes(time)) newSchedule[day].periods[shift]?.push(time);
+              }
+            }
+          });
+          Object.keys(newSchedule).forEach(day => {
+            Object.keys(newSchedule[day].periods).forEach(p => {
+              const shift = p as Shift;
+              newSchedule[day].periods[shift]?.sort();
+            });
+          });
+          if (Object.keys(newSchedule).length > 0) setSheetSchedule(newSchedule);
+        } catch (error) {
+          setSheetError('Use o Google Apps Script para melhor integração');
+        } finally {
+          setIsLoadingSheet(false);
+        }
+      };
+      fetchSheetData();
+    }
+  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab]);
+
+  const scheduleToUse = sheetSchedule || spec.schedule;
+  const canBook = selectedDay && selectedTime && selectedPlan;
+
+  const handleWhatsAppClick = () => {
+    if (!canBook) return;
+    const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
+    window.open(`https://wa.me/5548999549041?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  return (
+    <motion.div 
+      layout
+      className="bg-white rounded-[3rem] overflow-hidden soft-shadow border border-outline-variant/30 flex flex-col group"
+    >
+      <div className="h-96 relative overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-700">
+        <img src={spec.img} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" />
+        <div className="absolute top-6 right-6 bg-white/90 backdrop-blur px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-primary border border-white">
+          CRP {spec.crp}
+        </div>
+      </div>
+      <div className="p-8 space-y-6 flex-grow flex flex-col justify-between">
+        <div className="space-y-4">
+          <div className="flex justify-between items-start">
+            <h4 className="text-2xl font-bold text-primary">{spec.name}</h4>
+            <Verified size={20} className="text-secondary" />
+          </div>
+          <span className="inline-block px-3 py-1 bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest rounded-full">{spec.spec}</span>
+          <p className="text-on-surface-variant text-sm font-medium leading-relaxed italic line-clamp-3">"{spec.desc}"</p>
+        </div>
+        
+        <div className="space-y-6">
+          <div className="flex flex-wrap gap-2">
+            {spec.ageGroups.map(g => (
+              <span key={g} className="bg-surface-container text-on-surface-variant px-3 py-1 rounded-full text-[10px] font-bold uppercase">{g}</span>
+            ))}
+          </div>
+
+          {scheduleToUse && (
+            <div className="pt-6 border-t border-outline-variant/30 space-y-4">
+              {spec.attendedAges && spec.attendedAges.length > 0 && (
+                <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                  <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
+                    <VerifiedUser size={12} className="text-white" />
+                  </div>
+                  <p className="text-[11px] font-bold text-primary/90">
+                    Atendimento especializado a partir de <span className="text-secondary font-black underline underline-offset-4 decoration-secondary/30">{Math.min(...spec.attendedAges)}</span> anos
+                  </p>
+                </div>
+              )}
+              {(spec.googleSheetsId || spec.googleAppsScriptUrl) && (
+                <div className="flex items-center gap-2 mb-2 px-2">
+                  <div className={`w-1.5 h-1.5 rounded-full ${isLoadingSheet ? 'bg-amber-500 animate-pulse' : (sheetError ? 'bg-red-500' : 'bg-green-500')}`} />
+                  <p className={`text-[9px] font-bold uppercase tracking-widest ${sheetError ? 'text-red-500/80' : 'text-on-surface-variant/60'}`}>
+                    {isLoadingSheet ? 'Sincronizando Agenda...' : (sheetError ? `Erro: ${sheetError}` : (spec.googleAppsScriptUrl ? 'Agenda Web App Conectada' : 'Agenda Integrada em Tempo Real'))}
+                  </p>
+                </div>
+              )}
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Agendar Horário</p>
+              
+              <div className="space-y-4">
+                {/* Day Selection */}
+                <div className="flex flex-wrap gap-2">
+                  {Object.keys(scheduleToUse)
+                    .sort((a, b) => {
+                      const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                      return days.indexOf(a) - days.indexOf(b);
+                    })
+                    .map(day => (
+                      <button
+                        key={day}
+                        onClick={() => {
+                          setSelectedDay(day === selectedDay ? null : day);
+                          setSelectedTime(null);
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all border ${
+                          selectedDay === day 
+                          ? 'bg-primary text-white border-primary shadow-md' 
+                          : 'bg-surface-container text-primary border-outline-variant/30 hover:border-primary/50'
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                </div>
+
+                {/* Time Selection */}
+                {selectedDay && scheduleToUse[selectedDay] && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }} 
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-variant/20 space-y-3"
+                  >
+                    {(Object.entries(scheduleToUse[selectedDay].periods) as [Shift, string[]][])
+                      .sort(([a], [b]) => {
+                        const periods = [Shift.Morning as string, Shift.Afternoon as string, Shift.Night as string];
+                        return periods.indexOf(a) - periods.indexOf(b);
+                      })
+                      .map(([period, times]) => times && times.length > 0 && (
+                        <div key={period} className="space-y-1.5">
+                          <p className="text-[8px] font-black uppercase text-on-surface-variant/60">{period}</p>
+                          <div className="flex flex-wrap gap-1">
+                            {times.map(time => (
+                              <button
+                                key={time}
+                                onClick={() => setSelectedTime(time === selectedTime ? null : time)}
+                                className={`px-2 py-1 rounded text-[9px] font-medium transition-all ${
+                                  selectedTime === time
+                                  ? 'bg-secondary text-white shadow-sm'
+                                  : 'bg-white text-primary border border-outline-variant/10 hover:border-secondary/30'
+                                }`}
+                              >
+                                {time}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                  </motion.div>
+                )}
+
+                {/* Plan Selection */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Plano ou Particular</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
+                        className={`p-3 rounded-xl border text-[10px] font-bold transition-all text-center ${
+                          selectedPlan === 'Particular'
+                          ? 'bg-secondary text-white border-secondary shadow-md'
+                          : 'bg-surface-container-low text-primary border-outline-variant/30 hover:border-secondary/20'
+                        }`}
+                      >
+                        Particular
+                      </button>
+                      {insurancePlans.map(plan => (
+                        <button
+                          key={plan.id}
+                          onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
+                          className={`p-3 rounded-xl border text-[10px] font-bold transition-all flex items-center justify-center gap-2 ${
+                            selectedPlan === plan.name
+                            ? 'bg-secondary text-white border-secondary shadow-md'
+                            : 'bg-surface-container-low text-primary border-outline-variant/30 hover:border-secondary/20'
+                          }`}
+                        >
+                          {plan.logo && (
+                            <img 
+                              src={plan.logo} 
+                              alt={plan.name} 
+                              className={`h-5 w-auto object-contain transition-all ${selectedPlan === plan.name ? 'brightness-0 invert' : ''}`} 
+                            />
+                          )}
+                          <span>{plan.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Persistent Disclaimer within the card - Always Visible */}
+          <div className="bg-secondary-container/10 border-l-4 border-secondary p-4 rounded-xl space-y-1">
+            <p className="text-[10px] font-black uppercase text-secondary tracking-wider">Atenção para Planos</p>
+            <p className="text-[10px] text-primary/80 leading-relaxed font-medium">
+              Para agendamento via <span className="font-bold underline">Plano de Saúde</span> é necessário possuir encaminhamento médico com <span className="font-bold underline">CID</span>.
+            </p>
+          </div>
+
+          <button 
+            disabled={!canBook}
+            onClick={handleWhatsAppClick}
+            className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
+              !canBook 
+              ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
+              : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2'
+            }`}
+          >
+            <Chat size={18} />
+            {canBook ? 'Agendar via WhatsApp' : 'Selecione dia, hora e plano'}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, shouldScrollToList }: CorpoClinicoProps) {
+  useEffect(() => {
+    if (shouldScrollToList) {
+      const element = document.getElementById('topo-especialistas');
+      if (element) {
+        setTimeout(() => {
+          const offset = 100;
+          const elementPosition = element.getBoundingClientRect().top;
+          const offsetPosition = (elementPosition || 0) + window.pageYOffset - offset;
+          
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: 'smooth'
+          });
+        }, 300); // Wait for transition
+      }
+    } else {
+      window.scrollTo(0, 0);
+    }
+  }, [shouldScrollToList]);
+
   const [selectedAge, setSelectedAge] = useState<AgeGroup | null>(null);
   const [selectedSpecificAges, setSelectedSpecificAges] = useState<number[]>([]);
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
@@ -861,15 +1328,15 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings }: C
 
   return (
     <Layout activeScreen={Screen.CorpoClinico} onNavigate={onNavigate} settings={settings}>
-      <header className="section-padding bg-background pt-32">
+      <header id="topo-especialistas" className="section-padding bg-background pt-32">
         <div className="max-w-7xl mx-auto text-center space-y-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <span className="inline-block px-4 py-1.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-widest shadow-sm">
-              Encontre o profissional certo
+              Encontre o especialista certo
             </span>
-            <h1 className="text-5xl md:text-7xl font-extrabold text-primary tracking-tight mt-8">Corpo <span className="text-secondary italic">Clínico</span></h1>
+            <h1 className="text-5xl md:text-7xl font-extrabold text-primary tracking-tight mt-8">Especialistas</h1>
             <p className="text-lg text-on-surface-variant font-medium max-w-2xl mx-auto mt-8 leading-relaxed">
-              Curadoria de especialistas dedicados ao acolhimento singular e ético.
+              Especialistas dedicados ao acolhimento singular e ético.
             </p>
           </motion.div>
         </div>
@@ -959,50 +1426,17 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings }: C
         </div>
 
         {/* Results List */}
-        <div className="max-w-7xl mx-auto mt-32 space-y-20">
+        <div id="lista-especialistas" className="max-w-7xl mx-auto mt-32 space-y-20">
           <div className="flex justify-between items-end border-b border-outline-variant/50 pb-8">
-            <h2 className="text-4xl font-bold text-primary tracking-tight">Profissionais Recomendados</h2>
+            <h2 className="text-4xl font-bold text-primary tracking-tight">Especialistas Recomendados</h2>
             <button onClick={resetFilters} className="text-secondary font-bold text-sm underline">Limpar filtros</button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
              {specialistsToShow.map(spec => (
-               <motion.div 
-                 key={spec.id} 
-                 layout
-                 className="bg-white rounded-[3rem] overflow-hidden soft-shadow border border-outline-variant/30 flex flex-col group"
-               >
-                  <div className="h-96 relative overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-700">
-                    <img src={spec.img} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" />
-                    <div className="absolute top-6 right-6 bg-white/90 backdrop-blur px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-primary border border-white">
-                       CRP {spec.crp}
-                    </div>
-                  </div>
-                  <div className="p-8 space-y-6 flex-grow flex flex-col justify-between">
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-start">
-                         <h4 className="text-2xl font-bold text-primary">{spec.name}</h4>
-                         <Verified size={20} className="text-secondary" />
-                      </div>
-                      <span className="inline-block px-3 py-1 bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest rounded-full">{spec.spec}</span>
-                      <p className="text-on-surface-variant text-sm font-medium leading-relaxed italic line-clamp-3">"{spec.desc}"</p>
-                    </div>
-                    
-                    <div className="space-y-6">
-                      <div className="flex flex-wrap gap-2">
-                        {spec.ageGroups.map(g => (
-                          <span key={g} className="bg-surface-container text-on-surface-variant px-3 py-1 rounded-full text-[10px] font-bold uppercase">{g}</span>
-                        ))}
-                      </div>
-                      <button 
-                        onClick={() => onNavigate(Screen.Agendamento, 'push')}
-                        className="w-full py-4 bg-primary text-white rounded-2xl font-bold hover:shadow-xl transition-all"
-                      >
-                         Agendar com {spec.name.split(' ')[0]}
-                      </button>
-                    </div>
-                  </div>
-               </motion.div>
+               <div key={spec.id}>
+                 <SpecialistCard spec={spec} insurancePlans={settings.insurancePlans || []} />
+               </div>
              ))}
           </div>
 
@@ -1095,6 +1529,36 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                    </button>
                 </form>
              </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Insurance Requirement Disclaimer */}
+      <section className="px-6 pb-20 -mt-10">
+        <div className="max-w-7xl mx-auto">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="bg-secondary-container/30 border border-secondary/20 p-8 md:p-12 rounded-[3rem] relative overflow-hidden group"
+          >
+            <div className="absolute top-0 right-0 p-12 opacity-10 text-secondary group-hover:scale-110 transition-transform">
+              <Info size={120} />
+            </div>
+            <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
+              <div className="bg-white p-4 rounded-2xl shadow-sm text-secondary shrink-0">
+                <AssignmentTurnedIn size={32} />
+              </div>
+              <div className="space-y-4">
+                <h4 className="text-xl font-bold text-primary tracking-tight italic">Informação Importante para Planos de Saúde</h4>
+                <p className="text-on-surface-variant font-medium leading-relaxed max-w-4xl">
+                  Para agendamentos via <span className="text-secondary font-bold">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="text-secondary font-bold">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos. 
+                  <span className="block mt-4 text-sm bg-white/50 p-4 rounded-xl border border-outline-variant/30">
+                    💡 <span className="font-bold">Dica:</span> Se você não tiver o encaminhamento, verifique no aplicativo do seu plano se existe a opção de <span className="font-bold underline">teleatendimento</span>. É um processo rápido que pode auxiliar você neste momento de decisão.
+                  </span>
+                </p>
+              </div>
+            </div>
           </motion.div>
         </div>
       </section>
@@ -1208,7 +1672,7 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
 function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUpdateSpecialists, approaches, onUpdateApproaches, user }: AdminScreenProps & { user: User | null }) {
   const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
-  const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | null>(null);
+  const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | null>(null);
   const [croppingItemId, setCroppingItemId] = useState<string | null>(null);
   const [cropImage, setCropImage] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -1370,6 +1834,8 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
           updateSpecialist(croppingItemId, { img: croppedImg });
         } else if (croppingType === 'logo') {
           onUpdateSettings({ ...settings, logoUrl: croppedImg });
+        } else if (croppingType === 'hero') {
+          onUpdateSettings({ ...settings, heroImageUrl: croppedImg });
         } else if (croppingType === 'insurance' && croppingItemId) {
           updateInsurance(croppingItemId, { logo: croppedImg });
         }
@@ -1445,6 +1911,20 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
     }
   };
 
+  const handleSaveSettings = async () => {
+    setSaveStatus({ ...saveStatus, settings: true });
+    try {
+      const { insurancePlans: _, ...toSave } = settings;
+      await setDoc(doc(db, 'settings', 'site'), toSave);
+      setTimeout(() => {
+        setSaveStatus(prev => ({ ...prev, settings: false }));
+      }, 2000);
+    } catch (err) {
+      setSaveStatus(prev => ({ ...prev, settings: false }));
+      handleFirestoreError(err, OperationType.UPDATE, 'settings/site');
+    }
+  };
+
   const addApproach = async () => {
     const id = Date.now().toString();
     const newApp: Approach = {
@@ -1474,13 +1954,18 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
     onUpdateApproaches(approaches.map(a => a.id === id ? { ...a, ...updates } : a));
   };
 
-  const saveApproach = async (id: string) => {
+  const handleSaveApproach = async (id: string) => {
     const approach = approaches.find(a => a.id === id);
     if (!approach) return;
+    
+    setSaveStatus({ ...saveStatus, [`approach-${id}`]: true });
     try {
       await setDoc(doc(db, 'approaches', id), approach);
-      alert('Abordagem salva com sucesso!');
+      setTimeout(() => {
+        setSaveStatus(prev => ({ ...prev, [`approach-${id}`]: false }));
+      }, 2000);
     } catch (err) {
+      setSaveStatus(prev => ({ ...prev, [`approach-${id}`]: false }));
       handleFirestoreError(err, OperationType.UPDATE, `approaches/${id}`);
     }
   };
@@ -1491,6 +1976,17 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
       reader.onload = () => {
         setCropImage(reader.result as string);
         setCroppingType('logo');
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  const handleHeroImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setCropImage(reader.result as string);
+        setCroppingType('hero');
       };
       reader.readAsDataURL(e.target.files[0]);
     }
@@ -1513,7 +2009,7 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
                 onClick={() => setActiveTab(tab)}
                 className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface'}`}
               >
-                {tab === 'home' ? 'Página Inicial' : tab === 'corpo' ? 'Corpo Clínico' : 'Abordagens'}
+                {tab === 'home' ? 'Página Inicial' : tab === 'corpo' ? 'Especialistas' : 'Abordagens'}
               </button>
             ))}
           </div>
@@ -1541,6 +2037,29 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
                     <p className="text-sm font-bold text-primary">Logo da Clínica</p>
                     <p className="text-xs text-on-surface-variant">Recomendado: Imagem quadrada (1:1) com fundo transparente ou sólido.</p>
                     <button className="text-[10px] font-black uppercase text-accent tracking-widest hover:underline" onClick={() => onUpdateSettings({ ...settings, logoUrl: '' })}>Remover Logo</button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pb-8 border-b border-outline">
+                <h2 className="text-2xl font-display font-black text-primary mb-6">Imagem de Destaque (Hero)</h2>
+                <div className="flex items-center gap-8">
+                  <div className="w-48 h-48 bg-surface border border-outline rounded-[2.5rem] overflow-hidden flex items-center justify-center text-primary relative group">
+                    {settings.heroImageUrl ? (
+                      <img src={settings.heroImageUrl} className="w-full h-full object-cover" alt="Hero Preview" />
+                    ) : (
+                      <PhotoCamera size={40} />
+                    )}
+                    <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity">
+                      <PhotoCamera size={24} />
+                      <span className="text-[10px] font-bold mt-1 uppercase">Trocar Imagem Hero</span>
+                      <input type="file" className="hidden" accept="image/*" onChange={handleHeroImageChange} />
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-bold text-primary">Imagem Principal</p>
+                    <p className="text-xs text-on-surface-variant max-w-sm">Esta imagem aparece na vitrine principal do seu site. Escolha algo que represente a Clínica Hope.</p>
+                    <button className="text-[10px] font-black uppercase text-accent tracking-widest hover:underline" onClick={() => onUpdateSettings({ ...settings, heroImageUrl: '' })}>Remover Imagem</button>
                   </div>
                 </div>
               </div>
@@ -1613,6 +2132,16 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
                   ))}
                 </div>
               </div>
+
+              <div className="pt-12 border-t border-outline flex justify-center">
+                <button
+                  onClick={handleSaveSettings}
+                  className={`flex items-center gap-2 px-12 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] transition-all shadow-xl active:scale-95 ${saveStatus['settings'] ? 'bg-green-500 text-white shadow-green-500/20' : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'}`}
+                >
+                  {saveStatus['settings'] ? <CheckCircle size={16} /> : <Settings size={16} />}
+                  {saveStatus['settings'] ? 'Site Atualizado!' : 'Salvar Alterações do Site'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -1659,14 +2188,22 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
                       
                       <div className="md:col-span-2 space-y-4 pt-4 border-t border-outline">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <p className="text-[10px] uppercase font-bold tracking-widest text-primary">ID Agenda Planilha</p>
+                          <div className="space-y-2 md:col-span-2">
+                            <p className="text-[10px] uppercase font-bold tracking-widest text-primary">URL do Script (Google Apps Script Web App)</p>
                             <input 
                               className="p-2 border-b border-outline w-full focus:border-primary outline-none" 
-                              value={s.agendaId || ''} 
-                              onChange={e => updateSpecialist(s.id, { agendaId: e.target.value })} 
-                              placeholder="Fica na URL da planilha" 
+                              value={s.googleAppsScriptUrl || ''} 
+                              onChange={e => updateSpecialist(s.id, { googleAppsScriptUrl: e.target.value })} 
+                              placeholder="Fica na URL do Web App implantado (https://script.google.com/macros/s/.../exec)" 
                             />
+                          </div>
+                        </div>
+                        <div className="bg-secondary/5 p-4 rounded-xl space-y-3">
+                          <p className="text-[10px] font-black uppercase text-secondary">Instruções de Integração (Web App):</p>
+                          <div className="text-[11px] text-primary/80 space-y-2">
+                            <p>1. No Google Apps Script: <strong>Implantar &gt; Nova Implantação &gt; App da Web</strong>.</p>
+                            <p>2. Configure para: <strong>Quem pode acessar: Qualquer pessoa</strong>.</p>
+                            <p>3. Cole a URL no campo acima. O sistema buscará os horários onde o paciente é <span className="text-sm">💚</span>.</p>
                           </div>
                         </div>
                         <p className="text-[10px] uppercase font-bold tracking-widest text-primary">Faixas Etárias</p>
@@ -1701,21 +2238,118 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
                           ))}
                         </div>
                         
-                        <p className="text-[10px] uppercase font-bold tracking-widest text-primary pt-2">Períodos de Atendimento</p>
-                        <div className="flex flex-wrap gap-2">
-                          {Object.values(Shift).map(shift => (
-                            <button 
-                              key={shift}
-                              onClick={() => {
-                                const current = s.shifts || [];
-                                updateSpecialist(s.id, { shifts: current.includes(shift) ? current.filter(a => a !== shift) : [...current, shift] });
-                              }}
-                              className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all ${s.shifts?.includes(shift) ? 'bg-primary text-white border-primary' : 'bg-surface text-on-surface-variant border-outline hover:border-primary/40'}`}
-                            >
-                              {shift}
-                            </button>
-                          ))}
-                        </div>
+                        {!s.googleSheetsId && (
+                          <>
+                            <p className="text-[10px] uppercase font-bold tracking-widest text-primary pt-2">Períodos de Atendimento</p>
+                            <div className="flex flex-wrap gap-2">
+                              {Object.values(Shift).map(shift => (
+                                <button 
+                                  key={shift}
+                                  onClick={() => {
+                                    const current = s.shifts || [];
+                                    updateSpecialist(s.id, { shifts: current.includes(shift) ? current.filter(a => a !== shift) : [...current, shift] });
+                                  }}
+                                  className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all ${s.shifts?.includes(shift) ? 'bg-primary text-white border-primary' : 'bg-surface text-on-surface-variant border-outline hover:border-primary/40'}`}
+                                >
+                                  {shift}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+
+                        {s.googleSheetsId ? (
+                           <div className="pt-6 border-t border-outline">
+                              <div className="p-8 bg-green-50/50 border border-green-100 rounded-3xl text-center space-y-3">
+                                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto shadow-sm">
+                                  <VerifiedUser className="text-white" size={24} />
+                                </div>
+                                <h3 className="text-sm font-black text-green-800 uppercase tracking-widest">Agenda Em Tempo Real Ativa</h3>
+                                <p className="text-[11px] text-green-700/80 max-w-xs mx-auto">
+                                  Esta agenda está sendo sincronizada com o Google Sheets. Os horários marcados com 💚 são exibidos automaticamente para os pacientes.
+                                </p>
+                                <button 
+                                  onClick={() => updateSpecialist(s.id, { googleSheetsId: '' })}
+                                  className="text-[10px] font-black uppercase text-red-500 hover:underline pt-2"
+                                >
+                                  Desativar Integração e Usar Manual
+                                </button>
+                              </div>
+                           </div>
+                        ) : (
+                          <div className="pt-6 border-t border-outline space-y-4">
+                            <div className="flex justify-between items-center">
+                              <p className="text-[10px] uppercase font-bold tracking-widest text-primary">Agenda Semanal (Card de Horários)</p>
+                              {!s.schedule && (
+                                <button 
+                                  onClick={() => {
+                                    const def = DEFAULT_SPECIALISTS.find(ds => ds.id === s.id);
+                                    if (def?.schedule) updateSpecialist(s.id, { schedule: def.schedule });
+                                    else updateSpecialist(s.id, { schedule: { 'Segunda': { periods: { [Shift.Morning]: ['08:00', '09:00'] } } } });
+                                  }}
+                                  className="text-[9px] font-black uppercase text-secondary hover:underline"
+                                >
+                                  Ativar Agenda Visual
+                                </button>
+                              )}
+                            </div>
+                            
+                            {s.schedule && (
+                              <div className="space-y-4">
+                                {Object.entries(s.schedule as Record<string, { periods: Record<string, string[]> }>).map(([day, data]) => (
+                                  <div key={day} className="p-4 bg-surface rounded-2xl border border-outline space-y-3 relative group/item">
+                                    <button 
+                                      onClick={() => {
+                                        const newSched = { ...s.schedule };
+                                        delete newSched[day];
+                                        updateSpecialist(s.id, { schedule: newSched });
+                                      }}
+                                      className="absolute top-2 right-2 text-accent p-1 opacity-0 group-hover/item:opacity-100 hover:bg-accent/10 rounded"
+                                    >
+                                      <Delete size={14} />
+                                    </button>
+                                    <p className="text-xs font-bold text-primary">{day}</p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                      {Object.values(Shift).map(shift => (
+                                        <div key={shift} className="space-y-2">
+                                          <label className="text-[9px] font-black uppercase text-on-surface-variant/40">{shift}</label>
+                                          <input 
+                                            className="w-full text-[10px] p-2 border-b border-outline outline-none focus:border-primary"
+                                            value={data.periods[shift]?.join(', ') || ''}
+                                            placeholder="Ex: 08:00, 09:00"
+                                            onChange={(e) => {
+                                              const times = e.target.value.split(',').map(t => t.trim()).filter(t => t !== '');
+                                              const newSched = JSON.parse(JSON.stringify(s.schedule));
+                                              if (!newSched[day]) newSched[day] = { periods: {} };
+                                              newSched[day].periods[shift] = times;
+                                              updateSpecialist(s.id, { schedule: newSched });
+                                            }}
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                                <div className="flex flex-wrap gap-2">
+                                  {['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(day => (
+                                    !(s.schedule as any)?.[day] && (
+                                      <button 
+                                        key={day}
+                                        onClick={() => {
+                                          const newSched = { ...s.schedule, [day]: { periods: {} } };
+                                          updateSpecialist(s.id, { schedule: newSched });
+                                        }}
+                                        className="text-[9px] font-bold text-primary/60 px-3 py-1.5 bg-surface-container rounded-lg hover:bg-primary/10 transition-colors border border-outline/30"
+                                      >
+                                        + {day}
+                                      </button>
+                                    )
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         <div className="pt-6 flex justify-between items-center">
                           <button 
@@ -1755,12 +2389,18 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
                         <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Detalhes</label>
                         <textarea className="w-full p-4 border border-outline rounded-2xl" rows={4} value={a.details} onChange={e => updateApproach(a.id, { details: e.target.value })} placeholder="Explicação..." />
                       </div>
-                      <button 
-                        onClick={() => saveApproach(a.id)}
-                        className="btn-modern-primary py-3 px-8 text-[10px]"
-                      >
-                        Salvar Abordagem
-                      </button>
+                      <div className="pt-4 flex justify-between items-center">
+                        <button 
+                          onClick={() => handleSaveApproach(a.id)}
+                          className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${saveStatus[`approach-${a.id}`] ? 'bg-green-500 text-white shadow-green-500/20' : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'}`}
+                        >
+                          {saveStatus[`approach-${a.id}`] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
+                          {saveStatus[`approach-${a.id}`] ? 'Salvo!' : 'Salvar Abordagem'}
+                        </button>
+                        <button onClick={() => removeApproach(a.id)} className="p-4 text-accent hover:bg-accent/10 rounded-full transition-colors opacity-0 group-hover:opacity-100">
+                          <Delete size={20} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

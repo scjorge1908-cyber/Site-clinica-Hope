@@ -9,81 +9,85 @@ service cloud.firestore {
     // 2. Global Helpers
     function isSignedIn() { return request.auth != null; }
     function isAdmin() { 
-      return isSignedIn() && 
-             request.auth.token.email_verified == true && (
-               request.auth.token.email == 'scjorge1908@gmail.com' || 
-               exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-             );
+      return isSignedIn() && (
+        request.auth.token.email == 'scjorge1908@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
     }
-    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
 
     // 3. Entity Validations
     function isValidSpecialist(data) {
       return data.keys().hasAll(['id', 'name', 'spec', 'crp', 'img', 'desc', 'tags', 'ageGroups', 'shifts']) &&
-             data.id is string && data.id.size() <= 128 &&
-             data.name is string && data.name.size() <= 200 &&
-             data.spec is string && data.spec.size() <= 200 &&
-             data.crp is string && data.crp.size() <= 100 &&
-             data.img is string && data.img.size() <= 2000000 && // Increased for data URLs
-             data.desc is string && data.desc.size() <= 4000 &&
-             data.tags is list && data.tags.size() <= 50 &&
+             data.id is string && data.id.size() <= 64 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.spec is string && data.spec.size() <= 100 &&
+             data.crp is string && data.crp.size() <= 20 &&
+             data.img is string && data.img.size() <= 1000 &&
+             data.desc is string && data.desc.size() <= 2000 &&
+             data.tags is list && data.tags.size() <= 10 &&
              data.ageGroups is list && data.ageGroups.size() <= 10 &&
-             data.shifts is list && data.shifts.size() <= 5 &&
-             (!data.keys().contains('attendedAges') || (data.attendedAges is list && data.attendedAges.size() <= 100)) &&
-             (!data.keys().contains('agendaId') || (data.agendaId is string && data.agendaId.size() <= 200));
+             data.shifts is list && data.shifts.size() <= 3 &&
+             (!('color' in data) || (data.color is string && data.color.size() <= 20)) &&
+             (!('googleSheetsId' in data) || (data.googleSheetsId is string && data.googleSheetsId.size() <= 128)) &&
+             (!('googleSheetsTab' in data) || (data.googleSheetsTab is string && data.googleSheetsTab.size() <= 64)) &&
+             (!('googleAppsScriptUrl' in data) || (data.googleAppsScriptUrl is string && data.googleAppsScriptUrl.size() <= 500)) &&
+             (!('attendedAges' in data) || (data.attendedAges is list && data.attendedAges.size() <= 150));
     }
 
     function isValidApproach(data) {
       return data.keys().hasAll(['id', 'title', 'desc', 'details']) &&
-             data.id is string &&
-             data.title is string && data.title.size() <= 200 &&
-             data.desc is string && data.desc.size() <= 2000 &&
-             data.details is string && data.details.size() <= 10000;
+             data.id is string && data.id.size() <= 64 &&
+             data.title is string && data.title.size() <= 100 &&
+             data.desc is string && data.desc.size() <= 500 &&
+             data.details is string && data.details.size() <= 5000;
     }
 
     function isValidInsurance(data) {
       return data.keys().hasAll(['id', 'name', 'logo']) &&
-             data.id is string &&
-             data.name is string && data.name.size() <= 200 &&
-             data.logo is string && data.logo.size() <= 2000000;
+             data.id is string && data.id.size() <= 64 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.logo is string && data.logo.size() <= 1000;
     }
 
     function isValidSettings(data) {
       return data.keys().hasAll(['heroTitle', 'heroSubtitle', 'heroText']) &&
-             data.heroTitle is string && data.heroTitle.size() <= 1000 &&
-             data.heroSubtitle is string && data.heroSubtitle.size() <= 1000 &&
-             data.heroText is string && data.heroText.size() <= 5000 &&
-             (!data.keys().contains('logoUrl') || (data.logoUrl is string && data.logoUrl.size() <= 2000000)) &&
-             (!data.keys().contains('insurancePlans') || (data.insurancePlans is list));
+             data.heroTitle is string && data.heroTitle.size() <= 200 &&
+             data.heroSubtitle is string && data.heroSubtitle.size() <= 500 &&
+             data.heroText is string && data.heroText.size() <= 2000 &&
+             (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() <= 1000)) &&
+             (!('heroImageUrl' in data) || (data.heroImageUrl is string && data.heroImageUrl.size() <= 1000));
     }
 
     // 4. Match Blocks
     match /specialists/{specId} {
       allow read: if true;
-      allow create: if isAdmin() && isValidSpecialist(incoming());
+      allow create: if isAdmin() && isValidId(specId) && isValidSpecialist(incoming());
       allow update: if isAdmin() && isValidSpecialist(incoming());
       allow delete: if isAdmin();
     }
 
     match /approaches/{appId} {
       allow read: if true;
-      allow create: if isAdmin() && isValidApproach(incoming());
+      allow create: if isAdmin() && isValidId(appId) && isValidApproach(incoming());
       allow update: if isAdmin() && isValidApproach(incoming());
       allow delete: if isAdmin();
     }
 
     match /insurancePlans/{planId} {
       allow read: if true;
-      allow create: if isAdmin() && isValidInsurance(incoming());
+      allow create: if isAdmin() && isValidId(planId) && isValidInsurance(incoming());
       allow update: if isAdmin() && isValidInsurance(incoming());
       allow delete: if isAdmin();
     }
 
     match /settings/{docId} {
       allow read: if true;
-      allow create: if isAdmin() && isValidSettings(incoming());
+      allow create: if isAdmin() && isValidId(docId) && isValidSettings(incoming());
       allow update: if isAdmin() && isValidSettings(incoming());
       allow delete: if isAdmin();
     }

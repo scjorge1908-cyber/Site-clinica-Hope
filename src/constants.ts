@@ -3,10 +3,11 @@ import { Specialist, Approach, HomeSettings, AgeGroup, Shift } from './types';
 export const CLINICA_LOGO_URL = 'https://images.unsplash.com/photo-1628157588553-5eeea00af15c?auto=format&fit=crop&q=80&w=300';
 
 export const DEFAULT_HOME_SETTINGS: HomeSettings = {
-  heroTitle: 'Onde o cuidado encontra a esperança.',
+  heroTitle: 'Clínica de Psicologia em Palhoça',
   heroSubtitle: 'Bem-vindo à Clínica Hope',
   heroText: 'Oferecemos um espaço seguro e acolhedor para o seu desenvolvimento emocional em Palhoça. Um convite ao reencontro com sua essência.',
   logoUrl: 'https://images.unsplash.com/photo-1628157588553-5eeea00af15c?auto=format&fit=crop&q=80&w=300',
+  heroImageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBFcpZ0zvgTNyZBiSKYzxT2xDJXnMXz8_r7z7ESPg6e_68_XijjD01XLwMcR4NIA05ClFmB0kT-C0-PwXni2zx1bcmn4bIr-28JWlAPufxkF0aZlQ55B-Tbu-a2VbJ9rLbcWfzA9TsxaJ-1xfJh0YhXidLL6ToBR6EFw-xLNDp8F_kFz01dFqMEBM0bUMhA5fnLjyo_iG1Wn8cDTaHvpUc-kz1Sq-XRqlPEQKHhwbRhIO7g0xEfR21uFWZFDIEBlKz4nV_0dyHATEg',
   insurancePlans: [
     { id: '1', name: 'Particular', logo: 'https://cdn-icons-png.flaticon.com/512/2854/2854580.png' },
     { id: '2', name: 'Unimed', logo: 'https://vagasprofissoes.com.br/wp-content/uploads/2019/12/Logo-Unimed.png' },
@@ -30,11 +31,18 @@ export const DEFAULT_SPECIALISTS: Specialist[] = [
     ageGroups: [AgeGroup.Adults, AgeGroup.Seniors],
     shifts: [Shift.Morning, Shift.Afternoon],
     attendedAges: Array.from({ length: 43 }, (_, i) => i + 18), // 18-60
-    agendaId: 'SPREADSHEET_ID_1',
+    googleSheetsId: 'SPREADSHEET_ID_1',
     availableTimes: {
       'Segunda': ['08:00', '09:00', '10:00', '11:00'],
       'Quarta': ['14:00', '15:00', '16:00'],
       'Sexta': ['09:00', '10:30', '11:30']
+    },
+    schedule: {
+      'Segunda': { periods: { [Shift.Morning]: ['08:00', '09:00', '10:00', '11:00'] } },
+      'Terça': { periods: { [Shift.Afternoon]: ['13:00', '14:00', '15:00'] } },
+      'Quarta': { periods: { [Shift.Afternoon]: ['14:00', '15:00', '16:00'] } },
+      'Quinta': { periods: { [Shift.Night]: ['18:00', '19:00'] } },
+      'Sexta': { periods: { [Shift.Morning]: ['09:00', '10:30', '11:30'] } }
     }
   },
   {
@@ -49,10 +57,15 @@ export const DEFAULT_SPECIALISTS: Specialist[] = [
     ageGroups: [AgeGroup.Children, AgeGroup.Teens],
     shifts: [Shift.Afternoon, Shift.Night],
     attendedAges: Array.from({ length: 17 }, (_, i) => i + 1), // 1-17
-    agendaId: 'SPREADSHEET_ID_2',
+    googleSheetsId: 'SPREADSHEET_ID_2',
     availableTimes: {
       'Terça': ['14:00', '15:00', '18:00', '19:00'],
       'Quinta': ['13:00', '14:30', '17:00', '20:00']
+    },
+    schedule: {
+      'Segunda': { periods: { [Shift.Afternoon]: ['14:00', '15:00', '16:00'] } },
+      'Terça': { periods: { [Shift.Afternoon]: ['14:00', '15:00'], [Shift.Night]: ['18:00', '19:00'] } },
+      'Quinta': { periods: { [Shift.Afternoon]: ['13:00', '14:30'], [Shift.Night]: ['17:00', '20:00'] } }
     }
   },
   {
@@ -65,11 +78,17 @@ export const DEFAULT_SPECIALISTS: Specialist[] = [
     img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBbG654DgYRUm3f3dXrYGskwB6KV8mcBVO2LCotqLxo6Dy9TVdkdjrVxP3Ym4ZArsqgnyJidvLPIfg8-hEUDVFMqD5aaCUgmGYr9t1ldnV5UUVGgAVFnJHHT2sjXKwVu-Q2GtRyLCaIzzgmgcntNobpt-gczLKY53eQ14iSZdLe0VHEO6fVOvRkxXZRGC0onPUzskexCRlZ7DKktmRKz7qj8kDJq2kwWkTv8IAb5e6gowqJlNnwkDt1svX1hBxNN_mkkR_cqrdegSs',
     color: 'bg-[#EAE4DF]',
     ageGroups: [AgeGroup.Adults],
+    attendedAges: Array.from({ length: 43 }, (_, i) => i + 18), // 18-60
     shifts: [Shift.Morning, Shift.Afternoon, Shift.Night],
     availableTimes: {
       'Segunda': ['19:00', '20:00'],
       'Quarta': ['08:00', '09:00', '10:00'],
       'Sábado': ['08:00', '09:00', '10:00', '11:00']
+    },
+    schedule: {
+      'Segunda': { periods: { [Shift.Night]: ['19:00', '20:00'] } },
+      'Quarta': { periods: { [Shift.Morning]: ['08:00', '09:00', '10:00'] } },
+      'Sábado': { periods: { [Shift.Morning]: ['08:00', '09:00', '10:00', '11:00'] } }
     }
   }
 ];
@@ -134,5 +153,40 @@ export const DEFAULT_APPROACHES: Approach[] = [
     title: 'Psicologia Organizacional',
     desc: 'Saúde mental no trabalho.',
     details: 'Atua na saúde mental no trabalho, estresse e desenvolvimento profissional.'
+  }
+];
+
+export const DEFAULT_TESTIMONIALS = [
+  {
+    id: '1',
+    author: 'Abilio Santiago',
+    text: 'Localização excelente, ambiente acolhedor e atendimento profissional da melhor qualidade.',
+    date: 'há 9 meses',
+    rating: 5,
+    avatar: 'AS'
+  },
+  {
+    id: '2',
+    author: 'Andrielly Amorim',
+    text: 'Excelente atendimento!! Amamos o cuidado e o carinho com nossa filha, com certeza vamos continuar o tratamento pois já estamos sentindo os efeitos da terapia.',
+    date: 'há 2 anos',
+    rating: 5,
+    avatar: 'AA'
+  },
+  {
+    id: '3',
+    author: 'Leandro Cruz',
+    text: 'Muito legal a Clínica. Gostei que é próximo ao Shopping Via Catarina. Boa localização. Muitos gentis e zelosos no atendimento.',
+    date: 'há 2 anos',
+    rating: 5,
+    avatar: 'LC'
+  },
+  {
+    id: '4',
+    author: 'Adriano Cruz',
+    text: 'Excelente atendimento! Ambiente agradável e seguro! Muito profissional! Recomendo! Nota 1.000!!',
+    date: 'há 2 anos',
+    rating: 5,
+    avatar: 'AC'
   }
 ];

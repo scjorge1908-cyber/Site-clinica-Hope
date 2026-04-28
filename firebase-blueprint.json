@@ -11,11 +11,29 @@
         "crp": { "type": "string" },
         "img": { "type": "string" },
         "desc": { "type": "string" },
+        "color": { "type": "string" },
         "tags": { "type": "array", "items": { "type": "string" } },
         "ageGroups": { "type": "array", "items": { "type": "string" } },
         "shifts": { "type": "array", "items": { "type": "string" } },
         "attendedAges": { "type": "array", "items": { "type": "number" } },
-        "agendaId": { "type": "string" }
+        "googleSheetsId": { "type": "string" },
+        "googleSheetsTab": { "type": "string" },
+        "googleAppsScriptUrl": { "type": "string" },
+        "schedule": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "periods": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
       },
       "required": ["id", "name", "spec", "crp", "img", "desc", "tags", "ageGroups", "shifts"]
     },
@@ -50,7 +68,8 @@
         "heroTitle": { "type": "string" },
         "heroSubtitle": { "type": "string" },
         "heroText": { "type": "string" },
-        "logoUrl": { "type": "string" }
+        "logoUrl": { "type": "string" },
+        "heroImageUrl": { "type": "string" }
       },
       "required": ["heroTitle", "heroSubtitle", "heroText"]
     }

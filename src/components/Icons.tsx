@@ -26,7 +26,8 @@ import {
   Pencil,
   X,
   Info,
-  Globe
+  Globe,
+  FileCheck
 } from 'lucide-react';
 
 export const Psychology = Brain;
@@ -55,3 +56,4 @@ export const Group = Users;
 export const Favorite = Heart;
 export const Verified = BadgeCheck;
 export const Public = Globe;
+export const AssignmentTurnedIn = FileCheck;
