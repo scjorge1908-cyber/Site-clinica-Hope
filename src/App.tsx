@@ -34,7 +34,7 @@ import {
 import { Instagram, Facebook, Linkedin as LinkedIn, Wifi, ConciergeBell, Volume2, Snowflake, ParkingCircle, ShieldCheck } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { initializeApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, User, signInWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, User } from 'firebase/auth';
 import { 
   getFirestore, 
   doc, 
@@ -1595,13 +1595,14 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email === 'scjorge1908@gmail.com' && password === '123456') {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
       onUnlock();
       onNavigate(Screen.Admin, 'push');
-    } else {
-      setError('Credenciais inválidas. Tente novamente.');
+    } catch (err) {
+      setError('E-mail ou senha incorretos. Tente novamente.');
     }
   };
 
@@ -1672,30 +1673,8 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
 function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUpdateSpecialists, approaches, onUpdateApproaches, user }: AdminScreenProps & { user: User | null }) {
   const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
-  const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | null>(null);
-  const [croppingItemId, setCroppingItemId] = useState<string | null>(null);
-  const [cropImage, setCropImage] = useState<string | null>(null);
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
 
-  // Login Form State
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loginError, setLoginError] = useState<string | null>(null);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError(null);
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (err: any) {
-      setLoginError('Falha no login. Verifique seu email e senha.');
-      console.error(err);
-    }
-  };
-
-  if (!user) {
+  if (!user || user.email !== 'scjorge1908@gmail.com') {
     return (
       <Layout activeScreen={Screen.Admin} onNavigate={onNavigate} settings={settings}>
         <div className="max-w-4xl mx-auto pt-48 pb-24 px-6 text-center">
@@ -1705,75 +1684,25 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
             </div>
             <div className="space-y-4">
               <h2 className="text-4xl font-display font-black text-primary tracking-tighter">Acesso Restrito</h2>
-              <p className="text-on-surface-variant max-w-sm mx-auto font-medium">Faça o login para gerenciar a clínica.</p>
+              <p className="text-on-surface-variant max-w-sm mx-auto font-medium">Apenas administradores podem acessar esta área.</p>
             </div>
-            
-            <form onSubmit={handleLogin} className="max-w-sm mx-auto space-y-6">
-              <div className="space-y-4 text-left">
-                <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">E-mail</label>
-                <input 
-                  type="email" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-surface border border-outline rounded-2xl p-4 outline-none focus:border-primary transition-colors font-medium"
-                  placeholder="admin@clinica.com"
-                  required
-                />
-              </div>
-              <div className="space-y-4 text-left">
-                <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Senha</label>
-                <input 
-                  type="password" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-surface border border-outline rounded-2xl p-4 outline-none focus:border-primary transition-colors font-medium"
-                  placeholder="••••••"
-                  required
-                />
-              </div>
-              {loginError && <p className="text-accent text-[10px] font-bold uppercase tracking-widest">{loginError}</p>}
-              <button 
-                type="submit"
-                className="w-full py-5 bg-primary text-white rounded-[2rem] font-black text-sm uppercase tracking-widest hover:bg-primary-light transition-all shadow-xl shadow-primary/10"
-              >
-                Entrar no Painel
-              </button>
-            </form>
-
-            <div className="pt-4">
-              <p className="text-[10px] font-bold text-on-surface-variant/40 uppercase tracking-widest mb-6">— ou continue com —</p>
-              <button 
-                onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}
-                className="px-8 py-4 bg-white border border-outline text-on-surface-variant rounded-2xl font-bold text-[10px] uppercase tracking-widest hover:bg-surface transition-all flex items-center gap-3 mx-auto"
-              >
-                Google Account
-              </button>
-            </div>
+            <button 
+              onClick={() => onNavigate(Screen.Login, 'push_back')}
+              className="px-8 py-4 bg-primary text-white rounded-full font-bold text-xs uppercase tracking-widest hover:bg-primary-light transition-all"
+            >
+              Fazer Login
+            </button>
           </div>
         </div>
       </Layout>
     );
   }
-
-  // Admin Verification (Redundant with rules but good for UI)
-  const isAdmin = user.email === 'scjorge1908@gmail.com';
-
-  if (!isAdmin) {
-    return (
-      <Layout activeScreen={Screen.Admin} onNavigate={onNavigate} settings={settings}>
-        <div className="max-w-4xl mx-auto py-32 px-6 text-center">
-          <div className="bg-white p-16 rounded-[3rem] border border-accent/20 modern-shadow space-y-8">
-            <div className="w-24 h-24 bg-accent/10 rounded-full flex items-center justify-center mx-auto text-accent">
-              <MoodBad size={48} />
-            </div>
-            <h2 className="text-4xl font-display font-black text-accent tracking-tighter">Acesso Negado</h2>
-            <p className="text-on-surface-variant max-w-sm mx-auto font-medium">Você está logado como <strong>{user.email}</strong>, mas não possui permissões de administrador.</p>
-            <button onClick={() => auth.signOut()} className="text-xs font-black uppercase text-primary tracking-widest hover:underline">Sair da conta</button>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
+  const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | null>(null);
+  const [croppingItemId, setCroppingItemId] = useState<string | null>(null);
+  const [cropImage, setCropImage] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
 
   const addSpecialist = async () => {
     const id = Date.now().toString();
