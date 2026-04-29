@@ -31,77 +31,33 @@ import {
   Info,
   AssignmentTurnedIn
 } from './components/Icons';
-import { Instagram, Facebook, Linkedin as LinkedIn, Wifi, ConciergeBell, Volume2, Snowflake, ParkingCircle, ShieldCheck } from 'lucide-react';
+import { Instagram, Facebook, Linkedin as LinkedIn, Wifi, ConciergeBell, Volume2, Snowflake, ParkingCircle, ShieldCheck, LogOut } from 'lucide-react';
 import Cropper from 'react-easy-crop';
-import { initializeApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, User } from 'firebase/auth';
-import { 
-  getFirestore, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  collection, 
-  onSnapshot, 
-  updateDoc, 
-  deleteDoc,
-  query,
-  getDocFromServer
-} from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
 import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan } from './types';
 import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL } from './constants';
 
-// Firebase Initialization
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+// Helper for Local Storage
+const LS_KEYS = {
+  SETTINGS: 'clinica_hope_settings',
+  SPECIALISTS: 'clinica_hope_specialists',
+  APPROACHES: 'clinica_hope_approaches',
+  INSURANCE: 'clinica_hope_insurance',
+  AUTH: 'clinica_hope_auth'
+};
 
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
+const saveToLS = (key: string, data: any) => {
+  localStorage.setItem(key, JSON.stringify(data));
+};
 
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
+const loadFromLS = (key: string, defaultValue: any) => {
+  const saved = localStorage.getItem(key);
+  if (!saved) return defaultValue;
+  try {
+    return JSON.parse(saved);
+  } catch {
+    return defaultValue;
   }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
+};
 
 const createImage = (url: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
@@ -137,100 +93,50 @@ const getCroppedImg = async (
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.Home);
   const [direction, setDirection] = useState<number>(0);
-  const [user, setUser] = useState<User | null>(null);
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [authReady, setAuthReady] = useState(false);
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => !!loadFromLS(LS_KEYS.AUTH, false));
   
-  // Data State
-  const [homeSettings, setHomeSettings] = useState<HomeSettings>(DEFAULT_HOME_SETTINGS);
-  const [specialists, setSpecialists] = useState<Specialist[]>(DEFAULT_SPECIALISTS);
-  const [approaches, setApproaches] = useState<Approach[]>(DEFAULT_APPROACHES);
+  // Data State with Local Storage initialization
+  const [homeSettings, setHomeSettings] = useState<HomeSettings>(() => loadFromLS(LS_KEYS.SETTINGS, DEFAULT_HOME_SETTINGS));
+  const [specialists, setSpecialists] = useState<Specialist[]>(() => loadFromLS(LS_KEYS.SPECIALISTS, DEFAULT_SPECIALISTS));
+  const [approaches, setApproaches] = useState<Approach[]>(() => loadFromLS(LS_KEYS.APPROACHES, DEFAULT_APPROACHES));
+  const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>(() => loadFromLS(LS_KEYS.INSURANCE, []));
+  
   const [scrollIntent, setScrollIntent] = useState(false);
 
-  const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>([]);
+  // Persistence effects
+  useEffect(() => {
+    saveToLS(LS_KEYS.SETTINGS, homeSettings);
+  }, [homeSettings]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setAuthReady(true);
-    });
-    return () => unsubscribe();
-  }, []);
+    saveToLS(LS_KEYS.SPECIALISTS, specialists);
+  }, [specialists]);
 
-  // Verify Firestore connection
   useEffect(() => {
-    async function testConnection() {
-      try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
-      } catch (error) {
-        if(error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration.");
-        }
-      }
-    }
-    testConnection();
-  }, []);
+    saveToLS(LS_KEYS.APPROACHES, approaches);
+  }, [approaches]);
 
-  // Real-time Fetching
   useEffect(() => {
-    const unsubSettings = onSnapshot(doc(db, 'settings', 'site'), (s) => {
-      if (s.exists()) {
-        const data = s.data() as HomeSettings;
-        // Merge with defaults to ensure new properties like heroImageUrl are present
-        const { insurancePlans: _, ...rest } = data;
-        setHomeSettings({ ...DEFAULT_HOME_SETTINGS, ...rest } as HomeSettings);
-      }
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'settings/site'));
-
-    const unsubInsurance = onSnapshot(collection(db, 'insurancePlans'), (snap) => {
-      const data = snap.docs.map(d => d.data() as InsurancePlan);
-      if (data.length > 0) setInsurancePlans(data);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'insurancePlans'));
-
-    const unsubSpecialists = onSnapshot(collection(db, 'specialists'), (snap) => {
-      const data = snap.docs.map(d => {
-        const item = d.data() as Specialist;
-        // Merge with default schedule if missing in database for consistency during updates
-        const defaultSpec = DEFAULT_SPECIALISTS.find(s => s.id === item.id);
-        if (!item.schedule && defaultSpec?.schedule) {
-          return { ...item, schedule: defaultSpec.schedule };
-        }
-        return item;
-      });
-      if (data.length > 0) setSpecialists(data);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'specialists'));
-
-    const unsubApproaches = onSnapshot(collection(db, 'approaches'), (snap) => {
-      const data = snap.docs.map(d => d.data() as Approach);
-      if (data.length > 0) setApproaches(data);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'approaches'));
-
-    return () => {
-      unsubSettings();
-      unsubInsurance();
-      unsubSpecialists();
-      unsubApproaches();
-    };
-  }, []);
+    saveToLS(LS_KEYS.INSURANCE, insurancePlans);
+  }, [insurancePlans]);
 
   const updateSettings = async (newSettings: HomeSettings) => {
-    // Remove insurancePlans from the settings object before saving to site doc to avoid size limit
     const { insurancePlans: _, ...cleanSettings } = newSettings;
     setHomeSettings(cleanSettings as HomeSettings);
-    try {
-      await setDoc(doc(db, 'settings', 'site'), cleanSettings);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'settings/site');
-    }
   };
 
   const updateSpecialists = async (newSpecialists: Specialist[]) => {
     setSpecialists(newSpecialists);
-    // Note: In real app we update individual docs, but here maintaining state parity
   };
 
   const updateApproaches = async (newApproaches: Approach[]) => {
     setApproaches(newApproaches);
+  };
+
+  const handleLogout = () => {
+    setIsAdminUnlocked(false);
+    saveToLS(LS_KEYS.AUTH, false);
+    navigateTo(Screen.Home, 'push_back');
   };
 
   const navigateTo = (screen: Screen, transition: TransitionType = 'none', scroll: boolean = false) => {
@@ -313,7 +219,9 @@ export default function App() {
               onUpdateSpecialists={updateSpecialists}
               approaches={approaches}
               onUpdateApproaches={updateApproaches}
-              user={user}
+              onLogout={handleLogout}
+              insurancePlans={insurancePlans}
+              onUpdateInsurance={setInsurancePlans}
             />
           )}
         </motion.div>
@@ -1591,18 +1499,17 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
 }
 
 function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: Screen, transition?: TransitionType) => void; onUnlock: () => void; settings: HomeSettings }) {
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
+    if (password === '123456') {
       onUnlock();
+      saveToLS(LS_KEYS.AUTH, true);
       onNavigate(Screen.Admin, 'push');
-    } catch (err) {
-      setError('E-mail ou senha incorretos. Tente novamente.');
+    } else {
+      setError('Senha incorreta. Tente novamente.');
     }
   };
 
@@ -1624,23 +1531,12 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-2">
-              <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">E-mail</label>
-              <input 
-                type="email" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary" 
-                placeholder="seu@email.com"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">Senha</label>
+              <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">Senha de Acesso</label>
               <input 
                 type="password" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary" 
+                className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary text-center tracking-widest" 
                 placeholder="••••••"
                 required
               />
@@ -1654,7 +1550,7 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
               type="submit"
               className="w-full py-5 bg-primary text-white rounded-2xl font-bold text-lg hover:shadow-xl transition-all active:scale-95"
             >
-              Entrar no Painel
+              Acessar Painel
             </button>
           </form>
 
@@ -1670,33 +1566,34 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
   );
 }
 
-function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUpdateSpecialists, approaches, onUpdateApproaches, user }: AdminScreenProps & { user: User | null }) {
+interface AdminScreenProps {
+  onNavigate: (screen: Screen, transition?: TransitionType) => void;
+  settings: HomeSettings;
+  onUpdateSettings: (settings: HomeSettings) => void;
+  specialists: Specialist[];
+  onUpdateSpecialists: (specialists: Specialist[]) => void;
+  approaches: Approach[];
+  onUpdateApproaches: (approaches: Approach[]) => void;
+  onLogout: () => void;
+  insurancePlans: InsurancePlan[];
+  onUpdateInsurance: (plans: InsurancePlan[]) => void;
+}
+
+function AdminScreen({ 
+  onNavigate, 
+  settings, 
+  onUpdateSettings, 
+  specialists, 
+  onUpdateSpecialists, 
+  approaches, 
+  onUpdateApproaches, 
+  onLogout,
+  insurancePlans,
+  onUpdateInsurance
+}: AdminScreenProps) {
   const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
 
-  if (!user || user.email !== 'scjorge1908@gmail.com') {
-    return (
-      <Layout activeScreen={Screen.Admin} onNavigate={onNavigate} settings={settings}>
-        <div className="max-w-4xl mx-auto pt-48 pb-24 px-6 text-center">
-          <div className="bg-white p-12 md:p-16 rounded-[3rem] border border-outline modern-shadow space-y-10">
-            <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto text-primary">
-              <VerifiedUser size={40} />
-            </div>
-            <div className="space-y-4">
-              <h2 className="text-4xl font-display font-black text-primary tracking-tighter">Acesso Restrito</h2>
-              <p className="text-on-surface-variant max-w-sm mx-auto font-medium">Apenas administradores podem acessar esta área.</p>
-            </div>
-            <button 
-              onClick={() => onNavigate(Screen.Login, 'push_back')}
-              className="px-8 py-4 bg-primary text-white rounded-full font-bold text-xs uppercase tracking-widest hover:bg-primary-light transition-all"
-            >
-              Fazer Login
-            </button>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
   const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | null>(null);
   const [croppingItemId, setCroppingItemId] = useState<string | null>(null);
   const [cropImage, setCropImage] = useState<string | null>(null);
@@ -1704,7 +1601,7 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
 
-  const addSpecialist = async () => {
+  const addSpecialist = () => {
     const id = Date.now().toString();
     const newSpec: Specialist = {
       id,
@@ -1717,21 +1614,11 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
       ageGroups: [AgeGroup.Adults],
       shifts: [Shift.Morning]
     };
-    try {
-      await setDoc(doc(db, 'specialists', id), newSpec);
-      onUpdateSpecialists([...specialists, newSpec]);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `specialists/${id}`);
-    }
+    onUpdateSpecialists([...specialists, newSpec]);
   };
 
-  const removeSpecialist = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'specialists', id));
-      onUpdateSpecialists(specialists.filter(s => s.id !== id));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `specialists/${id}`);
-    }
+  const removeSpecialist = (id: string) => {
+    onUpdateSpecialists(specialists.filter(s => s.id !== id));
   };
 
   const updateSpecialist = (id: string, updates: Partial<Specialist>) => {
@@ -1780,52 +1667,29 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
     }
   };
 
-  const handleSave = async (id: string) => {
-    const spec = specialists.find(s => s.id === id);
-    if (!spec) return;
-
+  const handleSave = (id: string) => {
     setSaveStatus({ ...saveStatus, [id]: true });
-    try {
-      await setDoc(doc(db, 'specialists', id), spec);
-      setTimeout(() => {
-        setSaveStatus(prev => ({ ...prev, [id]: false }));
-      }, 2000);
-    } catch (err) {
+    setTimeout(() => {
       setSaveStatus(prev => ({ ...prev, [id]: false }));
-      handleFirestoreError(err, OperationType.UPDATE, `specialists/${id}`);
-    }
+    }, 2000);
   };
 
-  const addInsurance = async () => {
+  const addInsurance = () => {
     const id = Date.now().toString();
     const newInsurance = {
       id,
       name: 'Novo Plano',
       logo: 'https://cdn-icons-png.flaticon.com/512/2854/2854580.png'
     };
-    try {
-      await setDoc(doc(db, 'insurancePlans', id), newInsurance);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `insurancePlans/${id}`);
-    }
+    onUpdateInsurance([...insurancePlans, newInsurance]);
   };
 
-  const updateInsurance = async (id: string, updates: Partial<InsurancePlan>) => {
-    const plan = (settings.insurancePlans || []).find(p => p.id === id);
-    if (!plan) return;
-    try {
-      await updateDoc(doc(db, 'insurancePlans', id), updates);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `insurancePlans/${id}`);
-    }
+  const updateInsurance = (id: string, updates: Partial<InsurancePlan>) => {
+    onUpdateInsurance(insurancePlans.map(p => p.id === id ? { ...p, ...updates } : p));
   };
 
-  const removeInsurance = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'insurancePlans', id));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `insurancePlans/${id}`);
-    }
+  const removeInsurance = (id: string) => {
+    onUpdateInsurance(insurancePlans.filter(p => p.id !== id));
   };
 
   const handleInsuranceLogoChange = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
@@ -1840,21 +1704,14 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
     }
   };
 
-  const handleSaveSettings = async () => {
+  const handleSaveSettings = () => {
     setSaveStatus({ ...saveStatus, settings: true });
-    try {
-      const { insurancePlans: _, ...toSave } = settings;
-      await setDoc(doc(db, 'settings', 'site'), toSave);
-      setTimeout(() => {
-        setSaveStatus(prev => ({ ...prev, settings: false }));
-      }, 2000);
-    } catch (err) {
+    setTimeout(() => {
       setSaveStatus(prev => ({ ...prev, settings: false }));
-      handleFirestoreError(err, OperationType.UPDATE, 'settings/site');
-    }
+    }, 2000);
   };
 
-  const addApproach = async () => {
+  const addApproach = () => {
     const id = Date.now().toString();
     const newApp: Approach = {
       id,
@@ -1862,41 +1719,22 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
       desc: 'Breve descrição...',
       details: 'Detalhes completos sobre como funciona a terapia nesta abordagem.'
     };
-    try {
-      await setDoc(doc(db, 'approaches', id), newApp);
-      onUpdateApproaches([...approaches, newApp]);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `approaches/${id}`);
-    }
+    onUpdateApproaches([...approaches, newApp]);
   };
 
-  const removeApproach = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'approaches', id));
-      onUpdateApproaches(approaches.filter(a => a.id !== id));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `approaches/${id}`);
-    }
+  const removeApproach = (id: string) => {
+    onUpdateApproaches(approaches.filter(a => a.id !== id));
   };
 
   const updateApproach = (id: string, updates: Partial<Approach>) => {
     onUpdateApproaches(approaches.map(a => a.id === id ? { ...a, ...updates } : a));
   };
 
-  const handleSaveApproach = async (id: string) => {
-    const approach = approaches.find(a => a.id === id);
-    if (!approach) return;
-    
+  const handleSaveApproach = (id: string) => {
     setSaveStatus({ ...saveStatus, [`approach-${id}`]: true });
-    try {
-      await setDoc(doc(db, 'approaches', id), approach);
-      setTimeout(() => {
-        setSaveStatus(prev => ({ ...prev, [`approach-${id}`]: false }));
-      }, 2000);
-    } catch (err) {
+    setTimeout(() => {
       setSaveStatus(prev => ({ ...prev, [`approach-${id}`]: false }));
-      handleFirestoreError(err, OperationType.UPDATE, `approaches/${id}`);
-    }
+    }, 2000);
   };
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1931,16 +1769,26 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
             </button>
             <h1 className="text-4xl font-display font-bold text-primary tracking-tighter">Painel de Administração</h1>
           </div>
-          <div className="flex bg-white rounded-2xl p-1 modern-shadow border border-outline">
-            {(['home', 'corpo', 'abordagens'] as const).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface'}`}
-              >
-                {tab === 'home' ? 'Página Inicial' : tab === 'corpo' ? 'Especialistas' : 'Abordagens'}
-              </button>
-            ))}
+          <div className="flex gap-4">
+            <div className="flex bg-white rounded-2xl p-1 modern-shadow border border-outline">
+              {(['home', 'corpo', 'abordagens'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface'}`}
+                >
+                  {tab === 'home' ? 'Página Inicial' : tab === 'corpo' ? 'Especialistas' : 'Abordagens'}
+                </button>
+              ))}
+            </div>
+            <button 
+              onClick={onLogout}
+              className="p-3 bg-white border border-outline rounded-2xl shadow-sm hover:bg-accent hover:text-white transition-all text-accent flex items-center gap-2"
+              title="Sair"
+            >
+              <LogOut size={20} />
+              <span className="text-[10px] font-bold uppercase tracking-widest">Sair</span>
+            </button>
           </div>
         </div>
 
