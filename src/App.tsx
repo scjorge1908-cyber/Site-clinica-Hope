@@ -274,7 +274,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
               )}
             </div>
             <span className="text-xl font-bold tracking-tight text-primary hidden sm:block">
-              {settings.clinicName || 'Clínica Hope'}
+              {settings?.clinicName || 'Clínica Hope'}
             </span>
           </button>
           
