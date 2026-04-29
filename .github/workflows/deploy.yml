@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-8-core  # 🚀 Runner maior (8 núcleos) - BENEFÍCIO DO PRO
     steps:
       - uses: actions/checkout@v4
       
@@ -17,17 +17,16 @@ jobs:
           cache: 'npm'
       
       - name: Install dependencies
-        run: |
-          npm ci || npm install
-          npm list --depth=0 || echo "Instalação concluída"
+        run: npm ci || npm install
       
       - name: Build project
         run: npm run build
         env:
           CI: false
+          NODE_OPTIONS: "--max-old-space-size=8192"  # 8GB de memória para o build
       
       - name: List build output
-        run: ls -la dist && ls -la dist/assets || echo "Pasta dist vazia"
+        run: ls -la dist
       
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
