@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: 'Ativos',
+      outDir: 'assets',
       rollupOptions: {
         output: {
           entryFileNames: `[name].js`,
