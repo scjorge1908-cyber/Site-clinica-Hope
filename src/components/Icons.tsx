@@ -27,7 +27,8 @@ import {
   X,
   Info,
   Globe,
-  FileCheck
+  FileCheck,
+  Menu
 } from 'lucide-react';
 
 export const Psychology = Brain;
@@ -57,3 +58,4 @@ export const Favorite = Heart;
 export const Verified = BadgeCheck;
 export const Public = Globe;
 export const AssignmentTurnedIn = FileCheck;
+export const MenuIcon = Menu;

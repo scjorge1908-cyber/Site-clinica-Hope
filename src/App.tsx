@@ -29,7 +29,8 @@ import {
   Edit,
   Close,
   Info,
-  AssignmentTurnedIn
+  AssignmentTurnedIn,
+  MenuIcon
 } from './components/Icons';
 import { Instagram, Facebook, Linkedin as LinkedIn, Wifi, ConciergeBell, Volume2, Snowflake, ParkingCircle, ShieldCheck, LogOut } from 'lucide-react';
 import Cropper from 'react-easy-crop';
@@ -259,31 +260,33 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans selection:bg-secondary-container selection:text-on-secondary-container overflow-x-hidden">
       {/* Material 3 TopAppBar */}
-      <header className="fixed top-0 w-full z-50 glass-nav">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center transition-all">
+      <header className={`fixed top-0 w-full z-50 transition-all duration-300 ${isScrolled ? 'glass-nav py-2 shadow-lg' : 'bg-transparent py-4'}`}>
+        <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
           <button 
-            onClick={() => onNavigate(Screen.Home, 'push_back')}
-            className="flex items-center gap-3 group"
+            onClick={() => { onNavigate(Screen.Home, 'push_back'); setMenuOpen(false); }}
+            className="flex items-center gap-3 group shrink-0"
           >
-            <div className="w-10 h-10 bg-primary/10 rounded-xl overflow-hidden flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
+            <div className="w-10 h-10 bg-primary/10 rounded-xl overflow-hidden flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all shadow-sm">
               {settings?.logoUrl ? (
                 <img src={settings.logoUrl} className="w-full h-full object-cover" alt="Logo" />
               ) : (
                 <Spa size={24} />
               )}
             </div>
-            <span className="text-xl font-bold tracking-tight text-primary">{settings.clinicName || 'Clínica Hope'}</span>
+            <span className="text-xl font-bold tracking-tight text-primary hidden sm:block">
+              {settings.clinicName || 'Clínica Hope'}
+            </span>
           </button>
           
-          <nav className="hidden md:flex gap-10 items-center">
+          <nav className="hidden lg:flex gap-8 items-center">
             {navItems.map(item => (
               <button
                 key={item.id}
                 onClick={() => onNavigate(item.id, activeScreen === Screen.Home ? 'push' : 'none')}
-                className={`text-sm font-semibold transition-all hover:text-primary ${
+                className={`text-sm font-bold transition-all hover:text-primary tracking-tight ${
                   activeScreen === item.id 
-                    ? 'text-primary border-b-2 border-primary pb-1' 
-                    : 'text-on-surface-variant'
+                    ? 'text-primary' 
+                    : 'text-on-surface-variant/70'
                 }`}
               >
                 {item.label}
@@ -291,35 +294,80 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             ))}
           </nav>
 
-          <button 
-            onClick={() => onNavigate(Screen.Agendamento, 'push')}
-            className="bg-primary text-white text-sm font-bold px-6 py-2.5 rounded-full hover:shadow-lg active:scale-95 transition-all"
-          >
-            Agendar Consulta
-          </button>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
+              className="hidden md:block bg-primary text-white text-sm font-bold px-7 py-3 rounded-full hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-primary/20"
+            >
+              Agendar Consulta
+            </button>
+            
+            <button 
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="lg:hidden p-3 rounded-2xl bg-surface-container-high text-primary hover:bg-primary hover:text-white transition-all active:scale-90"
+              aria-label="Menu"
+            >
+              {menuOpen ? <Close size={24} /> : <MenuIcon size={24} />}
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Mobile Navigation (Bottom Bar Style) */}
-      <nav className="md:hidden fixed bottom-0 w-full bg-white/95 backdrop-blur-md border-t border-outline-variant px-6 py-4 flex justify-between items-center z-50">
-        {navItems.map(item => (
-          <button
-            key={item.id}
-            onClick={() => onNavigate(item.id)}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeScreen === item.id ? 'text-primary font-bold' : 'text-on-surface-variant'
-            }`}
+      {/* Mobile & Tablet Drawer Menu */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] lg:hidden mt-20"
           >
-            {item.id === Screen.Home && <HomeIcon size={20} />}
-            {item.id === Screen.SEO && <LocationOn size={20} />}
-            {item.id === Screen.Abordagens && <Psychology size={20} />}
-            {item.id === Screen.CorpoClinico && <Group size={20} />}
-            <span className="text-[10px] uppercase font-bold">{item.label}</span>
-          </button>
-        ))}
-      </nav>
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="absolute right-0 top-0 h-[calc(100vh-5rem)] w-full sm:w-80 bg-white shadow-2xl border-l border-outline-variant/30 flex flex-col p-8 overflow-y-auto"
+            >
+              <div className="flex flex-col gap-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-secondary/60 mb-2">Navegação</p>
+                {navItems.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => { onNavigate(item.id); setMenuOpen(false); }}
+                    className={`flex items-center justify-between p-5 rounded-3xl text-lg font-bold transition-all ${
+                      activeScreen === item.id 
+                      ? 'bg-primary text-white shadow-lg' 
+                      : 'bg-surface-container-low text-primary hover:bg-surface-container'
+                    }`}
+                  >
+                    {item.label}
+                    <ArrowForward size={20} />
+                  </button>
+                ))}
+              </div>
+              
+              <div className="mt-auto pt-10 space-y-6">
+                <button 
+                  onClick={() => { onNavigate(Screen.CorpoClinico, 'push', true); setMenuOpen(false); }}
+                  className="w-full bg-secondary text-white py-5 rounded-[2rem] font-bold text-lg shadow-xl shadow-secondary/20 flex items-center justify-center gap-3"
+                >
+                  <CalendarMonth size={24} />
+                  Agendar Agora
+                </button>
+                
+                <div className="flex justify-center gap-6 text-primary/40">
+                  <Instagram size={20} />
+                  <Facebook size={20} />
+                  <LinkedIn size={20} />
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <main className="flex-grow pt-20 pb-20 md:pb-0">{children}</main>
+      <main className="flex-grow">{children}</main>
 
       <footer className="py-20 bg-surface-container-low border-t border-outline-variant/30">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
@@ -402,8 +450,8 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
   return (
     <Layout activeScreen={Screen.Home} onNavigate={onNavigate} settings={settings}>
       {/* Modern Hero Section */}
-      <section className="relative px-6 py-12 md:py-32 overflow-hidden bg-background">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
+      <section className="relative px-6 py-12 md:py-24 lg:py-32 overflow-hidden bg-background">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 lg:gap-16 items-center">
           <motion.div 
             initial={{ opacity: 0, x: -30 }} 
             animate={{ opacity: 1, x: 0 }}
@@ -599,9 +647,9 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
 
       {/* Material CTA */}
       <section className="section-padding">
-        <div className="max-w-5xl mx-auto bg-primary text-white rounded-[3.5rem] p-12 md:p-20 relative overflow-hidden shadow-2xl text-center group">
+        <div className="max-w-5xl mx-auto bg-primary text-white rounded-[3rem] md:rounded-[3.5rem] p-8 sm:p-12 md:p-20 relative overflow-hidden shadow-2xl text-center group">
           <div className="relative z-10 space-y-8">
-            <h2 className="text-4xl md:text-6xl font-bold tracking-tight">Pronto para dar o próximo passo?</h2>
+            <h2 className="text-3xl md:text-6xl font-bold tracking-tight">Pronto para dar o próximo passo?</h2>
             <p className="text-lg md:text-xl text-on-primary-container/80 max-w-2xl mx-auto font-medium">
                A jornada do equilíbrio começa com um acolhimento respeitoso. Agende sua consulta e dê o seu primeiro passo!
             </p>
@@ -694,13 +742,13 @@ function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (s
 function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSettings }) {
   return (
     <Layout activeScreen={Screen.SEO} onNavigate={onNavigate} settings={settings}>
-      <header className="px-6 py-20 md:py-40 bg-surface-container-low overflow-hidden relative">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-20 items-center relative z-10">
+      <header className="px-6 py-16 md:py-40 bg-surface-container-low overflow-hidden relative">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 lg:gap-20 items-center relative z-10">
           <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} className="space-y-10">
             <span className="inline-block px-4 py-1.5 rounded-full bg-secondary-container text-on-secondary-container text-xs font-bold uppercase tracking-widest">
               Psicologia em Palhoça
             </span>
-            <h1 className="text-6xl md:text-8xl font-black text-primary leading-tight tracking-tighter">
+            <h1 className="text-5xl md:text-8xl font-black text-primary leading-tight tracking-tighter">
               {settings.seoTitle || 'Um ambiente pensado para o cuidado com você'}
             </h1>
             <p className="text-xl text-on-surface-variant font-medium leading-relaxed max-w-xl">
@@ -727,12 +775,12 @@ function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSetti
             </div>
           </motion.div>
           <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="relative">
-             <div className="aspect-[4/5] rounded-[4rem] overflow-hidden soft-shadow border-4 border-white">
+             <div className="aspect-[4/5] rounded-[3rem] md:rounded-[4rem] overflow-hidden soft-shadow border-4 border-white">
                 <img src={settings.heroImageUrl || "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=2069"} className="w-full h-full object-cover" alt="Clinica Interior" />
              </div>
-             <div className="absolute -bottom-6 -right-6 bg-primary text-white p-8 rounded-[2.5rem] shadow-2xl space-y-2">
-                <p className="text-xs font-bold uppercase tracking-widest opacity-60">Endereço</p>
-                <p className="text-lg font-bold">{settings.address || 'Bairro Pagani, Palhoça/SC'}</p>
+             <div className="absolute -bottom-6 -right-2 md:-right-6 bg-primary text-white p-6 md:p-8 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl space-y-2">
+                <p className="text-[10px] md:text-xs font-bold uppercase tracking-widest opacity-60">Endereço</p>
+                <p className="text-base md:text-lg font-bold">{settings.address || 'Bairro Pagani, Palhoça/SC'}</p>
              </div>
           </motion.div>
         </div>
@@ -1031,7 +1079,7 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
               )}
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Agendar Horário</p>
               
-              <div className="space-y-4">
+              <div className="space-y-4 pt-4">
                 {/* Day Selection */}
                 <div className="flex flex-wrap gap-2">
                   {Object.keys(scheduleToUse)
@@ -1046,7 +1094,7 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
                           setSelectedDay(day === selectedDay ? null : day);
                           setSelectedTime(null);
                         }}
-                        className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all border ${
+                        className={`px-4 py-2.5 rounded-xl text-[10px] font-bold transition-all border ${
                           selectedDay === day 
                           ? 'bg-primary text-white border-primary shadow-md' 
                           : 'bg-surface-container text-primary border-outline-variant/30 hover:border-primary/50'
@@ -1072,12 +1120,12 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
                       .map(([period, times]) => times && times.length > 0 && (
                         <div key={period} className="space-y-1.5">
                           <p className="text-[8px] font-black uppercase text-on-surface-variant/60">{period}</p>
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-2">
                             {times.map(time => (
                               <button
                                 key={time}
                                 onClick={() => setSelectedTime(time === selectedTime ? null : time)}
-                                className={`px-2 py-1 rounded text-[9px] font-medium transition-all ${
+                                className={`px-3 py-2 rounded-lg text-[10px] font-medium transition-all ${
                                   selectedTime === time
                                   ? 'bg-secondary text-white shadow-sm'
                                   : 'bg-white text-primary border border-outline-variant/10 hover:border-secondary/30'
@@ -1095,11 +1143,12 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
                 {/* Plan Selection */}
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Plano ou Particular</p>
+                    <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Selecione seu Convênio</p>
+
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
-                        className={`p-3 rounded-xl border text-[10px] font-bold transition-all text-center ${
+                        className={`p-4 rounded-xl border text-[10px] font-bold transition-all text-center ${
                           selectedPlan === 'Particular'
                           ? 'bg-secondary text-white border-secondary shadow-md'
                           : 'bg-surface-container-low text-primary border-outline-variant/30 hover:border-secondary/20'
@@ -1111,7 +1160,7 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
                         <button
                           key={plan.id}
                           onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
-                          className={`p-3 rounded-xl border text-[10px] font-bold transition-all flex items-center justify-center gap-2 ${
+                          className={`p-4 rounded-xl border text-[10px] font-bold transition-all flex items-center justify-center gap-2 ${
                             selectedPlan === plan.name
                             ? 'bg-secondary text-white border-secondary shadow-md'
                             : 'bg-surface-container-low text-primary border-outline-variant/30 hover:border-secondary/20'
@@ -1127,20 +1176,12 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
                           <span>{plan.name}</span>
                         </button>
                       ))}
-                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Persistent Disclaimer within the card - Always Visible */}
-          <div className="bg-secondary-container/10 border-l-4 border-secondary p-4 rounded-xl space-y-1">
-            <p className="text-[10px] font-black uppercase text-secondary tracking-wider">Atenção para Planos</p>
-            <p className="text-[10px] text-primary/80 leading-relaxed font-medium">
-              Para agendamento via <span className="font-bold underline">Plano de Saúde</span> é necessário possuir encaminhamento médico com <span className="font-bold underline">CID</span>.
-            </p>
           </div>
+        )}
 
           <button 
             disabled={!canBook}
@@ -1154,6 +1195,21 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
             <Chat size={18} />
             {canBook ? 'Agendar via WhatsApp' : 'Selecione dia, hora e plano'}
           </button>
+
+          {/* Footer Disclaimer */}
+          <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
+            <div className="space-y-3">
+              <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
+                 <Info size={14} /> Informação Importante para Planos de Saúde
+              </p>
+              <p className="text-[10px] text-primary/70 leading-relaxed font-medium">
+                Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
+              </p>
+              <div className="text-[9px] bg-white/40 p-3 rounded-xl border border-secondary/5 text-primary/60 leading-normal">
+                💡 <span className="font-bold">Dica:</span> Se você não tiver o encaminhamento, verifique no aplicativo do seu plano se existe a opção de <span className="font-bold underline">teleatendimento</span>. É um processo rápido que pode auxiliar você neste momento de decisão.
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </motion.div>
@@ -1236,14 +1292,14 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, sho
 
   return (
     <Layout activeScreen={Screen.CorpoClinico} onNavigate={onNavigate} settings={settings}>
-      <header id="topo-especialistas" className="section-padding bg-background pt-32">
-        <div className="max-w-7xl mx-auto text-center space-y-6">
+      <header id="topo-especialistas" className="section-padding bg-background pt-32 pb-12">
+        <div className="max-w-7xl mx-auto text-center px-6 space-y-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <span className="inline-block px-4 py-1.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-widest shadow-sm">
               Encontre o especialista certo
             </span>
-            <h1 className="text-5xl md:text-7xl font-extrabold text-primary tracking-tight mt-8">Especialistas</h1>
-            <p className="text-lg text-on-surface-variant font-medium max-w-2xl mx-auto mt-8 leading-relaxed">
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold text-primary tracking-tight mt-8">Especialistas</h1>
+            <p className="text-base md:text-lg text-on-surface-variant font-medium max-w-2xl mx-auto mt-6 leading-relaxed">
               Especialistas dedicados ao acolhimento singular e ético.
             </p>
           </motion.div>
@@ -1379,9 +1435,9 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
       </header>
 
       <section className="px-6 pb-20">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-start">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-8 lg:gap-12 items-start">
           {/* Direct Contact Card */}
-          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="bg-primary text-white p-12 md:p-20 rounded-[4rem] shadow-2xl relative overflow-hidden group">
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="bg-primary text-white p-8 sm:p-12 md:p-20 rounded-[3rem] sm:rounded-[4rem] shadow-2xl relative overflow-hidden group">
              <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-[100px] group-hover:scale-110 transition-transform duration-700"></div>
              <div className="relative z-10 space-y-8">
                 <h3 className="text-4xl font-bold tracking-tight">Atendimento <br/><span className="text-secondary italic">Via WhatsApp</span></h3>
@@ -1410,7 +1466,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
           </motion.div>
 
           {/* Form Card */}
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-white p-12 md:p-20 rounded-[4rem] border border-outline-variant/30 soft-shadow">
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-white p-8 sm:p-12 md:p-20 rounded-[3rem] sm:rounded-[4rem] border border-outline-variant/30 soft-shadow">
              <div className="space-y-12">
                 <div className="space-y-2">
                    <h3 className="text-3xl font-bold text-primary">Envie uma Mensagem</h3>
