@@ -1,100 +1,34 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Global Safety Net
+    // Basic helpers
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { 
+      return isSignedIn() && request.auth.token.email == 'scjorge1908@gmail.com';
+    }
+
+    // Allow public read on all collections
+    match /specialists/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /approaches/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /insurance_plans/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Default deny for everything else
     match /{document=**} {
       allow read, write: if false;
     }
-
-    // 2. Global Helpers
-    function isSignedIn() { return request.auth != null; }
-    function isAdmin() { 
-      return isSignedIn() && (
-        request.auth.token.email == 'scjorge1908@gmail.com' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
-    }
-    function isValidId(id) { 
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
-    }
-    function incoming() { return request.resource.data; }
-    function existing() { return resource.data; }
-
-    // 3. Entity Validations
-    function isValidSpecialist(data) {
-      return data.keys().hasAll(['id', 'name', 'spec', 'crp', 'img', 'desc', 'tags', 'ageGroups', 'shifts']) &&
-             data.id is string && data.id.size() <= 128 &&
-             data.name is string && data.name.size() <= 200 &&
-             data.spec is string && data.spec.size() <= 200 &&
-             data.crp is string && data.crp.size() <= 50 &&
-             data.img is string && data.img.size() <= 1000000 &&
-             data.desc is string && data.desc.size() <= 10000 &&
-             data.tags is list && data.tags.size() <= 20 &&
-             data.ageGroups is list && data.ageGroups.size() <= 20 &&
-             data.shifts is list && data.shifts.size() <= 5 &&
-             (!('color' in data) || (data.color is string && data.color.size() <= 50)) &&
-             (!('googleSheetsId' in data) || (data.googleSheetsId is string && data.googleSheetsId.size() <= 256)) &&
-             (!('googleSheetsTab' in data) || (data.googleSheetsTab is string && data.googleSheetsTab.size() <= 128)) &&
-             (!('googleAppsScriptUrl' in data) || (data.googleAppsScriptUrl is string && data.googleAppsScriptUrl.size() <= 1000)) &&
-             (!('attendedAges' in data) || (data.attendedAges is list && data.attendedAges.size() <= 150));
-    }
-
-    function isValidApproach(data) {
-      return data.keys().hasAll(['id', 'title', 'desc', 'details']) &&
-             data.id is string && data.id.size() <= 128 &&
-             data.title is string && data.title.size() <= 200 &&
-             data.desc is string && data.desc.size() <= 1000 &&
-             data.details is string && data.details.size() <= 20000;
-    }
-
-    function isValidInsurance(data) {
-      return data.keys().hasAll(['id', 'name', 'logo']) &&
-             data.id is string && data.id.size() <= 128 &&
-             data.name is string && data.name.size() <= 200 &&
-             data.logo is string && data.logo.size() <= 1000000;
-    }
-
-    function isValidSettings(data) {
-      return data.keys().hasAll(['clinicName', 'heroTitle', 'heroSubtitle', 'heroText']) &&
-             data.clinicName is string && data.clinicName.size() <= 100 &&
-             data.heroTitle is string && data.heroTitle.size() <= 200 &&
-             data.heroSubtitle is string && data.heroSubtitle.size() <= 500 &&
-             data.heroText is string && data.heroText.size() <= 2000 &&
-             (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() <= 1000000)) &&
-             (!('heroImageUrl' in data) || (data.heroImageUrl is string && data.heroImageUrl.size() <= 1000000)) &&
-             (!('seoTitle' in data) || (data.seoTitle is string && data.seoTitle.size() <= 200)) &&
-             (!('seoText' in data) || (data.seoText is string && data.seoText.size() <= 2000)) &&
-             (!('address' in data) || (data.address is string && data.address.size() <= 300)) &&
-             (!('footerRights' in data) || (data.footerRights is string && data.footerRights.size() <= 200));
-    }
-
-    // 4. Match Blocks
-    match /specialists/{specId} {
-      allow read: if true;
-      allow create: if isAdmin() && isValidId(specId) && isValidSpecialist(incoming());
-      allow update: if isAdmin() && isValidSpecialist(incoming());
-      allow delete: if isAdmin();
-    }
-
-    match /approaches/{appId} {
-      allow read: if true;
-      allow create: if isAdmin() && isValidId(appId) && isValidApproach(incoming());
-      allow update: if isAdmin() && isValidApproach(incoming());
-      allow delete: if isAdmin();
-    }
-
-    match /insurancePlans/{planId} {
-      allow read: if true;
-      allow create: if isAdmin() && isValidId(planId) && isValidInsurance(incoming());
-      allow update: if isAdmin() && isValidInsurance(incoming());
-      allow delete: if isAdmin();
-    }
-
-    match /settings/{docId} {
-      allow read: if true;
-      allow create: if isAdmin() && isValidId(docId) && isValidSettings(incoming());
-      allow update: if isAdmin() && isValidSettings(incoming());
-      allow delete: if isAdmin();
-    }
   }
 }
+

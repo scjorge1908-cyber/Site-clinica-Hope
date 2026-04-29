@@ -36,6 +36,20 @@ import { Instagram, Facebook, Linkedin as LinkedIn, Wifi, ConciergeBell, Volume2
 import Cropper from 'react-easy-crop';
 import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan } from './types';
 import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL } from './constants';
+import { 
+  getHomeSettings, 
+  saveHomeSettings, 
+  getSpecialists, 
+  saveSpecialists, 
+  getApproaches, 
+  saveApproaches, 
+  getInsurancePlans, 
+  saveInsurancePlans,
+  loginWithGoogle,
+  logout as firebaseLogout,
+  auth
+} from './lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 // Helper for Local Storage
 const LS_KEYS = {
@@ -94,49 +108,91 @@ const getCroppedImg = async (
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.Home);
   const [direction, setDirection] = useState<number>(0);
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => !!loadFromLS(LS_KEYS.AUTH, false));
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
-  // Data State with Local Storage initialization
-  const [homeSettings, setHomeSettings] = useState<HomeSettings>(() => loadFromLS(LS_KEYS.SETTINGS, DEFAULT_HOME_SETTINGS));
-  const [specialists, setSpecialists] = useState<Specialist[]>(() => loadFromLS(LS_KEYS.SPECIALISTS, DEFAULT_SPECIALISTS));
-  const [approaches, setApproaches] = useState<Approach[]>(() => loadFromLS(LS_KEYS.APPROACHES, DEFAULT_APPROACHES));
-  const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>(() => loadFromLS(LS_KEYS.INSURANCE, []));
+  // Data State
+  const [homeSettings, setHomeSettings] = useState<HomeSettings>(DEFAULT_HOME_SETTINGS);
+  const [specialists, setSpecialists] = useState<Specialist[]>(DEFAULT_SPECIALISTS);
+  const [approaches, setApproaches] = useState<Approach[]>(DEFAULT_APPROACHES);
+  const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>([]);
   
   const [scrollIntent, setScrollIntent] = useState(false);
 
-  // Persistence effects
+  // Initial Load from Firebase and Auth check
   useEffect(() => {
-    saveToLS(LS_KEYS.SETTINGS, homeSettings);
-  }, [homeSettings]);
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user && user.email === 'scjorge1908@gmail.com') {
+        setIsAdminUnlocked(true);
+      } else {
+        setIsAdminUnlocked(false);
+      }
+    });
 
-  useEffect(() => {
-    saveToLS(LS_KEYS.SPECIALISTS, specialists);
-  }, [specialists]);
+    async function loadData() {
+      try {
+        const results = await Promise.allSettled([
+          getHomeSettings(),
+          getSpecialists(),
+          getApproaches(),
+          getInsurancePlans()
+        ]);
 
-  useEffect(() => {
-    saveToLS(LS_KEYS.APPROACHES, approaches);
-  }, [approaches]);
+        if (results[0].status === 'fulfilled' && results[0].value) {
+          setHomeSettings(results[0].value as HomeSettings);
+        }
+        if (results[1].status === 'fulfilled' && results[1].value && results[1].value.length > 0) {
+          setSpecialists(results[1].value as Specialist[]);
+        }
+        if (results[2].status === 'fulfilled' && results[2].value && results[2].value.length > 0) {
+          setApproaches(results[2].value as Approach[]);
+        }
+        if (results[3].status === 'fulfilled' && results[3].value && results[3].value.length > 0) {
+          setInsurancePlans(results[3].value as InsurancePlan[]);
+        }
 
-  useEffect(() => {
-    saveToLS(LS_KEYS.INSURANCE, insurancePlans);
-  }, [insurancePlans]);
+        // Check for any rejected promises to log them specifically
+        results.forEach((res, index) => {
+          if (res.status === 'rejected') {
+            console.error(`Falha ao carregar coleção ${index}:`, res.reason);
+          }
+        });
+
+      } catch (error) {
+        console.error("Erro crítico ao carregar dados do Firebase:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadData();
+
+    return () => unsubscribeAuth();
+  }, []);
 
   const updateSettings = async (newSettings: HomeSettings) => {
     const { insurancePlans: _, ...cleanSettings } = newSettings;
     setHomeSettings(cleanSettings as HomeSettings);
+    await saveHomeSettings(cleanSettings);
   };
 
   const updateSpecialists = async (newSpecialists: Specialist[]) => {
     setSpecialists(newSpecialists);
+    await saveSpecialists(newSpecialists);
   };
 
   const updateApproaches = async (newApproaches: Approach[]) => {
     setApproaches(newApproaches);
+    await saveApproaches(newApproaches);
   };
 
-  const handleLogout = () => {
+  const updateInsurancePlans = async (newPlans: InsurancePlan[]) => {
+    setInsurancePlans(newPlans);
+    await saveInsurancePlans(newPlans);
+  };
+
+  const handleLogout = async () => {
+    await firebaseLogout();
     setIsAdminUnlocked(false);
-    saveToLS(LS_KEYS.AUTH, false);
     navigateTo(Screen.Home, 'push_back');
   };
 
@@ -167,6 +223,31 @@ export default function App() {
       opacity: dir === 0 ? 0 : 1,
     }),
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-6">
+        <motion.div 
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full shadow-lg shadow-primary/10"
+        />
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-primary font-bold text-lg tracking-tight">Clínica Hope</p>
+          <div className="flex gap-1">
+            {[0, 1, 2].map((i) => (
+              <motion.div
+                key={i}
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
+                className="w-1.5 h-1.5 bg-primary/40 rounded-full"
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative overflow-hidden min-h-screen">
@@ -222,7 +303,7 @@ export default function App() {
               onUpdateApproaches={updateApproaches}
               onLogout={handleLogout}
               insurancePlans={insurancePlans}
-              onUpdateInsurance={setInsurancePlans}
+              onUpdateInsurance={updateInsurancePlans}
             />
           )}
         </motion.div>
@@ -1555,17 +1636,28 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
 }
 
 function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: Screen, transition?: TransitionType) => void; onUnlock: () => void; settings: HomeSettings }) {
-  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password === '123456') {
-      onUnlock();
-      saveToLS(LS_KEYS.AUTH, true);
-      onNavigate(Screen.Admin, 'push');
-    } else {
-      setError('Senha incorreta. Tente novamente.');
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const user = await loginWithGoogle();
+      if (user.email === 'scjorge1908@gmail.com') {
+        onUnlock();
+        onNavigate(Screen.Admin, 'push');
+      } else {
+        setError('Acesso negado. Apenas o administrador scjorge1908@gmail.com pode acessar o painel.');
+      }
+    } catch (err: any) {
+      if (err.message?.includes('popup-closed-by-user')) {
+        setError('O login foi cancelado.');
+      } else {
+        setError('Houve um erro ao tentar fazer login com Google.');
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1585,30 +1677,24 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
             <p className="text-on-surface-variant font-medium">Acesso exclusivo para administradores da Clínica Hope.</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">Senha de Acesso</label>
-              <input 
-                type="password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary text-center tracking-widest" 
-                placeholder="••••••"
-                required
-              />
-            </div>
+          <div className="space-y-6">
+            <button 
+              onClick={handleGoogleLogin}
+              disabled={isLoading}
+              className="w-full py-5 bg-white border-2 border-outline-variant/30 text-primary rounded-2xl font-bold text-lg hover:bg-surface-container-low transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
+            >
+              <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
+              {isLoading ? 'Conectando...' : 'Entrar com Google'}
+            </button>
 
             {error && (
               <p className="text-red-500 text-sm font-bold text-center italic">{error}</p>
             )}
-
-            <button 
-              type="submit"
-              className="w-full py-5 bg-primary text-white rounded-2xl font-bold text-lg hover:shadow-xl transition-all active:scale-95"
-            >
-              Acessar Painel
-            </button>
-          </form>
+            
+            <p className="text-[10px] text-center text-on-surface-variant/40 uppercase font-black tracking-widest">
+              Apenas para scjorge1908@gmail.com
+            </p>
+          </div>
 
           <button 
             onClick={() => onNavigate(Screen.Home, 'push_back')}
