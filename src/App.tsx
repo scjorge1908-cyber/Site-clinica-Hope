@@ -364,7 +364,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
                 <Spa size={24} />
               )}
             </div>
-            <span className="text-xl font-bold tracking-tight text-primary">Clínica Hope</span>
+            <span className="text-xl font-bold tracking-tight text-primary">{settings.clinicName || 'Clínica Hope'}</span>
           </button>
           
           <nav className="hidden md:flex gap-10 items-center">
@@ -424,7 +424,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
                   <Spa size={18} />
                 )}
               </div>
-              <span className="font-bold text-primary text-xl tracking-tight">Clínica Hope</span>
+              <span className="font-bold text-primary text-xl tracking-tight">{settings?.clinicName || 'Clínica Hope'}</span>
             </div>
             <div className="flex flex-wrap gap-6 text-on-surface-variant text-sm font-medium">
               {navItems.map(item => (
@@ -455,8 +455,8 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             )}
           </div>
           <div className="md:text-right space-y-4">
-            <p className="text-on-surface-variant text-sm">© 2022 Clínica Hope. Todos os direitos reservados.</p>
-            <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/40">Pagani, Palhoça – SC</p>
+            <p className="text-on-surface-variant text-sm">{settings.footerRights || '© 2022 Clínica Hope. Todos os direitos reservados.'}</p>
+            <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/40">{settings.address || 'Pagani, Palhoça – SC'}</p>
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-6 mt-12 pt-8 border-t border-outline-variant/10">
@@ -505,7 +505,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
               {settings.heroSubtitle}
             </span>
             <h1 className="text-5xl md:text-7xl font-extrabold text-primary leading-[1.1] tracking-tight">
-              Clínica de Psicologia em Palhoça
+              {settings.heroTitle}
             </h1>
             <p className="text-lg md:text-xl text-on-surface-variant font-medium leading-relaxed max-w-lg">
               {settings.heroText}
@@ -793,10 +793,10 @@ function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSetti
               Psicologia em Palhoça
             </span>
             <h1 className="text-6xl md:text-8xl font-black text-primary leading-tight tracking-tighter">
-              Um ambiente pensado para o <span className="text-secondary">cuidado com você</span>
+              {settings.seoTitle || 'Um ambiente pensado para o cuidado com você'}
             </h1>
             <p className="text-xl text-on-surface-variant font-medium leading-relaxed max-w-xl">
-              Localizada no Pagani, a Clínica Hope oferece um espaço acolhedor, reservado e cuidadosamente preparado para atendimentos psicológicos, proporcionando conforto, privacidade e uma experiência tranquila desde a chegada.
+              {settings.seoText || 'Localizada no Pagani, a Clínica Hope oferece um espaço acolhedor, reservado e cuidadosamente preparado para atendimentos psicológicos, proporcionando conforto, privacidade e uma experiência tranquila desde a chegada.'}
             </p>
             <div className="flex flex-wrap gap-4">
                {[
@@ -820,11 +820,11 @@ function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSetti
           </motion.div>
           <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="relative">
              <div className="aspect-[4/5] rounded-[4rem] overflow-hidden soft-shadow border-4 border-white">
-                <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=2069" className="w-full h-full object-cover" alt="Clinica Interior" />
+                <img src={settings.heroImageUrl || "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=2069"} className="w-full h-full object-cover" alt="Clinica Interior" />
              </div>
              <div className="absolute -bottom-6 -right-6 bg-primary text-white p-8 rounded-[2.5rem] shadow-2xl space-y-2">
                 <p className="text-xs font-bold uppercase tracking-widest opacity-60">Endereço</p>
-                <p className="text-lg font-bold">Bairro Pagani, Palhoça/SC</p>
+                <p className="text-lg font-bold">{settings.address || 'Bairro Pagani, Palhoça/SC'}</p>
              </div>
           </motion.div>
         </div>
@@ -2018,6 +2018,64 @@ function AdminScreen({ onNavigate, settings, onUpdateSettings, specialists, onUp
         <div className="bg-white rounded-[2.5rem] modern-shadow border border-outline p-10">
           {activeTab === 'home' && (
             <div className="space-y-8">
+               <div className="pb-8 border-b border-outline">
+                <h2 className="text-2xl font-display font-black text-primary mb-6">Informações da Clínica</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-4">
+                    <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Nome da Clínica</label>
+                    <input 
+                      className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                      value={settings.clinicName}
+                      onChange={(e) => onUpdateSettings({ ...settings, clinicName: e.target.value })}
+                      placeholder="Ex: Clínica Hope"
+                    />
+                  </div>
+                  <div className="space-y-4">
+                    <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Endereço</label>
+                    <input 
+                      className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                      value={settings.address}
+                      onChange={(e) => onUpdateSettings({ ...settings, address: e.target.value })}
+                      placeholder="Ex: Bairro Pagani, Palhoça/SC"
+                    />
+                  </div>
+                </div>
+                <div className="mt-8 space-y-4">
+                  <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Direitos Autorais (Rodapé)</label>
+                  <input 
+                    className="w-full text-sm font-medium border-b-2 border-outline focus:border-primary outline-none py-2"
+                    value={settings.footerRights}
+                    onChange={(e) => onUpdateSettings({ ...settings, footerRights: e.target.value })}
+                    placeholder="Ex: © 2022 Clínica Hope. Todos os direitos reservados."
+                  />
+                </div>
+              </div>
+
+              <div className="pb-8 border-b border-outline">
+                <h2 className="text-2xl font-display font-black text-primary mb-6">Seção "A Clínica"</h2>
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Título da Seção SEO</label>
+                    <input 
+                      className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                      value={settings.seoTitle}
+                      onChange={(e) => onUpdateSettings({ ...settings, seoTitle: e.target.value })}
+                      placeholder="Ex: Um ambiente pensado para o cuidado com você"
+                    />
+                  </div>
+                  <div className="space-y-4">
+                    <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Texto Descritivo SEO</label>
+                    <textarea 
+                      className="w-full text-sm leading-relaxed border-b-2 border-outline focus:border-primary outline-none py-2 resize-none"
+                      rows={4}
+                      value={settings.seoText}
+                      onChange={(e) => onUpdateSettings({ ...settings, seoText: e.target.value })}
+                      placeholder="Descreva a clínica e o ambiente..."
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="pb-8 border-b border-outline">
                 <h2 className="text-2xl font-display font-black text-primary mb-6">Identidade Visual</h2>
                 <div className="flex items-center gap-8">

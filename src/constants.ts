@@ -3,11 +3,16 @@ import { Specialist, Approach, HomeSettings, AgeGroup, Shift } from './types';
 export const CLINICA_LOGO_URL = 'https://images.unsplash.com/photo-1628157588553-5eeea00af15c?auto=format&fit=crop&q=80&w=300';
 
 export const DEFAULT_HOME_SETTINGS: HomeSettings = {
+  clinicName: 'Clínica Hope',
   heroTitle: 'Clínica de Psicologia em Palhoça',
   heroSubtitle: 'Bem-vindo à Clínica Hope',
   heroText: 'Oferecemos um espaço seguro e acolhedor para o seu desenvolvimento emocional em Palhoça. Um convite ao reencontro com sua essência.',
   logoUrl: 'https://images.unsplash.com/photo-1628157588553-5eeea00af15c?auto=format&fit=crop&q=80&w=300',
   heroImageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBFcpZ0zvgTNyZBiSKYzxT2xDJXnMXz8_r7z7ESPg6e_68_XijjD01XLwMcR4NIA05ClFmB0kT-C0-PwXni2zx1bcmn4bIr-28JWlAPufxkF0aZlQ55B-Tbu-a2VbJ9rLbcWfzA9TsxaJ-1xfJh0YhXidLL6ToBR6EFw-xLNDp8F_kFz01dFqMEBM0bUMhA5fnLjyo_iG1Wn8cDTaHvpUc-kz1Sq-XRqlPEQKHhwbRhIO7g0xEfR21uFWZFDIEBlKz4nV_0dyHATEg',
+  seoTitle: 'Um ambiente pensado para o cuidado com você',
+  seoText: 'Localizada no Pagani, a Clínica Hope oferece um espaço acolhedor, reservado e cuidadosamente preparado para atendimentos psicológicos, proporcionando conforto, privacidade e uma experiência tranquila desde a chegada.',
+  address: 'Bairro Pagani, Palhoça/SC',
+  footerRights: '© 2022 Clínica Hope. Todos os direitos reservados.',
   insurancePlans: [
     { id: '1', name: 'Particular', logo: 'https://cdn-icons-png.flaticon.com/512/2854/2854580.png' },
     { id: '2', name: 'Unimed', logo: 'https://vagasprofissoes.com.br/wp-content/uploads/2019/12/Logo-Unimed.png' },

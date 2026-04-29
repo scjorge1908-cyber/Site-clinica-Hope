@@ -69,9 +69,14 @@
         "heroSubtitle": { "type": "string" },
         "heroText": { "type": "string" },
         "logoUrl": { "type": "string" },
-        "heroImageUrl": { "type": "string" }
+        "heroImageUrl": { "type": "string" },
+        "clinicName": { "type": "string" },
+        "seoTitle": { "type": "string" },
+        "seoText": { "type": "string" },
+        "address": { "type": "string" },
+        "footerRights": { "type": "string" }
       },
-      "required": ["heroTitle", "heroSubtitle", "heroText"]
+      "required": ["clinicName", "heroTitle", "heroSubtitle", "heroText"]
     }
   },
   "firestore": {

@@ -62,10 +62,15 @@ export interface InsurancePlan {
 }
 
 export interface HomeSettings {
+  clinicName: string;
   heroTitle: string;
   heroSubtitle: string;
   heroText: string;
   logoUrl?: string;
   heroImageUrl?: string;
   insurancePlans?: InsurancePlan[];
+  seoTitle?: string;
+  seoText?: string;
+  address?: string;
+  footerRights?: string;
 }
