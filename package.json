@@ -6,6 +6,8 @@
   "homepage": "https://clinicahopebrasil.com.br",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist",
     "build": "vite build",
     "preview": "vite preview"
   },
