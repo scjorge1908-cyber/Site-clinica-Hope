@@ -17,8 +17,14 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: 'dist',
-      assetsDir: 'assets'
+      outDir: 'Ativos',
+      rollupOptions: {
+        output: {
+          entryFileNames: `[name].js`,
+          chunkFileNames: `[name].js`,
+          assetFileNames: `[name].[ext]`
+        }
+      }
     },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
