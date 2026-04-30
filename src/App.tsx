@@ -2298,34 +2298,28 @@ function AdminScreen({
                                   id={`url-input-${s.id}`}
                                   className="p-3 pr-16 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
                                   value={s.googleAppsScriptUrl || ''} 
-                                  onChange={e => {
-                                    const newSpecs = [...specialists];
-                                    newSpecs[idx] = { ...s, googleAppsScriptUrl: e.target.value };
-                                    onUpdateSpecialists(newSpecs);
-                                  }} 
+                                  onChange={e => updateSpecialist(s.id, { googleAppsScriptUrl: e.target.value })} 
                                   placeholder="Deve terminar em /exec" 
                                 />
                                 {s.googleAppsScriptUrl && (
-                                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
                                     <button 
-                                      title="Editar (Focar)"
-                                      onClick={() => {
-                                        document.getElementById(`url-input-${s.id}`)?.focus();
-                                      }}
-                                      className="p-1.5 hover:bg-primary/10 text-primary/40 hover:text-primary rounded-lg transition-colors"
+                                      type="button"
+                                      title="Editar URL"
+                                      onClick={() => document.getElementById(`url-input-${s.id}`)?.focus()}
+                                      className="p-2 hover:bg-primary/10 text-primary/40 hover:text-primary rounded-lg transition-colors cursor-pointer"
                                     >
-                                      <Edit2 size={12} />
+                                      <Edit2 size={14} />
                                     </button>
                                     <button 
+                                      type="button"
                                       title="Excluir link"
                                       onClick={() => {
-                                        if (confirm("Deseja realmente excluir este link de integração?")) {
-                                          const newSpecs = [...specialists];
-                                          newSpecs[idx] = { ...s, googleAppsScriptUrl: '' };
-                                          onUpdateSpecialists(newSpecs);
+                                        if (confirm("Deseja realmente remover este link de integração?")) {
+                                          updateSpecialist(s.id, { googleAppsScriptUrl: '' });
                                         }
                                       }}
-                                      className="p-1.5 hover:bg-error/10 text-error rounded-lg transition-colors"
+                                      className="p-2 hover:bg-error/10 text-error/60 hover:text-error rounded-lg transition-colors cursor-pointer"
                                     >
                                       <Trash2 size={14} />
                                     </button>
@@ -2416,7 +2410,7 @@ function AdminScreen({
                             <p className="font-bold text-red-600">3. Selecione Tipo: App da Web.</p>
                             <p>4. Em "Executar como", selecione: <strong>Eu (seu-email@gmail.com)</strong>.</p>
                             <p>5. Em "Quem pode acessar", selecione: <strong>Qualquer pessoa (Anyone)</strong>.</p>
-                            <p className="bg-green-50 p-2 border-l-2 border-green-500">6. Clique em <strong>Implantar</strong> e <strong>Autorize o Acesso</strong> (clique em "Avançado" > "Acessar" se aparecer aviso de segurança).</p>
+                            <p className="bg-green-50 p-2 border-l-2 border-green-500">6. Clique em <strong>Implantar</strong> e <strong>Autorize o Acesso</strong> (clique em "Avançado" &gt; "Acessar" se aparecer aviso de segurança).</p>
                             <p>7. Copie a "URL do App da Web" gerada e cole aqui.</p>
                           </div>
                         </div>
