@@ -1009,35 +1009,51 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             throw new Error('A URL não termina em /exec. Verifique se você copiou o link de "App da Web" em vez do link da planilha.');
           }
 
-          const scriptUrl = baseUrl.includes('?') ? `${baseUrl}&mode=agenda` : `${baseUrl}?mode=agenda`;
+          const scriptUrl = baseUrl.includes('?') ? `${baseUrl}&action=getDadosDaAgenda` : `${baseUrl}?action=getDadosDaAgenda`;
           const url = `/api/proxy-sheet?url=${encodeURIComponent(scriptUrl)}`;
           
-          const response = await fetch(url).catch(() => {
-            throw new Error('Erro de conexão: O servidor não respondeu. Tente recarregar a página.');
-          });
-          
-          const contentType = response.headers.get("content-type");
-          const isJson = contentType && contentType.includes("application/json");
+          let data: any = null;
+          let appointments: any[] = [];
 
-          if (!response.ok) {
-            let errorMessage = `Erro ${response.status}`;
-            if (isJson) {
-              const errData = await response.json().catch(() => ({}));
-              errorMessage = errData.error || errorMessage;
+          try {
+            const response = await fetch(url).catch(() => null);
+            
+            if (response && response.ok) {
+              const result = await response.json();
+              data = result.data || result;
+              appointments = Array.isArray(data) ? data : (data?.data || []);
+            } else {
+              // Quick JSONP fallback for background sync too
+              const jsonpData = await new Promise<any>((resolve) => {
+                const callbackName = `bg_cb_${Date.now()}`;
+                const script = document.createElement('script');
+                script.src = `${scriptUrl}&callback=${callbackName}`;
+                (window as any)[callbackName] = (res: any) => {
+                  document.body.removeChild(script);
+                  delete (window as any)[callbackName];
+                  resolve(res);
+                };
+                setTimeout(() => {
+                  if ((window as any)[callbackName]) {
+                    document.body.removeChild(script);
+                    delete (window as any)[callbackName];
+                    resolve(null);
+                  }
+                }, 10000);
+                document.body.appendChild(script);
+              });
+              if (jsonpData) {
+                appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
+              }
             }
-            throw new Error(errorMessage);
-          }
-          
-          if (!isJson) {
-            throw new Error('Servidor retornou um formato inesperado. Verifique as configurações.');
+          } catch (e) {
+            console.error("Background sync error:", e);
           }
 
-          const result = await response.json();
-          const data = result.data || result; 
           const newSchedule: NonNullable<Specialist['schedule']> = {};
 
-          if (Array.isArray(data)) {
-            data.forEach((row: any) => {
+          if (Array.isArray(appointments) && appointments.length > 0) {
+            appointments.forEach((row: any) => {
               if (!row) return;
               
               const dayRaw = row.dia || row["Dia da Semana"] || row.Day;
@@ -2363,51 +2379,63 @@ function AdminScreen({
                                     alert('❌ ATENÇÃO: Sua URL não termina em /exec. Você provavelmente colou o link do rascunho ou da edição. No Google Scripts, vá em Implantar > Nova Implantação e copie a URL correta.');
                                   }
                                   try {
-                                    const scriptUrl = s.googleAppsScriptUrl.trim().includes('?') ? `${s.googleAppsScriptUrl.trim()}&mode=agenda` : `${s.googleAppsScriptUrl.trim()}?mode=agenda`;
+                                    const scriptUrl = s.googleAppsScriptUrl.trim().includes('?') ? `${s.googleAppsScriptUrl.trim()}&action=getDadosDaAgenda` : `${s.googleAppsScriptUrl.trim()}?action=getDadosDaAgenda`;
                                     const url = `/api/proxy-sheet?url=${encodeURIComponent(scriptUrl)}`;
                                     const res = await fetch(url);
                                     const contentType = res.headers.get("content-type");
                                     const isJson = contentType && contentType.includes("application/json");
 
                                     if (res.ok && isJson) {
-                                      const data = await res.json();
-                                      const scheduleData = data.data || data; 
+                                      const result = await res.json();
+                                      const scheduleData = result.data || result; 
                                       
-                                      if (Array.isArray(scheduleData)) {
-                                        // Check if the data has the expected structure (at least one item with day/time)
-                                        const sample = scheduleData[0];
-                                        const hasDay = sample && (sample.dia || sample["Dia da Semana"] || sample["day"]);
-                                        const hasTime = sample && (sample.horario || sample["Horário"] || sample["time"]);
-
-                                        if (hasDay || scheduleData.length === 0) {
-                                          alert('✅ CONECTADO!\nSua agenda foi vinculada e os horários livres já estão sendo sincronizados.');
-                                          updateSpecialist(s.id, { googleAppsScriptUrl: s.googleAppsScriptUrl.trim() });
-                                        } else {
-                                          alert('⚠️ FORMATO INESPERADO: O script respondeu, mas não encontramos os campos "dia" ou "horário" nos dados.\nVerifique se o seu script retorna os campos corretos.');
-                                        }
-                                      } else if (data.success === false) {
-                                        alert(`⚠️ O SCRIPT AVISOU: ${data.error || 'Erro na planilha.'}`);
+                                      if (Array.isArray(scheduleData) || (scheduleData && Array.isArray(scheduleData.data))) {
+                                        const appointments = Array.isArray(scheduleData) ? scheduleData : scheduleData.data;
+                                        const appointmentsCount = appointments.filter((r: any) => r && r.paciente && r.paciente !== '💚').length;
+                                        alert(`✅ CONECTADO!\nEncontramos ${appointmentsCount} agendamentos na sua planilha.\n\nClique em "Salvar Alterações" para CONFIRMAR.`);
+                                        updateSpecialist(s.id, { 
+                                          googleAppsScriptUrl: s.googleAppsScriptUrl.trim(),
+                                          schedule: {} 
+                                        });
                                       } else {
-                                        alert('⚠️ FORMATO INVÁLIDO: O script respondeu, mas não enviou uma lista de horários. Verifique a aba "Agenda".');
-                                      }
-                                    } else if (isJson) {
-                                      const errData = await res.json();
-                                      if (errData.code === 'HTML_INSTEAD_OF_JSON') {
-                                         alert(`❌ ERRO DE CÓDIGO (.gs):\n${errData.error}\n\nO Google enviou uma página em vez de dados. Verifique se você não tem dois "doGet" no seu script.`);
-                                      } else {
-                                         alert(`❌ ERRO: ${errData.error || 'Falha na conexão.'}`);
+                                        alert('⚠️ FORMATO INVÁLIDO: O script respondeu, mas não enviou uma lista de horários.');
                                       }
                                     } else {
-                                      const text = await res.text();
-                                      const snippet = text.substring(0, 200).replace(/</g, '&lt;');
-                                      if (text.includes('accounts.google.com') || text.includes('ServiceLogin') || text.includes('google-signin')) {
-                                        alert('❌ BLOQUEIO DO GOOGLE:\nVocê precisa autorizar o script ou mudar para "Qualquer pessoa".\n\n1. Abra o link do script no navegador\n2. Clique em "Revisar Permissões"\n3. Autorize o acesso.');
-                                      } else {
-                                        alert(`❌ RESPOSTA INVÁLIDA: O script retornou HTML em vez de JSON.\n\nInício da resposta: ${snippet}...\n\nIsso geralmente acontece se o link não for o de "Execução" (/exec) ou se o script encontrou um erro interno.`);
-                                      }
+                                      // JSONP Fallback
+                                      const jsonpCallbackName = `google_script_cb_${Date.now()}`;
+                                      const finalScriptUrl = `${scriptUrl}&callback=${jsonpCallbackName}`;
+                                      
+                                      const script = document.createElement('script');
+                                      script.src = finalScriptUrl;
+                                      
+                                      const timeout = setTimeout(() => {
+                                        alert('❌ TIME-OUT: O script não respondeu em 15 segundos via JSONP. Verifique se o link está correto.');
+                                        document.body.removeChild(script);
+                                        delete (window as any)[jsonpCallbackName];
+                                      }, 15000);
+
+                                      (window as any)[jsonpCallbackName] = async (jsonpData: any) => {
+                                        clearTimeout(timeout);
+                                        document.body.removeChild(script);
+                                        delete (window as any)[jsonpCallbackName];
+                                        
+                                        const scheduleData = jsonpData.data || jsonpData;
+                                        if (Array.isArray(scheduleData)) {
+                                          const appointmentsCount = scheduleData.filter((r: any) => r && r.paciente && r.paciente !== '💚').length;
+                                          alert(`✅ CONECTADO VIA JSONP!\n\nEncontramos ${appointmentsCount} agendamentos na sua planilha.\n\nClique em "Salvar Alterações" para CONFIRMAR.`);
+                                          updateSpecialist(s.id, { 
+                                            googleAppsScriptUrl: s.googleAppsScriptUrl.trim(),
+                                            schedule: {} 
+                                          });
+                                        } else {
+                                          alert('❌ ERRO NO FORMATO: Script retornou via JSONP mas sem dados válidos.');
+                                        }
+                                      };
+
+                                      document.body.appendChild(script);
                                     }
                                   } catch (e) {
-                                    alert('❌ ERRO CRÍTICO: Não foi possível alcançar o servidor. Tente recarregar.');
+                                    alert('❌ ERRO CRÍTICO: Falha na conexão.');
                                   }
                                 }}
                                 className="px-8 bg-secondary text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:shadow-lg transition-all active:scale-95 whitespace-nowrap h-[46px]"

@@ -20,14 +20,31 @@ async function startServer() {
     try {
       console.log(`Proxying request to: ${url}`);
       
-      const response = await fetch(url, {
+      // Manual redirect handling for Google Apps Script
+      // Using a very simple User-Agent that doesn't trigger "Cookie check" for browsers
+      let response = await fetch(url, {
         method: 'GET',
-        redirect: 'follow',
-        headers: {
-          'Accept': 'application/json, text/javascript, text/html, */*',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        redirect: 'manual',
+        headers: { 
+          'Accept': 'application/json',
+          'User-Agent': 'curl/7.68.0' 
         }
       });
+
+      // Follow redirect manually
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (location) {
+          console.log(`Manual redirect following to: ${location}`);
+          response = await fetch(location, {
+            method: 'GET',
+            redirect: 'follow',
+            headers: {
+               'User-Agent': 'curl/7.68.0'
+            }
+          });
+        }
+      }
 
       const responseStatus = response.status;
       const contentType = response.headers.get("content-type") || "";
