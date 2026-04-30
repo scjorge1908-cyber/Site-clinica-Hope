@@ -1242,10 +1242,13 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
 
   // Só mostra a agenda se houver dados e não houver erro de conexão (ou se for admin querendo ver o erro)
   const hasValidData = sheetSchedule && Object.keys(sheetSchedule).length > 0;
-  const showAgendaSection = hasValidData && !sheetError;
+  const hasAnySchedule = hasValidData || (spec.schedule && Object.keys(spec.schedule).length > 0);
+  const showAgendaSection = hasAnySchedule && !sheetError;
   
   // No modo Admin, mostramos a seção mesmo com erro para que o administrador saiba o que corrigir
-  const displayAgenda = isAdminUnlocked ? (hasValidData || sheetError || isLoadingSheet) : showAgendaSection;
+  const displayAgenda = isAdminUnlocked ? (hasAnySchedule || sheetError || isLoadingSheet) : showAgendaSection;
+
+  const isAgendaFull = !isLoadingSheet && !hasAnySchedule && (spec.googleAppsScriptUrl || spec.googleSheetsId);
 
   const canBook = selectedDay && selectedTime && selectedPlan;
 
@@ -1331,6 +1334,28 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                   <p className="text-[10px] text-red-600 font-bold uppercase mb-1">Erro Admin Sincronização:</p>
                   <p className="text-xs text-red-500 leading-tight mb-2">{sheetError}</p>
                   <p className="text-[9px] text-red-400 italic">Este aviso não aparece para o público. O público não vê a agenda se houver erro.</p>
+                </div>
+              ) : isAgendaFull ? (
+                <div className="pt-2 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                  <div className="flex flex-col items-center text-center space-y-4 py-6 px-6 bg-secondary/5 rounded-3xl border border-secondary/10">
+                    <div className="w-14 h-14 bg-secondary/10 flex items-center justify-center rounded-full text-secondary">
+                        <CalendarMonth size={28} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-black text-secondary text-xs uppercase tracking-widest">Agenda Completa</p>
+                      <p className="text-[11px] font-medium text-primary/70 leading-relaxed">No momento, esta especialista não possui horários disponíveis para agendamento imediato.</p>
+                    </div>
+                    
+                    <a 
+                      href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá, estou vindo pelo site e gostaria de ficar na fila de espera com o Psi ${spec.name}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
+                    >
+                      <Chat size={20} />
+                      Fila de Espera
+                    </a>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1442,18 +1467,20 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
         </div>
       )}
 
-          <button 
-            disabled={!canBook}
-            onClick={handleWhatsAppClick}
-            className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
-              !canBook 
-              ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
-              : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2'
-            }`}
-          >
-            <Chat size={18} />
-            {canBook ? 'Agendar via WhatsApp' : 'Selecione dia, hora e plano'}
-          </button>
+          {!isAgendaFull && (
+            <button 
+              disabled={!canBook}
+              onClick={handleWhatsAppClick}
+              className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
+                !canBook 
+                ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
+                : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2'
+              }`}
+            >
+              <Chat size={18} />
+              {canBook ? 'Agendar via WhatsApp' : 'Selecione dia, hora e plano'}
+            </button>
+          )}
 
           {/* Footer Disclaimer */}
           <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
