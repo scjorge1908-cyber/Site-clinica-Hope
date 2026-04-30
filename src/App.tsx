@@ -1126,7 +1126,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
           if (Object.keys(newSchedule).length > 0) {
             setSheetSchedule(newSchedule);
           } else {
-            setSheetError('Nenhum horário livre encontrado');
+            setSheetSchedule({}); // Sucesso, mas sem horários livres
           }
         } catch (error) {
           console.error('Erro ao buscar dados da planilha:', error);
@@ -1200,7 +1200,11 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
               newSchedule[day].periods[shift]?.sort();
             });
           });
-          if (Object.keys(newSchedule).length > 0) setSheetSchedule(newSchedule);
+          if (Object.keys(newSchedule).length > 0) {
+            setSheetSchedule(newSchedule);
+          } else {
+            setSheetSchedule({});
+          }
         } catch (error) {
           setSheetError(error instanceof Error ? error.message : 'Erro na integração');
         } finally {
@@ -1214,12 +1218,17 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
   // Só mostra a agenda se houver dados e não houver erro de conexão (ou se for admin querendo ver o erro)
   const hasValidData = sheetSchedule && Object.keys(sheetSchedule).length > 0;
   const hasAnySchedule = hasValidData || (spec.schedule && Object.keys(spec.schedule).length > 0);
-  const showAgendaSection = hasAnySchedule && !sheetError;
+  
+  // Sincronização concluída (seja com erro, com dados ou vazio)
+  const isSyncComplete = !isLoadingSheet && (sheetSchedule !== null || sheetError !== null);
+  
+  // Agenda está "cheia" quando tentamos buscar e não encontramos nada (e não há agenda manual)
+  const isAgendaFull = isSyncComplete && !hasAnySchedule && !sheetError && (spec.googleAppsScriptUrl || spec.googleSheetsId);
+
+  const showAgendaSection = (hasAnySchedule || isAgendaFull) && !sheetError;
   
   // No modo Admin, mostramos a seção mesmo com erro para que o administrador saiba o que corrigir
-  const displayAgenda = isAdminUnlocked ? (hasAnySchedule || sheetError || isLoadingSheet) : showAgendaSection;
-
-  const isAgendaFull = !isLoadingSheet && !hasAnySchedule && (spec.googleAppsScriptUrl || spec.googleSheetsId);
+  const displayAgenda = isAdminUnlocked ? (isSyncComplete || sheetError) : showAgendaSection;
 
   const canBook = selectedDay && selectedTime && selectedPlan;
 
@@ -1318,13 +1327,13 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                     </div>
                     
                     <a 
-                      href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá, estou vindo pelo site e gostaria de ficar na fila de espera com o Psi ${spec.name}`)}`}
+                      href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá estou vindo pelo site e gostaria de ficar na fila de espera com o Psi ${spec.name}`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
                     >
                       <Chat size={20} />
-                      Fila de Espera
+                      Lista de Espera
                     </a>
                   </div>
                 </div>
