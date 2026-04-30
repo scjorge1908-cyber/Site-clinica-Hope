@@ -1048,7 +1048,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                     delete (window as any)[callbackName];
                     resolve(null);
                   }
-                }, 8000);
+                }, 25000);
                 document.body.appendChild(script);
               });
 
@@ -2465,16 +2465,17 @@ function AdminScreen({
                                       script.src = scriptUrlJsonp;
                                       
                                       const timeout = setTimeout(() => {
-                                        alert('❌ TIME-OUT: O script não respondeu. Verifique se o link está publicado para "Qualquer pessoa".');
+                                        alert('❌ TIME-OUT: O script demorou muito para responder. Verifique se o link está publicado corretamente para "Qualquer pessoa" e se a planilha não está muito pesada.');
                                         document.body.removeChild(script);
                                         delete (window as any)[jsonpCallbackName];
-                                      }, 12000);
+                                      }, 30000);
 
                                       (window as any)[jsonpCallbackName] = async (jsonpData: any) => {
                                         clearTimeout(timeout);
                                         document.body.removeChild(script);
                                         delete (window as any)[jsonpCallbackName];
                                         
+                                        // O script retorna { success: true, data: [...] } ou [...]
                                         const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
                                         const count = appointments.filter((r: any) => r && r.paciente && r.paciente !== '💚').length;
                                         
