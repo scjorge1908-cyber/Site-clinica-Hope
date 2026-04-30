@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, getDocsFromServer, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -77,7 +77,7 @@ export async function getHomeSettings() {
   const path = `${COLLECTIONS.SETTINGS}/${DOCS.HOME_SETTINGS}`;
   try {
     const docRef = doc(db, COLLECTIONS.SETTINGS, DOCS.HOME_SETTINGS);
-    const docSnap = await getDoc(docRef);
+    const docSnap = await getDocFromServer(docRef);
     return docSnap.exists() ? docSnap.data() : null;
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, path);
@@ -97,7 +97,7 @@ export async function saveHomeSettings(settings: any) {
 export async function getSpecialists() {
   const path = COLLECTIONS.SPECIALISTS;
   try {
-    const querySnapshot = await getDocs(collection(db, COLLECTIONS.SPECIALISTS));
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.SPECIALISTS));
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
@@ -106,15 +106,16 @@ export async function getSpecialists() {
 
 export async function saveSpecialists(specialists: any[]) {
   try {
-    // 1. Get current IDs to detect deletions
-    const querySnapshot = await getDocs(collection(db, COLLECTIONS.SPECIALISTS));
+    // 1. Get current IDs from SERVER to detect deletions correctly
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.SPECIALISTS));
     const existingIds = querySnapshot.docs.map(doc => doc.id);
     const newIds = specialists.map(s => s.id);
     
     // 2. Delete removed docs
     const toDelete = existingIds.filter(id => !newIds.includes(id));
     for (const id of toDelete) {
-      await deleteDoc(doc(db, COLLECTIONS.SPECIALISTS, id));
+      const delRef = doc(db, COLLECTIONS.SPECIALISTS, id);
+      await deleteDoc(delRef);
     }
 
     // 3. Update/Create current docs
@@ -131,7 +132,7 @@ export async function saveSpecialists(specialists: any[]) {
 export async function getApproaches() {
   const path = COLLECTIONS.APPROACHES;
   try {
-    const querySnapshot = await getDocs(collection(db, COLLECTIONS.APPROACHES));
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.APPROACHES));
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
@@ -140,7 +141,7 @@ export async function getApproaches() {
 
 export async function saveApproaches(approaches: any[]) {
   try {
-    const querySnapshot = await getDocs(collection(db, COLLECTIONS.APPROACHES));
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.APPROACHES));
     const existingIds = querySnapshot.docs.map(doc => doc.id);
     const newIds = approaches.map(a => a.id);
     
@@ -162,7 +163,7 @@ export async function saveApproaches(approaches: any[]) {
 export async function getInsurancePlans() {
   const path = COLLECTIONS.INSURANCE;
   try {
-    const querySnapshot = await getDocs(collection(db, COLLECTIONS.INSURANCE));
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.INSURANCE));
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
@@ -171,7 +172,7 @@ export async function getInsurancePlans() {
 
 export async function saveInsurancePlans(plans: any[]) {
   try {
-    const querySnapshot = await getDocs(collection(db, COLLECTIONS.INSURANCE));
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.INSURANCE));
     const existingIds = querySnapshot.docs.map(doc => doc.id);
     const newIds = plans.map(p => p.id);
     

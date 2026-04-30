@@ -1943,6 +1943,7 @@ function AdminScreen({
   const [localApproaches, setLocalApproaches] = useState<Approach[]>(approaches);
   const [localInsurancePlans, setLocalInsurancePlans] = useState<InsurancePlan[]>(insurancePlans);
 
+  const [hasInitialized, setHasInitialized] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
 
@@ -1954,11 +1955,14 @@ function AdminScreen({
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
 
   useEffect(() => {
-    setLocalSettings(settings);
-    setLocalSpecialists(specialists);
-    setLocalApproaches(approaches);
-    setLocalInsurancePlans(insurancePlans);
-  }, [settings, specialists, approaches, insurancePlans]);
+    if (!hasInitialized && specialists.length > 0) {
+      setLocalSpecialists(specialists);
+      setLocalSettings(settings);
+      setLocalApproaches(approaches);
+      setLocalInsurancePlans(insurancePlans);
+      setHasInitialized(true);
+    }
+  }, [specialists, settings, approaches, insurancePlans, hasInitialized]);
 
   const addSpecialist = () => {
     const id = Date.now().toString();
@@ -2159,7 +2163,13 @@ function AdminScreen({
               onClick={() => {
                 const btn = document.getElementById('refresh-btn');
                 if (btn) btn.classList.add('animate-spin');
-                window.location.reload();
+                // Limpa cache e recarrega
+                if ('caches' in window) {
+                  caches.keys().then((names) => {
+                    for (let name of names) caches.delete(name);
+                  });
+                }
+                setTimeout(() => window.location.reload(), 500);
               }}
               id="refresh-btn"
               className="p-3 bg-secondary text-white rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
