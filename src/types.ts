@@ -39,6 +39,7 @@ export interface Specialist {
   googleSheetsId?: string;
   googleSheetsTab?: string;
   googleAppsScriptUrl?: string;
+  sheetSpecialistId?: string;
   schedule?: {
     [day: string]: {
       periods: {

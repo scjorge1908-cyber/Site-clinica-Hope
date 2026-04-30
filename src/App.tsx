@@ -513,7 +513,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
                       className="h-8 md:h-10 w-auto object-contain transition-all group-hover:scale-110" 
                       title={plan.name}
                     />
-                    <span className="text-[8px] font-black uppercase tracking-widest text-on-surface-variant/40 group-hover:text-primary transition-colors">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/70 group-hover:text-primary transition-colors">
                       {plan.name}
                     </span>
                   </div>
@@ -605,7 +605,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                         className="h-10 md:h-14 w-auto object-contain group-hover:scale-110 transition-transform duration-300" 
                         title={plan.name} 
                       />
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/30 group-hover:text-primary transition-colors text-center max-w-[100px]">
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/70 group-hover:text-primary transition-colors text-center max-w-[100px]">
                         {plan.name}
                       </span>
                     </div>
@@ -1066,6 +1066,22 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             appointments.forEach((row: any) => {
               if (!row) return;
               
+              // Filter by specialist (fuzzy match by name OR exact match by ID)
+              const psycNameRaw = (row.psicologa || row["Psicóloga"] || row.psicologo || row["Psicólogo"] || row.profissional || row["Profissional"])?.toString();
+              const rowIdRaw = (row.id || row["ID"] || row.codigo || row["Código"])?.toString();
+              
+              let isMatch = false;
+              if (spec.sheetSpecialistId && rowIdRaw) {
+                isMatch = rowIdRaw.trim() === spec.sheetSpecialistId.trim();
+              } else if (psycNameRaw) {
+                isMatch = psycNameRaw.toLowerCase().includes(spec.name.toLowerCase());
+              } else {
+                // If no specific professional column found, assume this sheet is dedicated to this specialist
+                isMatch = true;
+              }
+
+              if (!isMatch) return;
+
               const dayRaw = row.dia || row["Dia da Semana"] || row.Day;
               let time = row.horario || row["Horário"] || row.Time;
               const status = row.paciente || row["Paciente"] || row.Status;
@@ -1166,8 +1182,21 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             .map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim()))
             .filter(row => row.length >= 3 && row[0] !== '');
 
+          const headers = rows[0].map(h => h.toLowerCase());
+          const psycIdx = headers.findIndex(h => h.includes('psicologa') || h.includes('profissional') || h.includes('psicólogo'));
+          const idIdx = headers.findIndex(h => h === 'id' || h === 'codigo' || h === 'código');
+
           const newSchedule: NonNullable<Specialist['schedule']> = {};
           rows.slice(1).forEach(row => {
+            let isMatch = true;
+            if (spec.sheetSpecialistId && idIdx !== -1 && row[idIdx]) {
+                isMatch = row[idIdx].trim() === spec.sheetSpecialistId.trim();
+            } else if (psycIdx !== -1 && row[psycIdx]) {
+                isMatch = row[psycIdx].toLowerCase().includes(spec.name.toLowerCase());
+            }
+
+            if (!isMatch) return;
+
             const [dayRaw, time, status] = row;
             if (!dayRaw || !time) return;
             const dayMap: {[key: string]: string} = {
@@ -2341,46 +2370,59 @@ function AdminScreen({
                       <div className="md:col-span-2 space-y-4 pt-4 border-t border-outline">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2 md:col-span-2">
-                            <p className="text-[10px] uppercase font-bold tracking-widest text-primary">URL de Integração (App da Web do Google Scripts)</p>
-                            <div className="flex flex-col sm:flex-row gap-2">
-                              <div className="relative w-full group">
-                                <input 
-                                  id={`url-input-${s.id}`}
-                                  className="p-3 pr-24 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
-                                  value={s.googleAppsScriptUrl || ''} 
-                                  onChange={e => updateSpecialist(s.id, { googleAppsScriptUrl: e.target.value })} 
-                                  placeholder="https://script.google.com/macros/s/.../exec" 
-                                />
-                                {s.googleAppsScriptUrl && (
-                                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pointer-events-auto">
-                                    <button 
-                                      type="button"
-                                      title="Editar Texto"
-                                      onClick={() => {
-                                        const input = document.getElementById(`url-input-${s.id}`);
-                                        input?.focus();
-                                      }}
-                                      className="p-2 hover:bg-primary/10 text-primary/30 hover:text-primary rounded-lg transition-colors cursor-pointer"
-                                    >
-                                      <Edit2 size={14} />
-                                    </button>
-                                    <button 
-                                      type="button"
-                                      title="Limpar URL"
-                                      onClick={() => {
-                                        if (confirm("Deseja realmente remover o link de integração desta especialista?")) {
-                                          updateSpecialist(s.id, { googleAppsScriptUrl: '' });
-                                        }
-                                      }}
-                                      className="p-2 hover:bg-error/10 text-error/40 hover:text-error rounded-lg transition-colors cursor-pointer"
-                                    >
-                                      <Trash2 size={14} />
-                                    </button>
+                              <div className="flex flex-col sm:flex-row gap-4">
+                                <div className="flex-grow space-y-1">
+                                  <label className="text-[9px] font-black uppercase text-primary/40 ml-1">ID na Planilha (Opcional)</label>
+                                  <input 
+                                    className="p-3 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
+                                    value={s.sheetSpecialistId || ''} 
+                                    onChange={e => updateSpecialist(s.id, { sheetSpecialistId: e.target.value })} 
+                                    placeholder="Ex: 123" 
+                                  />
+                                </div>
+                                <div className="flex-[2] space-y-1">
+                                  <label className="text-[9px] font-black uppercase text-primary/40 ml-1">URL de Integração</label>
+                                  <div className="relative group">
+                                    <input 
+                                      id={`url-input-${s.id}`}
+                                      className="p-3 pr-24 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
+                                      value={s.googleAppsScriptUrl || ''} 
+                                      onChange={e => updateSpecialist(s.id, { googleAppsScriptUrl: e.target.value })} 
+                                      placeholder="https://script.google.com/macros/s/.../exec" 
+                                    />
+                                    {s.googleAppsScriptUrl && (
+                                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pointer-events-auto">
+                                        <button 
+                                          type="button"
+                                          title="Editar Texto"
+                                          onClick={() => {
+                                            const input = document.getElementById(`url-input-${s.id}`);
+                                            input?.focus();
+                                          }}
+                                          className="p-2 hover:bg-primary/10 text-primary/30 hover:text-primary rounded-lg transition-colors cursor-pointer"
+                                        >
+                                          <Edit2 size={14} />
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          title="Limpar URL"
+                                          onClick={() => {
+                                            if (confirm("Deseja realmente remover o link de integração desta especialista?")) {
+                                              updateSpecialist(s.id, { googleAppsScriptUrl: '' });
+                                            }
+                                          }}
+                                          className="p-2 hover:bg-error/10 text-error/40 hover:text-error rounded-lg transition-colors cursor-pointer"
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
-                                )}
+                                </div>
                               </div>
-                              <button 
-                                onClick={async () => {
+                              <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                                <button 
+                                  onClick={async () => {
                                   if (!s.googleAppsScriptUrl) {
                                     alert('Insira a URL antes de vincular.');
                                     return;
@@ -2446,8 +2488,7 @@ function AdminScreen({
                                       };
 
                                       document.body.appendChild(script);
-                                    }
-                                  } catch (e) {
+                                    } catch (e) {
                                     alert('❌ ERRO CRÍTICO: Falha na conexão com o Google.');
                                   }
                                 }}
@@ -2458,55 +2499,28 @@ function AdminScreen({
                             </div>
                           </div>
                         </div>
-                        <div className="bg-secondary/5 p-4 rounded-xl space-y-4">
-                          <p className="text-[10px] font-black uppercase text-secondary flex items-center gap-2">
-                            <Info size={14} /> Passo a Passo para Gerar a URL Correta:
-                          </p>
-                          <div className="text-[11px] text-primary/80 space-y-3">
-                            <p className="bg-red-50 p-3 border-l-4 border-red-500 text-[11px] text-red-800">
-                              <strong>🚨 SE VOCÊ VIU ERRO DE HTML:</strong> Isso significa que seu script está tentando abrir uma página em vez de enviar os dados. Certifique-se de que a última linha do seu código seja o <code>return ContentService...</code> igual ao exemplo abaixo.
-                            </p>
-                            <p>1. No Google Apps Script, apague tudo e cole este código EXATAMENTE:</p>
-                            <div className="relative">
-                              <pre className="p-3 bg-white border border-outline/20 rounded-lg overflow-x-auto text-[9px] font-mono whitespace-pre shadow-inner text-blue-800">
-{`function doGet(e) {
-  try {
-    // IMPORTANTE: O nome da aba na sua planilha deve ser "Agenda"
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Agenda");
-    if (!sheet) throw new Error("Aba 'Agenda' não encontrada.");
-    
-    var data = sheet.getDataRange().getValues();
-    var headers = data[0];
-    var result = [];
-    
-    for (var i = 1; i < data.length; i++) {
-        var obj = {};
-        for (var j = 0; j < headers.length; j++) {
-          obj[headers[j]] = data[i][j];
-        }
-        result.push(obj);
-    }
-    
-    // RETORNO OBRIGATÓRIO EM JSON (ContentService)
-    return ContentService.createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON);
-      
-  } catch(err) {
-    return ContentService.createTextOutput(JSON.stringify({error: err.message}))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}`}
-                              </pre>
+                        <div className="bg-secondary/5 p-5 rounded-2xl space-y-4">
+                          <div className="flex items-center gap-2 mb-2">
+                             <div className="w-6 h-6 bg-secondary text-white rounded-lg flex items-center justify-center">
+                                <Info size={14} />
+                             </div>
+                             <p className="text-[10px] font-black uppercase text-secondary tracking-widest">
+                                Instruções Rápidas de Integração
+                             </p>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[11px] text-primary/80">
+                            <div className="space-y-2 p-3 bg-white/50 rounded-xl">
+                              <p className="font-bold text-primary">1. No Google Scripts:</p>
+                              <p>Cole o código que retorna a função <code>doGet(e)</code> com <code>ContentService</code>.</p>
                             </div>
-                            <p className="bg-amber-50 p-2 border-l-2 border-amber-400 text-[10px]">
-                              <strong>⚠️ ERRO DE HTML:</strong> Se o sistema disser que recebeu HTML, verifique se você não está usando <code>HtmlService</code>. O código acima usa <code>ContentService</code>, que é o correto para dados.
-                            </p>
-                            <p>2. Clique em <strong>Implantar &gt; Nova Implantação</strong>.</p>
-                            <p className="font-bold text-red-600">3. Selecione Tipo: App da Web.</p>
-                            <p>4. Em "Executar como", selecione: <strong>Eu (seu-email@gmail.com)</strong>.</p>
-                            <p>5. Em "Quem pode acessar", selecione: <strong>Qualquer pessoa (Anyone)</strong>.</p>
-                            <p className="bg-green-50 p-2 border-l-2 border-green-500">6. Clique em <strong>Implantar</strong> e <strong>Autorize o Acesso</strong> (clique em "Avançado" &gt; "Acessar" se aparecer aviso de segurança).</p>
-                            <p>7. Copie a "URL do App da Web" gerada e cole aqui.</p>
+                            <div className="space-y-2 p-3 bg-white/50 rounded-xl">
+                              <p className="font-bold text-primary">2. Configuração de Acesso:</p>
+                              <p>Publique como <strong>App da Web</strong> para <strong>Qualquer pessoa (Anyone)</strong>.</p>
+                            </div>
+                            <div className="sm:col-span-2 p-3 bg-amber-50 rounded-xl border border-amber-100 italic">
+                               💡 Dica: O sistema buscará automaticamente as linhas que contêm o nome "<strong>{s.name}</strong>" ou o status "💚" (Livre).
+                            </div>
                           </div>
                         </div>
                         <p className="text-[10px] uppercase font-bold tracking-widest text-primary">Faixas Etárias</p>
