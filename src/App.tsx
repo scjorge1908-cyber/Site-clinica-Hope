@@ -55,7 +55,8 @@ import {
   CloudSun,
   Moon,
   Trash2,
-  Edit2
+  Edit2,
+  RefreshCw
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan } from './types';
@@ -71,9 +72,13 @@ import {
   saveInsurancePlans,
   loginWithGoogle,
   logout as firebaseLogout,
-  auth
+  auth,
+  COLLECTIONS,
+  DOCS
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { onSnapshot, collection, doc } from 'firebase/firestore';
+import { db } from './lib/firebase';
 
 // Helper for Local Storage
 const LS_KEYS = {
@@ -143,7 +148,7 @@ export default function App() {
   
   const [scrollIntent, setScrollIntent] = useState(false);
 
-  // Initial Load from Firebase and Auth check
+  // Initial Load from Firebase (Real-time Sync) and Auth check
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user && user.email === 'scjorge1908@gmail.com') {
@@ -153,44 +158,43 @@ export default function App() {
       }
     });
 
-    async function loadData() {
-      try {
-        const results = await Promise.allSettled([
-          getHomeSettings(),
-          getSpecialists(),
-          getApproaches(),
-          getInsurancePlans()
-        ]);
+    // Real-time listeners
+    const unsubHome = onSnapshot(doc(db, COLLECTIONS.SETTINGS, DOCS.HOME_SETTINGS), (doc) => {
+      if (doc.exists()) setHomeSettings(doc.data() as HomeSettings);
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Erro no listener de HomeSettings:", error);
+      setIsLoading(false);
+    });
 
-        if (results[0].status === 'fulfilled' && results[0].value) {
-          setHomeSettings(results[0].value as HomeSettings);
-        }
-        if (results[1].status === 'fulfilled' && results[1].value && results[1].value.length > 0) {
-          setSpecialists(results[1].value as Specialist[]);
-        }
-        if (results[2].status === 'fulfilled' && results[2].value && results[2].value.length > 0) {
-          setApproaches(results[2].value as Approach[]);
-        }
-        if (results[3].status === 'fulfilled' && results[3].value && results[3].value.length > 0) {
-          setInsurancePlans(results[3].value as InsurancePlan[]);
-        }
+    const unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
+      if (data.length > 0) setSpecialists(data);
+    }, (error) => {
+      console.error("Erro no listener de especialistas:", error);
+    });
 
-        // Check for any rejected promises to log them specifically
-        results.forEach((res, index) => {
-          if (res.status === 'rejected') {
-            console.error(`Falha ao carregar coleção ${index}:`, res.reason);
-          }
-        });
+    const unsubApproaches = onSnapshot(collection(db, COLLECTIONS.APPROACHES), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Approach[];
+      if (data.length > 0) setApproaches(data);
+    }, (error) => {
+      console.error("Erro no listener de abordagens:", error);
+    });
 
-      } catch (error) {
-        console.error("Erro crítico ao carregar dados do Firebase:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadData();
+    const unsubInsurance = onSnapshot(collection(db, COLLECTIONS.INSURANCE), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InsurancePlan[];
+      if (data.length > 0) setInsurancePlans(data);
+    }, (error) => {
+      console.error("Erro no listener de convênios:", error);
+    });
 
-    return () => unsubscribeAuth();
+    return () => {
+      unsubscribeAuth();
+      unsubHome();
+      unsubSpecs();
+      unsubApproaches();
+      unsubInsurance();
+    };
   }, []);
 
   const updateSettings = async (newSettings: HomeSettings) => {
@@ -553,9 +557,10 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
+    if (specialists.length === 0) return;
     const timer = setInterval(() => {
       setIndex((prev) => (prev + 1) % specialists.length);
-    }, 8000);
+    }, 3000); // 3 segundos conforme solicitado
     return () => clearInterval(timer);
   }, [specialists.length]);
 
@@ -1048,7 +1053,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                     delete (window as any)[callbackName];
                     resolve(null);
                   }
-                }, 25000);
+                }, 45000);
                 document.body.appendChild(script);
               });
 
@@ -1933,6 +1938,11 @@ function AdminScreen({
   insurancePlans,
   onUpdateInsurance
 }: AdminScreenProps) {
+  const [localSettings, setLocalSettings] = useState<HomeSettings>(settings);
+  const [localSpecialists, setLocalSpecialists] = useState<Specialist[]>(specialists);
+  const [localApproaches, setLocalApproaches] = useState<Approach[]>(approaches);
+  const [localInsurancePlans, setLocalInsurancePlans] = useState<InsurancePlan[]>(insurancePlans);
+
   const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
 
@@ -1942,6 +1952,13 @@ function AdminScreen({
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+
+  useEffect(() => {
+    setLocalSettings(settings);
+    setLocalSpecialists(specialists);
+    setLocalApproaches(approaches);
+    setLocalInsurancePlans(insurancePlans);
+  }, [settings, specialists, approaches, insurancePlans]);
 
   const addSpecialist = () => {
     const id = Date.now().toString();
@@ -1956,15 +1973,19 @@ function AdminScreen({
       ageGroups: [AgeGroup.Adults],
       shifts: [Shift.Morning]
     };
-    onUpdateSpecialists([...specialists, newSpec]);
+    setLocalSpecialists([...localSpecialists, newSpec]);
   };
 
-  const removeSpecialist = (id: string) => {
-    onUpdateSpecialists(specialists.filter(s => s.id !== id));
+  const removeSpecialist = async (id: string) => {
+    if (confirm("Deseja remover este especialista?")) {
+      const updated = localSpecialists.filter(s => s.id !== id);
+      setLocalSpecialists(updated);
+      await onUpdateSpecialists(updated);
+    }
   };
 
   const updateSpecialist = (id: string, updates: Partial<Specialist>) => {
-    onUpdateSpecialists(specialists.map(s => s.id === id ? { ...s, ...updates } : s));
+    setLocalSpecialists(localSpecialists.map(s => s.id === id ? { ...s, ...updates } : s));
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, specId: string) => {
@@ -1991,9 +2012,9 @@ function AdminScreen({
         if (croppingType === 'specialist' && croppingItemId) {
           updateSpecialist(croppingItemId, { img: croppedImg });
         } else if (croppingType === 'logo') {
-          onUpdateSettings({ ...settings, logoUrl: croppedImg });
+          setLocalSettings({ ...localSettings, logoUrl: croppedImg });
         } else if (croppingType === 'hero') {
-          onUpdateSettings({ ...settings, heroImageUrl: croppedImg });
+          setLocalSettings({ ...localSettings, heroImageUrl: croppedImg });
         } else if (croppingType === 'insurance' && croppingItemId) {
           updateInsurance(croppingItemId, { logo: croppedImg });
         }
@@ -2009,8 +2030,9 @@ function AdminScreen({
     }
   };
 
-  const handleSave = (id: string) => {
+  const handleSave = async (id: string) => {
     setSaveStatus({ ...saveStatus, [id]: true });
+    await onUpdateSpecialists(localSpecialists);
     setTimeout(() => {
       setSaveStatus(prev => ({ ...prev, [id]: false }));
     }, 2000);
@@ -2023,15 +2045,19 @@ function AdminScreen({
       name: 'Novo Plano',
       logo: 'https://cdn-icons-png.flaticon.com/512/2854/2854580.png'
     };
-    onUpdateInsurance([...insurancePlans, newInsurance]);
+    setLocalInsurancePlans([...localInsurancePlans, newInsurance]);
   };
 
   const updateInsurance = (id: string, updates: Partial<InsurancePlan>) => {
-    onUpdateInsurance(insurancePlans.map(p => p.id === id ? { ...p, ...updates } : p));
+    setLocalInsurancePlans(localInsurancePlans.map(p => p.id === id ? { ...p, ...updates } : p));
   };
 
-  const removeInsurance = (id: string) => {
-    onUpdateInsurance(insurancePlans.filter(p => p.id !== id));
+  const removeInsurance = async (id: string) => {
+    if (confirm("Deseja remover este convênio?")) {
+      const updated = localInsurancePlans.filter(p => p.id !== id);
+      setLocalInsurancePlans(updated);
+      await onUpdateInsurance(updated);
+    }
   };
 
   const handleInsuranceLogoChange = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
@@ -2046,8 +2072,9 @@ function AdminScreen({
     }
   };
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
     setSaveStatus({ ...saveStatus, settings: true });
+    await onUpdateSettings(localSettings);
     setTimeout(() => {
       setSaveStatus(prev => ({ ...prev, settings: false }));
     }, 2000);
@@ -2061,19 +2088,24 @@ function AdminScreen({
       desc: 'Breve descrição...',
       details: 'Detalhes completos sobre como funciona a terapia nesta abordagem.'
     };
-    onUpdateApproaches([...approaches, newApp]);
+    setLocalApproaches([...localApproaches, newApp]);
   };
 
-  const removeApproach = (id: string) => {
-    onUpdateApproaches(approaches.filter(a => a.id !== id));
+  const removeApproach = async (id: string) => {
+    if (confirm("Deseja remover esta abordagem?")) {
+      const updated = localApproaches.filter(a => a.id !== id);
+      setLocalApproaches(updated);
+      await onUpdateApproaches(updated);
+    }
   };
 
   const updateApproach = (id: string, updates: Partial<Approach>) => {
-    onUpdateApproaches(approaches.map(a => a.id === id ? { ...a, ...updates } : a));
+    setLocalApproaches(localApproaches.map(a => a.id === id ? { ...a, ...updates } : a));
   };
 
-  const handleSaveApproach = (id: string) => {
+  const handleSaveApproach = async (id: string) => {
     setSaveStatus({ ...saveStatus, [`approach-${id}`]: true });
+    await onUpdateApproaches(localApproaches);
     setTimeout(() => {
       setSaveStatus(prev => ({ ...prev, [`approach-${id}`]: false }));
     }, 2000);
@@ -2124,6 +2156,19 @@ function AdminScreen({
               ))}
             </div>
             <button 
+              onClick={() => {
+                const btn = document.getElementById('refresh-btn');
+                if (btn) btn.classList.add('animate-spin');
+                window.location.reload();
+              }}
+              id="refresh-btn"
+              className="p-3 bg-secondary text-white rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
+              title="Atualizar Site e Dados"
+            >
+              <RefreshCw size={20} />
+              <span className="text-[10px] font-black uppercase tracking-widest">Atualizar Site</span>
+            </button>
+            <button 
               onClick={onLogout}
               className="p-3 bg-white border border-outline rounded-2xl shadow-sm hover:bg-accent hover:text-white transition-all text-accent flex items-center gap-2"
               title="Sair"
@@ -2144,8 +2189,8 @@ function AdminScreen({
                     <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Nome da Clínica</label>
                     <input 
                       className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
-                      value={settings.clinicName}
-                      onChange={(e) => onUpdateSettings({ ...settings, clinicName: e.target.value })}
+                      value={localSettings.clinicName}
+                      onChange={(e) => setLocalSettings({ ...localSettings, clinicName: e.target.value })}
                       placeholder="Ex: Clínica Hope"
                     />
                   </div>
@@ -2153,8 +2198,8 @@ function AdminScreen({
                     <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Endereço</label>
                     <input 
                       className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
-                      value={settings.address}
-                      onChange={(e) => onUpdateSettings({ ...settings, address: e.target.value })}
+                      value={localSettings.address}
+                      onChange={(e) => setLocalSettings({ ...localSettings, address: e.target.value })}
                       placeholder="Ex: Bairro Pagani, Palhoça/SC"
                     />
                   </div>
@@ -2163,8 +2208,8 @@ function AdminScreen({
                   <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Direitos Autorais (Rodapé)</label>
                   <input 
                     className="w-full text-sm font-medium border-b-2 border-outline focus:border-primary outline-none py-2"
-                    value={settings.footerRights}
-                    onChange={(e) => onUpdateSettings({ ...settings, footerRights: e.target.value })}
+                    value={localSettings.footerRights}
+                    onChange={(e) => setLocalSettings({ ...localSettings, footerRights: e.target.value })}
                     placeholder="Ex: © 2022 Clínica Hope. Todos os direitos reservados."
                   />
                 </div>
@@ -2177,8 +2222,8 @@ function AdminScreen({
                     <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Título da Seção SEO</label>
                     <input 
                       className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
-                      value={settings.seoTitle}
-                      onChange={(e) => onUpdateSettings({ ...settings, seoTitle: e.target.value })}
+                      value={localSettings.seoTitle}
+                      onChange={(e) => setLocalSettings({ ...localSettings, seoTitle: e.target.value })}
                       placeholder="Ex: Um ambiente pensado para o cuidado com você"
                     />
                   </div>
@@ -2187,8 +2232,8 @@ function AdminScreen({
                     <textarea 
                       className="w-full text-sm leading-relaxed border-b-2 border-outline focus:border-primary outline-none py-2 resize-none"
                       rows={4}
-                      value={settings.seoText}
-                      onChange={(e) => onUpdateSettings({ ...settings, seoText: e.target.value })}
+                      value={localSettings.seoText}
+                      onChange={(e) => setLocalSettings({ ...localSettings, seoText: e.target.value })}
                       placeholder="Descreva a clínica e o ambiente..."
                     />
                   </div>
@@ -2199,8 +2244,8 @@ function AdminScreen({
                 <h2 className="text-2xl font-display font-black text-primary mb-6">Identidade Visual</h2>
                 <div className="flex items-center gap-8">
                   <div className="w-24 h-24 bg-surface border border-outline rounded-[2rem] overflow-hidden flex items-center justify-center text-primary relative group">
-                    {settings.logoUrl ? (
-                      <img src={settings.logoUrl} className="w-full h-full object-cover" alt="Logo Preview" />
+                    {localSettings.logoUrl ? (
+                      <img src={localSettings.logoUrl} className="w-full h-full object-cover" alt="Logo Preview" />
                     ) : (
                       <Spa size={40} />
                     )}
@@ -2213,7 +2258,7 @@ function AdminScreen({
                   <div className="space-y-2">
                     <p className="text-sm font-bold text-primary">Logo da Clínica</p>
                     <p className="text-xs text-on-surface-variant">Recomendado: Imagem quadrada (1:1) com fundo transparente ou sólido.</p>
-                    <button className="text-[10px] font-black uppercase text-accent tracking-widest hover:underline" onClick={() => onUpdateSettings({ ...settings, logoUrl: '' })}>Remover Logo</button>
+                    <button className="text-[10px] font-black uppercase text-accent tracking-widest hover:underline" onClick={() => setLocalSettings({ ...localSettings, logoUrl: '' })}>Remover Logo</button>
                   </div>
                 </div>
               </div>
@@ -2222,8 +2267,8 @@ function AdminScreen({
                 <h2 className="text-2xl font-display font-black text-primary mb-6">Imagem de Destaque (Hero)</h2>
                 <div className="flex items-center gap-8">
                   <div className="w-48 h-48 bg-surface border border-outline rounded-[2.5rem] overflow-hidden flex items-center justify-center text-primary relative group">
-                    {settings.heroImageUrl ? (
-                      <img src={settings.heroImageUrl} className="w-full h-full object-cover" alt="Hero Preview" />
+                    {localSettings.heroImageUrl ? (
+                      <img src={localSettings.heroImageUrl} className="w-full h-full object-cover" alt="Hero Preview" />
                     ) : (
                       <PhotoCamera size={40} />
                     )}
@@ -2236,7 +2281,7 @@ function AdminScreen({
                   <div className="space-y-2">
                     <p className="text-sm font-bold text-primary">Imagem Principal</p>
                     <p className="text-xs text-on-surface-variant max-w-sm">Esta imagem aparece na vitrine principal do seu site. Escolha algo que represente a Clínica Hope.</p>
-                    <button className="text-[10px] font-black uppercase text-accent tracking-widest hover:underline" onClick={() => onUpdateSettings({ ...settings, heroImageUrl: '' })}>Remover Imagem</button>
+                    <button className="text-[10px] font-black uppercase text-accent tracking-widest hover:underline" onClick={() => setLocalSettings({ ...localSettings, heroImageUrl: '' })}>Remover Imagem</button>
                   </div>
                 </div>
               </div>
@@ -2246,16 +2291,16 @@ function AdminScreen({
                   <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Título Principal</label>
                   <input 
                     className="w-full text-2xl font-display font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
-                    value={settings.heroTitle}
-                    onChange={(e) => onUpdateSettings({ ...settings, heroTitle: e.target.value })}
+                    value={localSettings.heroTitle}
+                    onChange={(e) => setLocalSettings({ ...localSettings, heroTitle: e.target.value })}
                   />
                 </div>
                 <div className="space-y-4">
                   <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Subtítulo</label>
                   <input 
                     className="w-full text-2xl font-display font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
-                    value={settings.heroSubtitle}
-                    onChange={(e) => onUpdateSettings({ ...settings, heroSubtitle: e.target.value })}
+                    value={localSettings.heroSubtitle}
+                    onChange={(e) => setLocalSettings({ ...localSettings, heroSubtitle: e.target.value })}
                   />
                 </div>
               </div>
@@ -2264,8 +2309,8 @@ function AdminScreen({
                 <textarea 
                   className="w-full text-lg leading-relaxed border-b-2 border-outline focus:border-primary outline-none py-2 resize-none"
                   rows={3}
-                  value={settings.heroText}
-                  onChange={(e) => onUpdateSettings({ ...settings, heroText: e.target.value })}
+                  value={localSettings.heroText}
+                  onChange={(e) => setLocalSettings({ ...localSettings, heroText: e.target.value })}
                 />
               </div>
 
@@ -2281,7 +2326,7 @@ function AdminScreen({
                 </div>
                 <p className="text-on-surface-variant text-sm mb-8">Estes convênios aparecerão para todos os profissionais do corpo clínico.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {(settings.insurancePlans || []).map(plan => (
+                  {(localSettings.insurancePlans || []).map(plan => (
                     <div key={plan.id} className="p-6 border border-outline rounded-3xl bg-surface/30 group relative">
                       <button 
                         onClick={() => removeInsurance(plan.id)}
@@ -2331,12 +2376,12 @@ function AdminScreen({
                 </button>
               </div>
               <div className="grid grid-cols-1 gap-8">
-                {specialists.map((s, idx) => (
+                {localSpecialists.map((s, idx) => (
                   <div key={s.id} className="p-8 border border-outline rounded-[2rem] flex flex-col md:flex-row gap-8 items-start relative group">
                     <button 
                       onClick={() => {
                         if (confirm(`Remover ${s.name}?`)) {
-                          onUpdateSpecialists(specialists.filter(spec => spec.id !== s.id));
+                          removeSpecialist(s.id);
                         }
                       }}
                       className="absolute top-4 right-4 p-2 text-accent bg-accent/5 hover:bg-accent hover:text-white rounded-full transition-all opacity-0 group-hover:opacity-100 shadow-sm"
@@ -2375,153 +2420,128 @@ function AdminScreen({
                       </div>
                       
                       <div className="md:col-span-2 space-y-4 pt-4 border-t border-outline">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2 md:col-span-2">
-                              <div className="flex flex-col sm:flex-row gap-4">
-                                <div className="flex-grow space-y-1">
-                                  <label className="text-[9px] font-black uppercase text-primary/40 ml-1">URL de Integração</label>
-                                  <div className="relative group">
-                                    <input 
-                                      id={`url-input-${s.id}`}
-                                      className="p-3 pr-24 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
-                                      value={s.googleAppsScriptUrl || ''} 
-                                      onChange={e => updateSpecialist(s.id, { googleAppsScriptUrl: e.target.value })} 
-                                      placeholder="https://script.google.com/macros/s/.../exec" 
-                                    />
-                                    {s.googleAppsScriptUrl && (
-                                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pointer-events-auto">
-                                        <button 
-                                          type="button"
-                                          title="Editar Texto"
-                                          onClick={() => {
-                                            const input = document.getElementById(`url-input-${s.id}`);
-                                            input?.focus();
-                                          }}
-                                          className="p-2 hover:bg-primary/10 text-primary/30 hover:text-primary rounded-lg transition-colors cursor-pointer"
-                                        >
-                                          <Edit2 size={14} />
-                                        </button>
-                                        <button 
-                                          type="button"
-                                          title="Limpar URL"
-                                          onClick={() => {
-                                            if (confirm("Deseja realmente remover o link de integração desta especialista?")) {
-                                              updateSpecialist(s.id, { googleAppsScriptUrl: '' });
-                                            }
-                                          }}
-                                          className="p-2 hover:bg-error/10 text-error/40 hover:text-error rounded-lg transition-colors cursor-pointer"
-                                        >
-                                          <Trash2 size={14} />
-                                        </button>
-                                      </div>
-                                    )}
+                         <p className="text-[10px] font-black uppercase text-secondary/60 tracking-widest ml-1">Integração com Agenda Online</p>
+                         <div className="flex flex-col sm:flex-row gap-4 items-end">
+                            <div className="flex-grow space-y-1">
+                              <label className="text-[9px] font-black uppercase text-primary/40 ml-1">URL de Integração</label>
+                              <div className="relative group">
+                                <input 
+                                  id={`url-input-${s.id}`}
+                                  className="p-3 pr-24 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
+                                  value={s.googleAppsScriptUrl || ''} 
+                                  onChange={e => updateSpecialist(s.id, { googleAppsScriptUrl: e.target.value })} 
+                                  placeholder="https://script.google.com/macros/s/.../exec" 
+                                />
+                                {s.googleAppsScriptUrl && (
+                                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pointer-events-auto">
+                                    <button 
+                                      type="button"
+                                      title="Limpar URL"
+                                      onClick={() => {
+                                        if (confirm("Deseja realmente remover o link de integração desta especialista?")) {
+                                          updateSpecialist(s.id, { googleAppsScriptUrl: '', schedule: undefined });
+                                        }
+                                      }}
+                                      className="p-2 hover:bg-error/10 text-error/40 hover:text-error rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
                                   </div>
-                                </div>
+                                )}
                               </div>
-                              <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                                <button 
-                                  onClick={async () => {
-                                  if (!s.googleAppsScriptUrl) {
-                                    alert('Insira a URL antes de vincular.');
-                                    return;
-                                  }
-                                  if (!s.googleAppsScriptUrl.trim().endsWith('/exec')) {
-                                    alert('❌ ATENÇÃO: Sua URL não termina em /exec. Você provavelmente colou o link do rascunho ou da edição. No Google Scripts, vá em Implantar > Nova Implantação e copie a URL correta.');
-                                  }
-                                  try {
-                                    const scriptUrlDirect = s.googleAppsScriptUrl.trim().includes('?') 
-                                      ? `${s.googleAppsScriptUrl.trim()}&mode=agenda` 
-                                      : `${s.googleAppsScriptUrl.trim()}?mode=agenda`;
-                                    
-                                    const url = `/api/proxy-sheet?url=${encodeURIComponent(scriptUrlDirect)}`;
-                                    const res = await fetch(url);
-                                    const contentType = res.headers.get("content-type");
-                                    const isJson = contentType && contentType.includes("application/json");
-
-                                    if (res.ok && isJson) {
-                                      try {
-                                        const scheduleData = await res.json();
-                                        const appointments = Array.isArray(scheduleData) ? scheduleData : (scheduleData.data || []);
-                                        const appointmentsCount = appointments.filter((r: any) => r && r.paciente && r.paciente !== '💚').length;
-                                        
-                                        alert(`✅ CONECTADO!\nEncontramos ${appointmentsCount} agendamentos na sua planilha.\n\nClique em "Salvar Alterações" no rodapé para CONFIRMAR.`);
-                                        updateSpecialist(s.id, { 
-                                          googleAppsScriptUrl: s.googleAppsScriptUrl.trim(),
-                                          schedule: {} 
-                                        });
-                                        return; // Sucesso
-                                      } catch (e) {
-                                        console.warn("JSON parse failed, switching to JSONP");
-                                      }
-                                    }
-                                    
-                                    // Fallback para JSONP se houver bloqueio de Cookies (HTML retornado) ou erro
-                                    const jsonpCallbackName = `google_script_cb_${Date.now()}`;
-                                      const scriptUrlJsonp = s.googleAppsScriptUrl.trim().includes('?') 
-                                        ? `${s.googleAppsScriptUrl.trim()}&action=getDadosDaAgenda&callback=${jsonpCallbackName}` 
-                                        : `${s.googleAppsScriptUrl.trim()}?action=getDadosDaAgenda&callback=${jsonpCallbackName}`;
-                                      
-                                      const script = document.createElement('script');
-                                      script.src = scriptUrlJsonp;
-                                      
-                                      const timeout = setTimeout(() => {
-                                        alert('❌ TIME-OUT: O script demorou muito para responder. Verifique se o link está publicado corretamente para "Qualquer pessoa" e se a planilha não está muito pesada.');
-                                        document.body.removeChild(script);
-                                        delete (window as any)[jsonpCallbackName];
-                                      }, 30000);
-
-                                      (window as any)[jsonpCallbackName] = async (jsonpData: any) => {
-                                        clearTimeout(timeout);
-                                        document.body.removeChild(script);
-                                        delete (window as any)[jsonpCallbackName];
-                                        
-                                        // O script retorna { success: true, data: [...] } ou [...]
-                                        const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
-                                        const count = appointments.filter((r: any) => r && r.paciente && r.paciente !== '💚').length;
-                                        
-                                        alert(`✅ CONECTADO (Via Fallback)!\nEncontramos ${count} agendamentos.\n\nClique em "Salvar Alterações" para CONFIRMAR.`);
-                                        updateSpecialist(s.id, { 
-                                          googleAppsScriptUrl: s.googleAppsScriptUrl.trim(),
-                                          schedule: {} 
-                                        });
-                                      };
-
-                                      document.body.appendChild(script);
-                                    } catch (e) {
-                                    alert('❌ ERRO CRÍTICO: Falha na conexão com o Google.');
-                                  }
-                                }}
-                                className="px-8 bg-secondary text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:shadow-lg transition-all active:scale-95 whitespace-nowrap h-[46px]"
-                              >
-                                Vincular Agenda
-                              </button>
                             </div>
-                          </div>
-                        </div>
-                        <div className="bg-secondary/5 p-5 rounded-2xl space-y-4">
-                          <div className="flex items-center gap-2 mb-2">
-                             <div className="w-6 h-6 bg-secondary text-white rounded-lg flex items-center justify-center">
-                                <Info size={14} />
+                            <button 
+                              onClick={async () => {
+                                if (!s.googleAppsScriptUrl) {
+                                  alert('Insira a URL antes de vincular.');
+                                  return;
+                                }
+                                if (!s.googleAppsScriptUrl.trim().endsWith('/exec')) {
+                                  alert('❌ ATENÇÃO: Sua URL não termina em /exec. Você provavelmente colou o link do rascunho ou da edição. No Google Scripts, vá em Implantar > Nova Implantação e copie a URL correta.');
+                                }
+                                try {
+                                  const jsonpCallbackName = `google_script_cb_${Date.now()}`;
+                                  const scriptUrlJsonp = s.googleAppsScriptUrl.trim().includes('?') 
+                                    ? `${s.googleAppsScriptUrl.trim()}&action=getDadosDaAgenda&callback=${jsonpCallbackName}` 
+                                    : `${s.googleAppsScriptUrl.trim()}?action=getDadosDaAgenda&callback=${jsonpCallbackName}`;
+                                  
+                                  const script = document.createElement('script');
+                                  script.src = scriptUrlJsonp;
+                                  
+                                  const timeout = setTimeout(() => {
+                                    alert('❌ TIME-OUT: O Google Script demorou mais de 45 segundos para responder.\n\nISSO GERALMENTE ACONTECE POR:\n1. Link errado.\n2. Não foi publicado para "Qualquer pessoa".\n3. Planilha lenta.');
+                                    document.body.removeChild(script);
+                                    delete (window as any)[jsonpCallbackName];
+                                  }, 45000);
+
+                                  (window as any)[jsonpCallbackName] = async (jsonpData: any) => {
+                                    clearTimeout(timeout);
+                                    document.body.removeChild(script);
+                                    delete (window as any)[jsonpCallbackName];
+                                    
+                                    const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
+                                    const count = appointments.filter((r: any) => r && r.paciente && r.paciente !== '💚').length;
+                                    
+                                    alert(`✅ CONECTADO!\nEncontramos ${count} agendamentos.\n\nAgora clique em "Salvar Informações" no final para confirmar.`);
+                                    updateSpecialist(s.id, { 
+                                      googleAppsScriptUrl: s.googleAppsScriptUrl.trim(),
+                                      schedule: {} 
+                                    });
+                                  };
+
+                                  document.body.appendChild(script);
+                                } catch (e) {
+                                  alert('❌ ERRO CRÍTICO: Falha na conexão.');
+                                }
+                              }}
+                              className="px-8 bg-secondary text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:shadow-lg transition-all active:scale-95 whitespace-nowrap h-[46px]"
+                            >
+                              Vincular Agenda
+                            </button>
+                         </div>
+
+                         <div className="bg-secondary/5 p-5 rounded-2xl space-y-4">
+                           <div className="flex items-center gap-2 mb-2">
+                              <div className="w-6 h-6 bg-secondary text-white rounded-lg flex items-center justify-center">
+                                 <Info size={14} />
+                              </div>
+                              <p className="text-[10px] font-black uppercase text-secondary tracking-widest">
+                                 Instruções Rápidas de Integração
+                              </p>
+                           </div>
+                           
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[11px] text-primary/80">
+                             <div className="space-y-2 p-4 bg-white/50 rounded-xl border border-outline/30">
+                               <p className="font-bold text-primary flex items-center gap-2">
+                                 <span className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-[8px]">1</span>
+                                 No Google Scripts:
+                               </p>
+                               <p>Salve o código `.gs` e vá em <strong>Implantar &gt; Nova Implantação</strong>.</p>
                              </div>
-                             <p className="text-[10px] font-black uppercase text-secondary tracking-widest">
-                                Instruções Rápidas de Integração
-                             </p>
-                          </div>
-                          
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[11px] text-primary/80">
-                            <div className="space-y-2 p-3 bg-white/50 rounded-xl">
-                              <p className="font-bold text-primary">1. No Google Scripts:</p>
-                              <p>Cole o código que retorna a função <code>doGet(e)</code> com <code>ContentService</code>.</p>
-                            </div>
-                            <div className="space-y-2 p-3 bg-white/50 rounded-xl">
-                              <p className="font-bold text-primary">2. Configuração de Acesso:</p>
-                              <p>Publique como <strong>App da Web</strong> para <strong>Qualquer pessoa (Anyone)</strong>.</p>
-                            </div>
-                            <div className="sm:col-span-2 p-3 bg-amber-50 rounded-xl border border-amber-100 italic">
-                               💡 Dica: O sistema buscará automaticamente as linhas que contêm o status "💚" (Livre). Cada especialista deve ter sua própria URL dedicada.
-                            </div>
-                          </div>
-                        </div>
+                             <div className="space-y-2 p-4 bg-white/50 rounded-xl border border-outline/30">
+                               <p className="font-bold text-primary flex items-center gap-2">
+                                 <span className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-[8px]">2</span>
+                                 Configuração de Acesso:
+                               </p>
+                               <p>Tipo <strong>"App da Web"</strong> e mudar para <strong>"Qualquer pessoa"</strong>.</p>
+                             </div>
+                             <div className="sm:col-span-2 p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-4">
+                                <div className="text-amber-600 shrink-0">
+                                   <Info size={20} />
+                                </div>
+                                <div className="space-y-1">
+                                   <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">Dica de Ouro</p>
+                                   <p className="text-[11px] text-amber-700 leading-relaxed">
+                                     O link correto deve terminar em <strong>/exec</strong>.
+                                   </p>
+                                </div>
+                             </div>
+                           </div>
+                           <div className="p-3 bg-white/50 rounded-xl border border-outline/10 italic text-[10px] text-primary/60">
+                             💡 Dica: O sistema buscará automaticamente as linhas que contêm o status "💚" (Livre).
+                           </div>
+                         </div>
+
                         <p className="text-[10px] uppercase font-bold tracking-widest text-primary">Faixas Etárias</p>
                         <div className="flex flex-wrap gap-2">
                           {Object.values(AgeGroup).map(age => (
@@ -2554,7 +2574,7 @@ function AdminScreen({
                           ))}
                         </div>
                         
-                        {!s.googleSheetsId && (
+                        {!s.googleAppsScriptUrl && (
                           <>
                             <p className="text-[10px] uppercase font-bold tracking-widest text-primary pt-2">Períodos de Atendimento</p>
                             <div className="flex flex-wrap gap-2">
@@ -2574,7 +2594,7 @@ function AdminScreen({
                           </>
                         )}
 
-                        {s.googleSheetsId ? (
+                        {s.googleAppsScriptUrl ? (
                            <div className="pt-6 border-t border-outline">
                               <div className="p-8 bg-green-50/50 border border-green-100 rounded-3xl text-center space-y-3">
                                 <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto shadow-sm">
@@ -2585,7 +2605,7 @@ function AdminScreen({
                                   Esta agenda está sendo sincronizada com o Google Sheets. Os horários marcados com 💚 são exibidos automaticamente para os pacientes.
                                 </p>
                                 <button 
-                                  onClick={() => updateSpecialist(s.id, { googleSheetsId: '' })}
+                                  onClick={() => updateSpecialist(s.id, { googleAppsScriptUrl: '' })}
                                   className="text-[10px] font-black uppercase text-red-500 hover:underline pt-2"
                                 >
                                   Desativar Integração e Usar Manual
@@ -2696,7 +2716,7 @@ function AdminScreen({
                 </button>
               </div>
               <div className="grid grid-cols-1 gap-8">
-                {approaches.map(a => (
+                {localApproaches.map(a => (
                   <div key={a.id} className="p-8 border border-outline rounded-[2rem] space-y-6">
                     <div className="space-y-6 flex-grow">
                       <input className="w-full text-xl font-bold p-2 border-b border-outline" value={a.title} onChange={e => updateApproach(a.id, { title: e.target.value })} placeholder="Título" />
