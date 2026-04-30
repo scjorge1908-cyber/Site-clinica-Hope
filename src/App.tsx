@@ -506,13 +506,17 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
               <div className="flex flex-wrap gap-6 pt-6 border-t border-outline-variant/20">
                 {settings.insurancePlans.map(plan => (
-                  <img 
-                    key={plan.id} 
-                    src={plan.logo} 
-                    alt={plan.name} 
-                    className="h-10 md:h-14 w-auto object-contain transition-all hover:scale-110" 
-                    title={plan.name}
-                  />
+                  <div key={plan.id} className="flex flex-col items-center gap-1 group">
+                    <img 
+                      src={plan.logo} 
+                      alt={plan.name} 
+                      className="h-8 md:h-10 w-auto object-contain transition-all group-hover:scale-110" 
+                      title={plan.name}
+                    />
+                    <span className="text-[8px] font-black uppercase tracking-widest text-on-surface-variant/40 group-hover:text-primary transition-colors">
+                      {plan.name}
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
@@ -589,12 +593,22 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
               </button>
             </div>
 
-            {settings.insurancePlans && settings.insurancePlans.length > 0 && (
+            {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
               <div className="pt-12 border-t border-outline-variant/30">
                 <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-on-surface-variant/50 mb-6 font-mono">Convênios que aceitamos</p>
-                <div className="flex flex-wrap gap-x-12 gap-y-6 items-center transition-all duration-500">
+                <div className="flex flex-wrap gap-x-12 gap-y-10 items-end transition-all duration-500">
                   {settings.insurancePlans.map(plan => (
-                    <img key={plan.id} src={plan.logo} alt={plan.name} className="h-10 md:h-14 w-auto object-contain hover:scale-110 transition-transform duration-300" title={plan.name} />
+                    <div key={plan.id} className="flex flex-col items-center gap-3 group">
+                      <img 
+                        src={plan.logo} 
+                        alt={plan.name} 
+                        className="h-10 md:h-14 w-auto object-contain group-hover:scale-110 transition-transform duration-300" 
+                        title={plan.name} 
+                      />
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/30 group-hover:text-primary transition-colors text-center max-w-[100px]">
+                        {plan.name}
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1019,7 +1033,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
           }
 
           const result = await response.json();
-          // The script returns an array directly when called with mode=agenda
           const data = result.data || result; 
           const newSchedule: NonNullable<Specialist['schedule']> = {};
 
@@ -1027,7 +1040,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             data.forEach((row: any) => {
               if (!row) return;
               
-              // Map your script's specific keys
               const dayRaw = row.dia || row["Dia da Semana"] || row.Day;
               let time = row.horario || row["Horário"] || row.Time;
               const status = row.paciente || row["Paciente"] || row.Status;
@@ -2387,10 +2399,11 @@ function AdminScreen({
                                       }
                                     } else {
                                       const text = await res.text();
+                                      const snippet = text.substring(0, 200).replace(/</g, '&lt;');
                                       if (text.includes('accounts.google.com') || text.includes('ServiceLogin') || text.includes('google-signin')) {
                                         alert('❌ BLOQUEIO DO GOOGLE:\nVocê precisa autorizar o script ou mudar para "Qualquer pessoa".\n\n1. Abra o link do script no navegador\n2. Clique em "Revisar Permissões"\n3. Autorize o acesso.');
                                       } else {
-                                        alert('❌ RESPOSTA INVÁLIDA: O script retornou HTML. Isso acontece quando você usa "HtmlService" no código .gs. Use "ContentService" conforme o exemplo abaixo.');
+                                        alert(`❌ RESPOSTA INVÁLIDA: O script retornou HTML em vez de JSON.\n\nInício da resposta: ${snippet}...\n\nIsso geralmente acontece se o link não for o de "Execução" (/exec) ou se o script encontrou um erro interno.`);
                                       }
                                     }
                                   } catch (e) {

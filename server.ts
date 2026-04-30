@@ -20,26 +20,11 @@ async function startServer() {
     try {
       console.log(`Proxying request to: ${url}`);
       
-      // Basic URL validation
-      if (url.includes("docs.google.com/spreadsheets") || url.includes("/edit") || url.includes("/view")) {
-         return res.status(400).json({ 
-           error: 'URL Inválida: Link da Planilha colado. Use o link do "App da Web" (/exec).',
-           code: 'INVALID_URL_TYPE'
-         });
-      }
-
-      if (url.endsWith('/dev')) {
-         return res.status(400).json({ 
-           error: 'URL de Rascunho detectada: Use "Nova Implantação" para produzir a URL /exec.',
-           code: 'DEV_URL_NOT_ALLOWED'
-         });
-      }
-
       const response = await fetch(url, {
         method: 'GET',
         redirect: 'follow',
         headers: {
-          'Accept': 'application/json, text/html',
+          'Accept': 'application/json, text/javascript, text/html, */*',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
       });
@@ -52,22 +37,34 @@ async function startServer() {
       
       console.log(`Downstream: ${responseStatus} | Final URL: ${finalUrl} | Content-Type: ${contentType}`);
 
-      // SUCCESS CASE: JSON returned (handled very permissively)
-      const isLikelyJson = contentType.includes("application/json") || 
-                           trimmedText.startsWith('{') || 
-                           trimmedText.startsWith('[');
-
-      if (isLikelyJson) {
-        try {
-          const data = JSON.parse(trimmedText);
-          // If the script returned an error object but 200 OK
-          if (data.success === false && data.error) {
-              return res.status(422).json({ error: data.error, ...data });
-          }
-          return res.json(data);
-        } catch (e) {
-          console.warn("Failed to parse JSON even though it looked like it", e);
+      // Handle JSONP or raw JSON
+      let data;
+      let isData = false;
+      
+      // Try to extract JSON from JSONP callback if present
+      if (trimmedText.includes('(') && trimmedText.includes(')')) {
+        const match = trimmedText.match(/^[^(]+\((.*)\);?$/s);
+        if (match) {
+          try {
+            data = JSON.parse(match[1]);
+            isData = true;
+          } catch (e) {}
         }
+      }
+
+      // Try raw JSON
+      if (!isData && (trimmedText.startsWith('{') || trimmedText.startsWith('['))) {
+        try {
+          data = JSON.parse(trimmedText);
+          isData = true;
+        } catch (e) {}
+      }
+
+      if (isData) {
+        if (data.success === false && data.error) {
+          return res.status(422).json({ error: data.error, ...data });
+        }
+        return res.json(data);
       }
 
       // ERROR CASE: 403 or Login Redirect or Permission Request
