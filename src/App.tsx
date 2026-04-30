@@ -32,7 +32,31 @@ import {
   AssignmentTurnedIn,
   MenuIcon
 } from './components/Icons';
-import { Instagram, Facebook, Linkedin as LinkedIn, Wifi, ConciergeBell, Volume2, Snowflake, ParkingCircle, ShieldCheck, LogOut } from 'lucide-react';
+import { 
+  Instagram, 
+  Facebook, 
+  Linkedin as LinkedIn, 
+  Wifi, 
+  ConciergeBell, 
+  Volume2, 
+  Snowflake, 
+  ParkingCircle, 
+  ShieldCheck, 
+  LogOut,
+  User,
+  Baby,
+  Heart,
+  Brain,
+  Briefcase,
+  Users,
+  Stethoscope,
+  GraduationCap,
+  Sun,
+  CloudSun,
+  Moon,
+  Trash2,
+  Edit2
+} from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan } from './types';
 import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL } from './constants';
@@ -1146,6 +1170,17 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
 
   const canBook = selectedDay && selectedTime && selectedPlan;
 
+  const getSpecialtyIcon = (specialty: string) => {
+    const s = specialty.toLowerCase();
+    if (s.includes('infant') || s.includes('criança') || s.includes('baby')) return <Baby size={14} />;
+    if (s.includes('casal') || s.includes('família') || s.includes('relacionamento')) return <Heart size={14} />;
+    if (s.includes('neuro') || s.includes('cognitiva') || s.includes('tcc') || s.includes('psicanálise')) return <Brain size={14} />;
+    if (s.includes('organizacional') || s.includes('trabalho') || s.includes('carreira')) return <Briefcase size={14} />;
+    if (s.includes('pedagogia') || s.includes('escolar') || s.includes('aprendizagem')) return <GraduationCap size={14} />;
+    if (s.includes('clínica') || s.includes('hospitalar') || s.includes('saúde')) return <Stethoscope size={14} />;
+    return <User size={14} />;
+  };
+
   const handleWhatsAppClick = () => {
     if (!canBook) return;
     const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
@@ -1169,14 +1204,25 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             <h4 className="text-2xl font-bold text-primary">{spec.name}</h4>
             <Verified size={20} className="text-secondary" />
           </div>
-          <span className="inline-block px-3 py-1 bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest rounded-full">{spec.spec}</span>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest rounded-full">
+              {getSpecialtyIcon(spec.spec)}
+              {spec.spec}
+            </span>
+          </div>
           <p className="text-on-surface-variant text-sm font-medium leading-relaxed italic line-clamp-3">"{spec.desc}"</p>
         </div>
         
         <div className="space-y-6">
           <div className="flex flex-wrap gap-2">
             {spec.ageGroups.map(g => (
-              <span key={g} className="bg-surface-container text-on-surface-variant px-3 py-1 rounded-full text-[10px] font-bold uppercase">{g}</span>
+              <span key={g} className="inline-flex items-center gap-1.5 bg-surface-container text-on-surface-variant px-3 py-1 rounded-full text-[10px] font-bold uppercase">
+                {g.toLowerCase().includes('criança') && <Baby size={12} />}
+                {g.toLowerCase().includes('adolescente') && <Users size={12} />}
+                {g.toLowerCase().includes('adulto') && <User size={12} />}
+                {g.toLowerCase().includes('idoso') && <Users size={12} />}
+                {g}
+              </span>
             ))}
           </div>
 
@@ -1467,10 +1513,16 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
                     <button 
                       key={age} 
                       onClick={() => handleAgeGroupSelect(age)} 
-                      className={`p-8 rounded-[2rem] border-2 text-center font-bold text-xl transition-all ${
+                      className={`p-8 rounded-[2rem] border-2 flex flex-col items-center gap-4 font-bold text-xl transition-all ${
                         selectedAge === age ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-outline-variant/50 text-primary hover:border-primary'
                       }`}
                     >
+                      <div className={`p-4 rounded-2xl ${selectedAge === age ? 'bg-white/20' : 'bg-primary/5'}`}>
+                        {age.toLowerCase().includes('criança') && <Baby size={32} />}
+                        {age.toLowerCase().includes('adolescente') && <Users size={32} />}
+                        {age.toLowerCase().includes('adulto') && <User size={32} />}
+                        {age.toLowerCase().includes('idoso') && <Users size={32} />}
+                      </div>
                       {age}
                     </button>
                   ))}
@@ -1505,10 +1557,15 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
                       <button 
                         key={shift} 
                         onClick={() => toggleShift(shift)} 
-                        className={`p-8 rounded-[2rem] border-2 text-center font-bold transition-all ${
+                        className={`p-8 rounded-[2rem] border-2 flex flex-col items-center gap-4 font-bold transition-all ${
                           selectedShifts.includes(shift) ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-outline-variant/50 text-primary hover:border-primary'
                         }`}
                       >
+                        <div className={`p-4 rounded-2xl ${selectedShifts.includes(shift) ? 'bg-white/20' : 'bg-primary/5'}`}>
+                          {shift.toLowerCase().includes('manhã') || shift.toLowerCase().includes('matutino') ? <Sun size={32} /> : null}
+                          {shift.toLowerCase().includes('tarde') || shift.toLowerCase().includes('vespertino') ? <CloudSun size={32} /> : null}
+                          {shift.toLowerCase().includes('noite') || shift.toLowerCase().includes('noturno') ? <Moon size={32} /> : null}
+                        </div>
                         {shift}
                       </button>
                     ))}
@@ -2225,16 +2282,36 @@ function AdminScreen({
                           <div className="space-y-2 md:col-span-2">
                             <p className="text-[10px] uppercase font-bold tracking-widest text-primary">URL de Integração (App da Web do Google Scripts)</p>
                             <div className="flex flex-col sm:flex-row gap-2">
-                              <input 
-                                className="p-3 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm" 
-                                value={s.googleAppsScriptUrl || ''} 
-                                onChange={e => {
-                                  const newSpecs = [...specialists];
-                                  newSpecs[i] = { ...s, googleAppsScriptUrl: e.target.value };
-                                  onUpdateSpecialists(newSpecs);
-                                }} 
-                                placeholder="Deve terminar em /exec" 
-                              />
+                              <div className="relative w-full group">
+                                <input 
+                                  className="p-3 pr-16 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
+                                  value={s.googleAppsScriptUrl || ''} 
+                                  onChange={e => {
+                                    const newSpecs = [...specialists];
+                                    newSpecs[i] = { ...s, googleAppsScriptUrl: e.target.value };
+                                    onUpdateSpecialists(newSpecs);
+                                  }} 
+                                  placeholder="Deve terminar em /exec" 
+                                />
+                                {s.googleAppsScriptUrl && (
+                                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="p-1.5 text-primary/40">
+                                      <Edit2 size={12} />
+                                    </div>
+                                    <button 
+                                      title="Limpar URL"
+                                      onClick={() => {
+                                        const newSpecs = [...specialists];
+                                        newSpecs[i] = { ...s, googleAppsScriptUrl: '' };
+                                        onUpdateSpecialists(newSpecs);
+                                      }}
+                                      className="p-1.5 hover:bg-error/10 text-error rounded-lg transition-colors"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                               <button 
                                 onClick={async () => {
                                   if (!s.googleAppsScriptUrl) {
@@ -2255,7 +2332,11 @@ function AdminScreen({
                                       alert('✅ CONECTADO! Sua agenda foi vinculada com sucesso.');
                                     } else {
                                       const errData = await res.json().catch(() => ({}));
-                                      alert(`⚠️ FALHA: ${errData.error || 'Verifique se publicou como "Qualquer pessoa" (Anyone).'}\n\nDica: Abra a URL do script no navegador e veja se o Google pede autorização.`);
+                                      let msg = `⚠️ FALHA: ${errData.error || 'Verifique se publicou como "Qualquer pessoa" (Anyone).'}`;
+                                      if (!isJson) {
+                                        msg += '\n\nDICA: Seu script está retornando HTML em vez de dados. Verifique se no final do código você usa "ContentService" e não "HtmlService".';
+                                      }
+                                      alert(msg);
                                     }
                                   } catch (e) {
                                     alert('❌ ERRO CRÍTICO: Não foi possível alcançar o servidor de proxy. Tente recarregar a página.');

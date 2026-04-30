@@ -67,12 +67,28 @@ async function startServer() {
         }
       }
 
-      // ERROR CASE: 403 or Login Redirect
-      if (finalUrl.includes("accounts.google.com") || finalUrl.includes("ServiceLogin") || responseStatus === 401 || responseStatus === 403) {
+      // ERROR CASE: 403 or Login Redirect or Permission Request
+      if (
+        finalUrl.includes("accounts.google.com") || 
+        finalUrl.includes("ServiceLogin") || 
+        responseStatus === 401 || 
+        responseStatus === 403 ||
+        responseText.includes("Review Permissions") ||
+        responseText.includes("Authorization required") ||
+        responseText.includes("Revisar permissões") ||
+        responseText.includes("google-signin")
+      ) {
          if (responseText.includes("Advanced") || responseText.includes("Avançado") || responseText.includes("não seguro") || responseText.includes("unsafe")) {
             return res.status(403).json({
               error: 'Ação Necessária: O script exige autorização manual. Abra a URL do script no seu navegador, clique em "Avançado" e depois em "Acessar (não seguro)" para liberar o acesso.',
               code: 'UNSAFE_APP_WARNING'
+            });
+         }
+
+         if (responseText.includes("Review Permissions") || responseText.includes("Revisar permissões") || responseText.includes("Authorization required")) {
+            return res.status(403).json({
+              error: 'Ação Necessária: O Google exige autorização. Abra o link do script no navegador e clique em "Revisar Permissões".',
+              code: 'AUTH_REQUIRED'
             });
          }
 
@@ -84,7 +100,7 @@ async function startServer() {
          }
 
          return res.status(403).json({ 
-           error: 'Bloqueio do Google (403): O acesso externo foi recusado. Verifique se EXECUTAR COMO está selecionado "EU" (Me). Se já estiver, crie uma "NOVA Implantação" (Menu Implantar) e use a nova URL.',
+           error: 'Bloqueio do Google (403): O acesso externo foi recusado. DICA: No Script, vá em "Implantar" > "Nova Implantação", mude para "Qualquer Pessoa" e garanta que "Executar como" seja "Eu".',
            code: 'AUTH_REQUIRED',
            status: responseStatus
          });
@@ -98,11 +114,15 @@ async function startServer() {
            });
       }
 
-      const snippet = responseText.slice(0, 150).replace(/[<>]/g, '').trim();
-      return res.status(422).json({ 
-        error: `O Script não retornou um JSON válido (Recebido: "${snippet}..."). Verifique seu código .gs.`,
-        code: 'INVALID_FORMAT'
-      });
+      // If we got HTML with a title but expected JSON
+      if (responseText.includes("<title>") && responseText.includes("</title>")) {
+         const titleMatch = responseText.match(/<title>(.*?)<\/title>/i);
+         const pageTitle = titleMatch ? titleMatch[1] : "Página do Google";
+         
+         return res.status(422).json({
+           error: `O Script retornou HTML ("${pageTitle}") em vez de JSON. No seu código .gs, use 'ContentService.createTextOutput' (Dados) e não 'HtmlService' (UI).`,
+           code: 'HTML_INSTEAD_OF_JSON'
+         });
       }
     } catch (error) {
       console.error("Proxy error:", error);
