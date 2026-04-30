@@ -2245,8 +2245,19 @@ function AdminScreen({
                 </button>
               </div>
               <div className="grid grid-cols-1 gap-8">
-                {specialists.map(s => (
+                {specialists.map((s, idx) => (
                   <div key={s.id} className="p-8 border border-outline rounded-[2rem] flex flex-col md:flex-row gap-8 items-start relative group">
+                    <button 
+                      onClick={() => {
+                        if (confirm(`Remover ${s.name}?`)) {
+                          onUpdateSpecialists(specialists.filter(spec => spec.id !== s.id));
+                        }
+                      }}
+                      className="absolute top-4 right-4 p-2 text-accent bg-accent/5 hover:bg-accent hover:text-white rounded-full transition-all opacity-0 group-hover:opacity-100 shadow-sm"
+                      title="Excluir Especialista"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                     <div className="w-full md:w-32 h-32 rounded-2xl overflow-hidden shrink-0 relative group/photo">
                       <img src={s.img} className="w-full h-full object-cover" />
                       <label className="absolute inset-0 bg-black/40 opacity-0 group-hover/photo:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity">
@@ -2284,26 +2295,35 @@ function AdminScreen({
                             <div className="flex flex-col sm:flex-row gap-2">
                               <div className="relative w-full group">
                                 <input 
+                                  id={`url-input-${s.id}`}
                                   className="p-3 pr-16 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
                                   value={s.googleAppsScriptUrl || ''} 
                                   onChange={e => {
                                     const newSpecs = [...specialists];
-                                    newSpecs[i] = { ...s, googleAppsScriptUrl: e.target.value };
+                                    newSpecs[idx] = { ...s, googleAppsScriptUrl: e.target.value };
                                     onUpdateSpecialists(newSpecs);
                                   }} 
                                   placeholder="Deve terminar em /exec" 
                                 />
                                 {s.googleAppsScriptUrl && (
-                                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <div className="p-1.5 text-primary/40">
-                                      <Edit2 size={12} />
-                                    </div>
+                                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                                     <button 
-                                      title="Limpar URL"
+                                      title="Editar (Focar)"
                                       onClick={() => {
-                                        const newSpecs = [...specialists];
-                                        newSpecs[i] = { ...s, googleAppsScriptUrl: '' };
-                                        onUpdateSpecialists(newSpecs);
+                                        document.getElementById(`url-input-${s.id}`)?.focus();
+                                      }}
+                                      className="p-1.5 hover:bg-primary/10 text-primary/40 hover:text-primary rounded-lg transition-colors"
+                                    >
+                                      <Edit2 size={12} />
+                                    </button>
+                                    <button 
+                                      title="Excluir link"
+                                      onClick={() => {
+                                        if (confirm("Deseja realmente excluir este link de integração?")) {
+                                          const newSpecs = [...specialists];
+                                          newSpecs[idx] = { ...s, googleAppsScriptUrl: '' };
+                                          onUpdateSpecialists(newSpecs);
+                                        }
                                       }}
                                       className="p-1.5 hover:bg-error/10 text-error rounded-lg transition-colors"
                                     >
@@ -2354,21 +2374,34 @@ function AdminScreen({
                             <Info size={14} /> Passo a Passo para Gerar a URL Correta:
                           </p>
                           <div className="text-[11px] text-primary/80 space-y-3">
-                            <p>1. No Google Apps Script, use este código (função <strong>doGet</strong>):</p>
+                            <p className="bg-red-50 p-3 border-l-4 border-red-500 text-[11px] text-red-800">
+                              <strong>🚨 SE VOCÊ VIU ERRO DE HTML:</strong> Isso significa que seu script está tentando abrir uma página em vez de enviar os dados. Certifique-se de que a última linha do seu código seja o <code>return ContentService...</code> igual ao exemplo abaixo.
+                            </p>
+                            <p>1. No Google Apps Script, apague tudo e cole este código EXATAMENTE:</p>
                             <div className="relative">
-                              <pre className="p-3 bg-white border border-outline/20 rounded-lg overflow-x-auto text-[9px] font-mono whitespace-pre shadow-inner">
+                              <pre className="p-3 bg-white border border-outline/20 rounded-lg overflow-x-auto text-[9px] font-mono whitespace-pre shadow-inner text-blue-800">
 {`function doGet(e) {
   try {
+    // IMPORTANTE: O nome da aba na sua planilha deve ser "Agenda"
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Agenda");
+    if (!sheet) throw new Error("Aba 'Agenda' não encontrada.");
+    
     var data = sheet.getDataRange().getValues();
-    var headers = data[0], result = [];
+    var headers = data[0];
+    var result = [];
+    
     for (var i = 1; i < data.length; i++) {
         var obj = {};
-        for (var j = 0; j < headers.length; j++) obj[headers[j]] = data[i][j];
+        for (var j = 0; j < headers.length; j++) {
+          obj[headers[j]] = data[i][j];
+        }
         result.push(obj);
     }
+    
+    // RETORNO OBRIGATÓRIO EM JSON (ContentService)
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
+      
   } catch(err) {
     return ContentService.createTextOutput(JSON.stringify({error: err.message}))
       .setMimeType(ContentService.MimeType.JSON);
@@ -2376,11 +2409,15 @@ function AdminScreen({
 }`}
                               </pre>
                             </div>
-                            <p>2. Clique em <strong>Implantar &gt; Nova Implantação</strong> (OBRIGATÓRIO: Sempre crie uma nova para aplicar mudanças).</p>
-                            <p>3. Selecione <strong>Tipo: App da Web</strong>.</p>
-                            <p>4. Em "Executar como", selecione: <strong>Eu (seu-email@gmail.com)</strong>. ⚠️ MUITO IMPORTANTE.</p>
+                            <p className="bg-amber-50 p-2 border-l-2 border-amber-400 text-[10px]">
+                              <strong>⚠️ ERRO DE HTML:</strong> Se o sistema disser que recebeu HTML, verifique se você não está usando <code>HtmlService</code>. O código acima usa <code>ContentService</code>, que é o correto para dados.
+                            </p>
+                            <p>2. Clique em <strong>Implantar &gt; Nova Implantação</strong>.</p>
+                            <p className="font-bold text-red-600">3. Selecione Tipo: App da Web.</p>
+                            <p>4. Em "Executar como", selecione: <strong>Eu (seu-email@gmail.com)</strong>.</p>
                             <p>5. Em "Quem pode acessar", selecione: <strong>Qualquer pessoa (Anyone)</strong>.</p>
-                            <p>6. Clique em Implantar, <strong>Autorize o Acesso</strong> (clique em Avançado &gt; Acessar se aparecer aviso) e use a nova URL.</p>
+                            <p className="bg-green-50 p-2 border-l-2 border-green-500">6. Clique em <strong>Implantar</strong> e <strong>Autorize o Acesso</strong> (clique em "Avançado" > "Acessar" se aparecer aviso de segurança).</p>
+                            <p>7. Copie a "URL do App da Web" gerada e cole aqui.</p>
                           </div>
                         </div>
                         <p className="text-[10px] uppercase font-bold tracking-widest text-primary">Faixas Etárias</p>

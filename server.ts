@@ -119,8 +119,14 @@ async function startServer() {
          const titleMatch = responseText.match(/<title>(.*?)<\/title>/i);
          const pageTitle = titleMatch ? titleMatch[1] : "Página do Google";
          
+         // Specific hint for Apps Script HTML output
+         let hint = "No seu código .gs, use 'ContentService.createTextOutput' (Dados) e não 'HtmlService' (UI).";
+         if (responseText.includes("google-signin")) {
+            hint = "O Google está pedindo login. Verifique se publicou como 'Qualquer pessoa' (Anyone).";
+         }
+         
          return res.status(422).json({
-           error: `O Script retornou HTML ("${pageTitle}") em vez de JSON. No seu código .gs, use 'ContentService.createTextOutput' (Dados) e não 'HtmlService' (UI).`,
+           error: `O Script retornou uma PÁGINA HTML ("${pageTitle}") em vez de DADOS JSON. ${hint}`,
            code: 'HTML_INSTEAD_OF_JSON'
          });
       }
