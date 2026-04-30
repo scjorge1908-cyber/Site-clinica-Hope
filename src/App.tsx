@@ -141,10 +141,10 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   
   // Data State
-  const [homeSettings, setHomeSettings] = useState<HomeSettings>(DEFAULT_HOME_SETTINGS);
-  const [specialists, setSpecialists] = useState<Specialist[]>([]);
-  const [approaches, setApproaches] = useState<Approach[]>([]);
-  const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>([]);
+  const [homeSettings, setHomeSettings] = useState<HomeSettings | null>(null);
+  const [specialists, setSpecialists] = useState<Specialist[] | null>(null);
+  const [approaches, setApproaches] = useState<Approach[] | null>(null);
+  const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[] | null>(null);
   const [isDataInitialized, setIsDataInitialized] = useState(false);
   
   const [scrollIntent, setScrollIntent] = useState(false);
@@ -159,38 +159,69 @@ export default function App() {
       }
     });
 
+    let homeLoaded = false;
+    let specsLoaded = false;
+    let approachesLoaded = false;
+    let insuranceLoaded = false;
+
+    const checkAllLoaded = () => {
+      if (homeLoaded && specsLoaded && approachesLoaded && insuranceLoaded) {
+        setIsDataInitialized(true);
+        setIsLoading(false);
+      }
+    };
+
     // Real-time listeners
     const unsubHome = onSnapshot(doc(db, COLLECTIONS.SETTINGS, DOCS.HOME_SETTINGS), (doc) => {
       if (doc.exists()) {
-        setHomeSettings(doc.data() as HomeSettings);
+        const data = doc.data() as HomeSettings;
+        setHomeSettings(data);
+      } else {
+        setHomeSettings(DEFAULT_HOME_SETTINGS);
       }
-      setIsDataInitialized(true);
-      setIsLoading(false);
+      homeLoaded = true;
+      checkAllLoaded();
     }, (error) => {
       console.error("Erro no listener de HomeSettings:", error);
-      setIsLoading(false);
-      setIsDataInitialized(true);
+      setHomeSettings(DEFAULT_HOME_SETTINGS);
+      homeLoaded = true;
+      checkAllLoaded();
     });
 
     const unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
-      setSpecialists(data);
+      setSpecialists(data.length > 0 ? data : []);
+      specsLoaded = true;
+      checkAllLoaded();
     }, (error) => {
       console.error("Erro no listener de especialistas:", error);
+      setSpecialists([]);
+      specsLoaded = true;
+      checkAllLoaded();
     });
 
     const unsubApproaches = onSnapshot(collection(db, COLLECTIONS.APPROACHES), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Approach[];
-      setApproaches(data);
+      setApproaches(data.length > 0 ? data : []);
+      approachesLoaded = true;
+      checkAllLoaded();
     }, (error) => {
       console.error("Erro no listener de abordagens:", error);
+      setApproaches([]);
+      approachesLoaded = true;
+      checkAllLoaded();
     });
 
     const unsubInsurance = onSnapshot(collection(db, COLLECTIONS.INSURANCE), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InsurancePlan[];
-      setInsurancePlans(data);
+      setInsurancePlans(data.length > 0 ? data : []);
+      insuranceLoaded = true;
+      checkAllLoaded();
     }, (error) => {
       console.error("Erro no listener de convênios:", error);
+      setInsurancePlans([]);
+      insuranceLoaded = true;
+      checkAllLoaded();
     });
 
     return () => {
@@ -257,7 +288,7 @@ export default function App() {
     }),
   };
 
-  if (isLoading) {
+  if (isLoading || !homeSettings || !specialists || !approaches || !insurancePlans) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-6">
         <motion.div 
@@ -282,6 +313,8 @@ export default function App() {
     );
   }
 
+  const safeSettings = { ...homeSettings, insurancePlans };
+
   return (
     <div className="relative overflow-hidden min-h-screen">
       <AnimatePresence initial={false} custom={direction} mode="wait">
@@ -301,7 +334,7 @@ export default function App() {
           {currentScreen === Screen.Home && (
             <HomeScreen 
               onNavigate={navigateTo} 
-              settings={{ ...homeSettings, insurancePlans }} 
+              settings={safeSettings} 
               approaches={approaches}
               specialists={specialists}
               isAdminUnlocked={isAdminUnlocked}
@@ -313,7 +346,7 @@ export default function App() {
               onNavigate={navigateTo} 
               specialists={specialists} 
               approaches={approaches}
-              settings={{ ...homeSettings, insurancePlans }}
+              settings={safeSettings}
               isAdminUnlocked={isAdminUnlocked}
               shouldScrollToList={scrollIntent}
             />
@@ -330,7 +363,7 @@ export default function App() {
           {currentScreen === Screen.Admin && (
             <AdminScreen 
               onNavigate={navigateTo}
-              settings={{ ...homeSettings, insurancePlans }}
+              settings={safeSettings}
               onUpdateSettings={updateSettings}
               specialists={specialists}
               onUpdateSpecialists={updateSpecialists}
@@ -2168,22 +2201,12 @@ function AdminScreen({
               ))}
             </div>
             <button 
-              onClick={() => {
-                if (confirm("Isso irá recarregar a página e buscar os dados mais recentes do servidor. Certifique-se de que salvou suas alterações. Deseja continuar?")) {
+              onClick={async () => {
+                if (confirm("Isso irá recarregar a página e buscar os dados mais recentes do servidor limpando o cache local. Certifique-se de que salvou suas alterações. Deseja continuar?")) {
                   const btn = document.getElementById('refresh-btn');
                   if (btn) btn.classList.add('animate-spin');
-                  
-                  // Clear everything possible to force a fresh fetch
-                  if ('caches' in window) {
-                    caches.keys().then((names) => {
-                      for (let name of names) caches.delete(name);
-                    });
-                  }
-                  
-                  // Use a query param to cache bust the main request if possible
-                  const url = new URL(window.location.href);
-                  url.searchParams.set('reload', Date.now().toString());
-                  window.location.href = url.toString();
+                  const { forceResetFirebase } = await import('./lib/firebase');
+                  await forceResetFirebase();
                 }
               }}
               id="refresh-btn"

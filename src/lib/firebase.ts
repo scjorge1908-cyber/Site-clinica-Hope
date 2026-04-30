@@ -1,12 +1,22 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, getDocsFromServer, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, getDocsFromServer, getDocFromServer, terminate, clearIndexedDbPersistence } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(app);
 export const auth = getAuth();
 const googleProvider = new GoogleAuthProvider();
+
+export async function forceResetFirebase() {
+  try {
+    await terminate(db);
+    await clearIndexedDbPersistence(db);
+  } catch (e) {
+    console.error(e);
+  }
+  window.location.reload();
+}
 
 enum OperationType {
   CREATE = 'create',
