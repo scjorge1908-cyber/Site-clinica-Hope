@@ -48,61 +48,47 @@ async function startServer() {
       const contentType = response.headers.get("content-type") || "";
       const finalUrl = response.url || "";
       const responseText = await response.text();
+      const trimmedText = responseText.trim();
       
       console.log(`Downstream: ${responseStatus} | Final URL: ${finalUrl} | Content-Type: ${contentType}`);
 
-      // SUCCESS CASE: JSON returned
-      if (contentType.includes("application/json") || responseText.trim().startsWith('{') || responseText.trim().startsWith('[')) {
+      // SUCCESS CASE: JSON returned (handled very permissively)
+      const isLikelyJson = contentType.includes("application/json") || 
+                           trimmedText.startsWith('{') || 
+                           trimmedText.startsWith('[');
+
+      if (isLikelyJson) {
         try {
-          const data = JSON.parse(responseText);
-          if (!response.ok) {
-             return res.status(responseStatus).json({
-               error: data.error || `Erro do Script: ${responseStatus}`,
-               ...data
-             });
+          const data = JSON.parse(trimmedText);
+          // If the script returned an error object but 200 OK
+          if (data.success === false && data.error) {
+              return res.status(422).json({ error: data.error, ...data });
           }
           return res.json(data);
         } catch (e) {
-          // Fall through if not really JSON
+          console.warn("Failed to parse JSON even though it looked like it", e);
         }
       }
 
       // ERROR CASE: 403 or Login Redirect or Permission Request
-      if (
+      const isAuthBlock = 
         finalUrl.includes("accounts.google.com") || 
         finalUrl.includes("ServiceLogin") || 
-        responseStatus === 401 || 
-        responseStatus === 403 ||
+        responseText.includes("google-signin") ||
         responseText.includes("Review Permissions") ||
-        responseText.includes("Authorization required") ||
         responseText.includes("Revisar permissões") ||
-        responseText.includes("google-signin")
-      ) {
-         if (responseText.includes("Advanced") || responseText.includes("Avançado") || responseText.includes("não seguro") || responseText.includes("unsafe")) {
+        responseText.includes("Authorization required");
+
+      if (isAuthBlock) {
+         if (responseText.includes("Advanced") || responseText.includes("Avançado") || responseText.includes("não seguro")) {
             return res.status(403).json({
-              error: 'Ação Necessária: O script exige autorização manual. Abra a URL do script no seu navegador, clique em "Avançado" e depois em "Acessar (não seguro)" para liberar o acesso.',
+              error: 'O Google exige autorização manual. Abra o link do script no navegador, clique em "Avançado" e "Acessar (não seguro)".',
               code: 'UNSAFE_APP_WARNING'
             });
          }
-
-         if (responseText.includes("Review Permissions") || responseText.includes("Revisar permissões") || responseText.includes("Authorization required")) {
-            return res.status(403).json({
-              error: 'Ação Necessária: O Google exige autorização. Abra o link do script no navegador e clique em "Revisar Permissões".',
-              code: 'AUTH_REQUIRED'
-            });
-         }
-
-         if (responseText.includes("not have access") || responseText.includes("não tem acesso") || responseText.includes("permissão") || responseText.includes("permission")) {
-            return res.status(403).json({
-              error: 'Acesso Negado (403): O Google indica falta de permissão. Certifique-se que em "Executar como" selecionou "Eu" (Me) e em "Quem pode acessar" selecionou "Qualquer pessoa" (Anyone).',
-              code: 'NO_ACCESS'
-            });
-         }
-
          return res.status(403).json({ 
-           error: 'Bloqueio do Google (403): O acesso externo foi recusado. DICA: No Script, vá em "Implantar" > "Nova Implantação", mude para "Qualquer Pessoa" e garanta que "Executar como" seja "Eu".',
-           code: 'AUTH_REQUIRED',
-           status: responseStatus
+           error: 'O Google está pedindo login ou autorização. Verifique se publicou como "Qualquer pessoa" e se você já autorizou o script no editor do Google.',
+           code: 'AUTH_REQUIRED'
          });
       }
 

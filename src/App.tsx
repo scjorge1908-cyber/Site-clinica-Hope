@@ -2370,13 +2370,23 @@ function AdminScreen({
                                     if (res.ok && isJson) {
                                       const data = await res.json();
                                       const scheduleData = data.data || data; 
+                                      
                                       if (Array.isArray(scheduleData)) {
-                                        alert('✅ CONECTADO!\nSua agenda foi vinculada e os horários livres já estão sendo sincronizados.');
-                                        updateSpecialist(s.id, { googleAppsScriptUrl: s.googleAppsScriptUrl.trim() });
+                                        // Check if the data has the expected structure (at least one item with day/time)
+                                        const sample = scheduleData[0];
+                                        const hasDay = sample && (sample.dia || sample["Dia da Semana"] || sample["day"]);
+                                        const hasTime = sample && (sample.horario || sample["Horário"] || sample["time"]);
+
+                                        if (hasDay || scheduleData.length === 0) {
+                                          alert('✅ CONECTADO!\nSua agenda foi vinculada e os horários livres já estão sendo sincronizados.');
+                                          updateSpecialist(s.id, { googleAppsScriptUrl: s.googleAppsScriptUrl.trim() });
+                                        } else {
+                                          alert('⚠️ FORMATO INESPERADO: O script respondeu, mas não encontramos os campos "dia" ou "horário" nos dados.\nVerifique se o seu script retorna os campos corretos.');
+                                        }
                                       } else if (data.success === false) {
                                         alert(`⚠️ O SCRIPT AVISOU: ${data.error || 'Erro na planilha.'}`);
                                       } else {
-                                        alert('⚠️ FORMATO INVÁLIDO: O script respondeu, mas não enviou uma lista de horários. Verifique o nome da aba "Agenda".');
+                                        alert('⚠️ FORMATO INVÁLIDO: O script respondeu, mas não enviou uma lista de horários. Verifique a aba "Agenda".');
                                       }
                                     } else if (isJson) {
                                       const errData = await res.json();
