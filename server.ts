@@ -121,15 +121,23 @@ async function startServer() {
          
          // Specific hint for Apps Script HTML output
          let hint = "No seu código .gs, use 'ContentService.createTextOutput' (Dados) e não 'HtmlService' (UI).";
-         if (responseText.includes("google-signin")) {
-            hint = "O Google está pedindo login. Verifique se publicou como 'Qualquer pessoa' (Anyone).";
+         if (responseText.includes("google-signin") || responseText.includes("accounts.google.com")) {
+            hint = "O Google está pedindo login ou permissão. Verifique se publicou como 'Qualquer pessoa' (Anyone) e autorizou o script.";
          }
          
          return res.status(422).json({
-           error: `O Script retornou uma PÁGINA HTML ("${pageTitle}") em vez de DADOS JSON. ${hint}`,
+           error: `O Script retornou uma PÁGINA HTML ("${pageTitle}"). ${hint}`,
            code: 'HTML_INSTEAD_OF_JSON'
          });
       }
+
+      // Default fallthrough - if we got something we didn't expect
+      return res.status(500).json({
+        error: `Resposta inesperada do Script (Status ${responseStatus}). Verifique se a URL está correta e se o script foi publicado como 'Qualquer pessoa'.`,
+        code: 'UNEXPECTED_RESPONSE',
+        status: responseStatus,
+        contentType
+      });
     } catch (error) {
       console.error("Proxy error:", error);
       res.status(500).json({ error: "Failed to fetch from downstream URL" });

@@ -2351,17 +2351,23 @@ function AdminScreen({
                                     const isJson = contentType && contentType.includes("application/json");
 
                                     if (res.ok && isJson) {
-                                      alert('✅ CONECTADO! Sua agenda foi vinculada com sucesso.');
-                                    } else {
-                                      const errData = await res.json().catch(() => ({}));
-                                      let msg = `⚠️ FALHA: ${errData.error || 'Verifique se publicou como "Qualquer pessoa" (Anyone).'}`;
-                                      
-                                      if (res.status === 403 || (errData.error && errData.error.includes('403'))) {
-                                        msg = "❌ BLOQUEIO (403): O Google exige autorização. Abra o link do script no seu navegador, clique em 'Revisar Permissões' e autorize tudo. Depois tente vincular aqui novamente.";
-                                      } else if (!isJson) {
-                                        msg += '\n\nDICA: Seu script retornou HTML. No código .gs, use ContentService e não HtmlService.';
+                                      const data = await res.json();
+                                      if (data.success || Array.isArray(data)) {
+                                        alert('✅ AGENDA VINCULADA COM SUCESSO!\nOs horários agora são buscados em tempo real do Google Sheets.');
+                                        updateSpecialist(s.id, { googleAppsScriptUrl: s.googleAppsScriptUrl.trim() });
+                                      } else {
+                                        alert(`⚠️ O Script retornou: ${data.message || 'Erro desconhecido'}`);
                                       }
-                                      alert(msg);
+                                    } else if (isJson) {
+                                      const errData = await res.json();
+                                      alert(`❌ ERRO: ${errData.error || 'Falha na conexão.'}`);
+                                    } else {
+                                      const text = await res.text();
+                                      if (text.includes('accounts.google.com') || text.includes('ServiceLogin')) {
+                                        alert('❌ BLOQUEIO DO GOOGLE: Você precisa autorizar o script ou mudar para "Qualquer pessoa". Abra o link do script no navegador e clique em "Revisar Permissões".');
+                                      } else {
+                                        alert('❌ RESPOSTA INVÁLIDA: O script retornou HTML. No código .gs, use ContentService e não HtmlService.');
+                                      }
                                     }
                                   } catch (e) {
                                     alert('❌ ERRO CRÍTICO: Não foi possível alcançar o servidor. Tente recarregar.');
