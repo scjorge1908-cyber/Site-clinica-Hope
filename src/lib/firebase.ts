@@ -106,6 +106,18 @@ export async function getSpecialists() {
 
 export async function saveSpecialists(specialists: any[]) {
   try {
+    // 1. Get current IDs to detect deletions
+    const querySnapshot = await getDocs(collection(db, COLLECTIONS.SPECIALISTS));
+    const existingIds = querySnapshot.docs.map(doc => doc.id);
+    const newIds = specialists.map(s => s.id);
+    
+    // 2. Delete removed docs
+    const toDelete = existingIds.filter(id => !newIds.includes(id));
+    for (const id of toDelete) {
+      await deleteDoc(doc(db, COLLECTIONS.SPECIALISTS, id));
+    }
+
+    // 3. Update/Create current docs
     for (const s of specialists) {
       if (!s.id) continue;
       const docRef = doc(db, COLLECTIONS.SPECIALISTS, s.id);
@@ -128,6 +140,15 @@ export async function getApproaches() {
 
 export async function saveApproaches(approaches: any[]) {
   try {
+    const querySnapshot = await getDocs(collection(db, COLLECTIONS.APPROACHES));
+    const existingIds = querySnapshot.docs.map(doc => doc.id);
+    const newIds = approaches.map(a => a.id);
+    
+    const toDelete = existingIds.filter(id => !newIds.includes(id));
+    for (const id of toDelete) {
+      await deleteDoc(doc(db, COLLECTIONS.APPROACHES, id));
+    }
+
     for (const a of approaches) {
       if (!a.id) continue;
       const docRef = doc(db, COLLECTIONS.APPROACHES, a.id);
@@ -150,6 +171,15 @@ export async function getInsurancePlans() {
 
 export async function saveInsurancePlans(plans: any[]) {
   try {
+    const querySnapshot = await getDocs(collection(db, COLLECTIONS.INSURANCE));
+    const existingIds = querySnapshot.docs.map(doc => doc.id);
+    const newIds = plans.map(p => p.id);
+    
+    const toDelete = existingIds.filter(id => !newIds.includes(id));
+    for (const id of toDelete) {
+      await deleteDoc(doc(db, COLLECTIONS.INSURANCE, id));
+    }
+
     for (const p of plans) {
       if (!p.id) continue;
       const docRef = doc(db, COLLECTIONS.INSURANCE, p.id);

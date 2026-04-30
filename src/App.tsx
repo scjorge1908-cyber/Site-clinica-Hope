@@ -169,21 +169,21 @@ export default function App() {
 
     const unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
-      if (data.length > 0) setSpecialists(data);
+      setSpecialists(data);
     }, (error) => {
       console.error("Erro no listener de especialistas:", error);
     });
 
     const unsubApproaches = onSnapshot(collection(db, COLLECTIONS.APPROACHES), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Approach[];
-      if (data.length > 0) setApproaches(data);
+      setApproaches(data);
     }, (error) => {
       console.error("Erro no listener de abordagens:", error);
     });
 
     const unsubInsurance = onSnapshot(collection(db, COLLECTIONS.INSURANCE), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InsurancePlan[];
-      if (data.length > 0) setInsurancePlans(data);
+      setInsurancePlans(data);
     }, (error) => {
       console.error("Erro no listener de convênios:", error);
     });
@@ -2379,11 +2379,7 @@ function AdminScreen({
                 {localSpecialists.map((s, idx) => (
                   <div key={s.id} className="p-8 border border-outline rounded-[2rem] flex flex-col md:flex-row gap-8 items-start relative group">
                     <button 
-                      onClick={() => {
-                        if (confirm(`Remover ${s.name}?`)) {
-                          removeSpecialist(s.id);
-                        }
-                      }}
+                      onClick={() => removeSpecialist(s.id)}
                       className="absolute top-4 right-4 p-2 text-accent bg-accent/5 hover:bg-accent hover:text-white rounded-full transition-all opacity-0 group-hover:opacity-100 shadow-sm"
                       title="Excluir Especialista"
                     >
