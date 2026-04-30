@@ -1018,52 +1018,60 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             throw new Error('Servidor retornou um formato inesperado. Verifique as configurações.');
           }
 
-          const data = await response.json();
+          const result = await response.json();
+          const data = result.data || result; // Handle both array and {success, data} formats
           const newSchedule: NonNullable<Specialist['schedule']> = {};
 
-          data.forEach((row: any) => {
-            const dayRaw = row["Dia da Semana"] || row["dia"] || row["Day"];
-            const time = row["Horário"] || row["horario"] || row["Time"];
-            const status = row["Paciente"] || row["paciente"] || row["Status"];
-            
-            if (!dayRaw || !time) return;
+          if (Array.isArray(data)) {
+            data.forEach((row: any) => {
+              const dayRaw = row["Dia da Semana"] || row["dia"] || row["Day"];
+              let time = row["Horário"] || row["horario"] || row["Time"];
+              const status = row["Paciente"] || row["paciente"] || row["Status"];
+              
+              if (!dayRaw || !time) return;
 
-            const dayMap: {[key: string]: string} = {
-              'segunda': 'Segunda', 'segunda-feira': 'Segunda',
-              'terça': 'Terça', 'terça-feira': 'Terça',
-              'quarta': 'Quarta', 'quarta-feira': 'Quarta',
-              'quinta': 'Quinta', 'quinta-feira': 'Quinta',
-              'sexta': 'Sexta', 'sexta-feira': 'Sexta',
-              'sábado': 'Sábado', 'sabado': 'Sábado'
-            };
-            const dayKey = dayRaw.toString().toLowerCase().trim();
-            const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
-            
-            // FILTER: Only free slots
-            if (status === '💚' || (status && status.toString().includes('💚'))) {
-              if (!newSchedule[day]) {
-                newSchedule[day] = { periods: {} };
-              }
+              // Extract time HH:mm even if it comes with dates like "30/12/1899 18:53"
+              const timeStr = time.toString();
+              const timeMatch = timeStr.match(/(\d{1,2}:\d{2})/);
+              const processedTime = timeMatch ? timeMatch[1] : timeStr;
 
-              const hourMatch = time.toString().match(/(\d{1,2})/);
-              if (hourMatch) {
-                const hour = parseInt(hourMatch[1]);
-                let shift: Shift = Shift.Afternoon;
-                
-                if (hour >= 7 && hour < 13) shift = Shift.Morning;
-                else if (hour >= 13 && hour < 18) shift = Shift.Afternoon;
-                else if (hour >= 18 && hour <= 22) shift = Shift.Night;
-
-                if (!newSchedule[day].periods[shift]) {
-                  newSchedule[day].periods[shift] = [];
+              const dayMap: {[key: string]: string} = {
+                'segunda': 'Segunda', 'segunda-feira': 'Segunda',
+                'terça': 'Terça', 'terça-feira': 'Terça',
+                'quarta': 'Quarta', 'quarta-feira': 'Quarta',
+                'quinta': 'Quinta', 'quinta-feira': 'Quinta',
+                'sexta': 'Sexta', 'sexta-feira': 'Sexta',
+                'sábado': 'Sábado', 'sabado': 'Sábado'
+              };
+              const dayKey = dayRaw.toString().toLowerCase().trim();
+              const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
+              
+              // FILTER: Only free slots
+              if (status === '💚' || (status && status.toString().includes('💚'))) {
+                if (!newSchedule[day]) {
+                  newSchedule[day] = { periods: {} };
                 }
-                
-                if (!newSchedule[day].periods[shift]?.includes(time)) {
-                  newSchedule[day].periods[shift]?.push(time);
+
+                const hourMatch = processedTime.match(/(\d{1,2})/);
+                if (hourMatch) {
+                  const hour = parseInt(hourMatch[1]);
+                  let shift: Shift = Shift.Afternoon;
+                  
+                  if (hour >= 7 && hour < 13) shift = Shift.Morning;
+                  else if (hour >= 13 && hour < 18) shift = Shift.Afternoon;
+                  else if (hour >= 18 && hour <= 22) shift = Shift.Night;
+
+                  if (!newSchedule[day].periods[shift]) {
+                    newSchedule[day].periods[shift] = [];
+                  }
+                  
+                  if (!newSchedule[day].periods[shift]?.includes(processedTime)) {
+                    newSchedule[day].periods[shift]?.push(processedTime);
+                  }
                 }
               }
-            }
-          });
+            });
+          }
 
           // Sort times within periods
           Object.keys(newSchedule).forEach(day => {
@@ -2347,13 +2355,16 @@ function AdminScreen({
                                     } else {
                                       const errData = await res.json().catch(() => ({}));
                                       let msg = `⚠️ FALHA: ${errData.error || 'Verifique se publicou como "Qualquer pessoa" (Anyone).'}`;
-                                      if (!isJson) {
-                                        msg += '\n\nDICA: Seu script está retornando HTML em vez de dados. Verifique se no final do código você usa "ContentService" e não "HtmlService".';
+                                      
+                                      if (res.status === 403 || (errData.error && errData.error.includes('403'))) {
+                                        msg = "❌ BLOQUEIO (403): O Google exige autorização. Abra o link do script no seu navegador, clique em 'Revisar Permissões' e autorize tudo. Depois tente vincular aqui novamente.";
+                                      } else if (!isJson) {
+                                        msg += '\n\nDICA: Seu script retornou HTML. No código .gs, use ContentService e não HtmlService.';
                                       }
                                       alert(msg);
                                     }
                                   } catch (e) {
-                                    alert('❌ ERRO CRÍTICO: Não foi possível alcançar o servidor de proxy. Tente recarregar a página.');
+                                    alert('❌ ERRO CRÍTICO: Não foi possível alcançar o servidor. Tente recarregar.');
                                   }
                                 }}
                                 className="px-8 bg-secondary text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:shadow-lg transition-all active:scale-95 whitespace-nowrap h-[46px]"
