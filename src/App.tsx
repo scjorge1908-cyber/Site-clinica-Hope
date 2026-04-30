@@ -271,6 +271,7 @@ export default function App() {
               settings={{ ...homeSettings, insurancePlans }} 
               approaches={approaches}
               specialists={specialists}
+              isAdminUnlocked={isAdminUnlocked}
             />
           )}
           {currentScreen === Screen.SEO && <SEOScreen onNavigate={navigateTo} settings={homeSettings} />}
@@ -280,6 +281,7 @@ export default function App() {
               specialists={specialists} 
               approaches={approaches}
               settings={{ ...homeSettings, insurancePlans }}
+              isAdminUnlocked={isAdminUnlocked}
               shouldScrollToList={scrollIntent}
             />
           )}
@@ -516,9 +518,10 @@ interface ScreenProps {
 interface HomeProps extends ScreenProps {
   settings: HomeSettings;
   approaches: Approach[];
+  isAdminUnlocked: boolean;
 }
 
-function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps & { specialists: Specialist[] }) {
+function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlocked }: HomeProps & { specialists: Specialist[] }) {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -650,7 +653,8 @@ function HomeScreen({ onNavigate, settings, approaches, specialists }: HomeProps
                 {specialists.length > 0 && (
                   <SpecialistCard 
                     spec={specialists[index]} 
-                    insurancePlans={settings.insurancePlans || []} 
+                    insurancePlans={settings.insurancePlans || []}
+                    isAdminUnlocked={isAdminUnlocked}
                   />
                 )}
               </motion.div>
@@ -933,15 +937,17 @@ interface CorpoClinicoProps extends ScreenProps {
   specialists: Specialist[];
   approaches: Approach[];
   settings: HomeSettings;
+  isAdminUnlocked: boolean;
   shouldScrollToList?: boolean;
 }
 
 interface SpecialistCardProps {
   spec: Specialist;
   insurancePlans: InsurancePlan[];
+  isAdminUnlocked?: boolean;
 }
 
-function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
+function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCardProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
@@ -955,16 +961,40 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
         setIsLoadingSheet(true);
         setSheetError(null);
         try {
-          const baseUrl = spec.googleAppsScriptUrl || '';
-          const url = baseUrl.includes('?') ? `${baseUrl}&mode=agenda` : `${baseUrl}?mode=agenda`;
+          const baseUrl = (spec.googleAppsScriptUrl || '').trim();
+          if (!baseUrl) {
+            setIsLoadingSheet(false);
+            return;
+          }
           
-          const response = await fetch(url);
-          if (!response.ok) throw new Error('Falha ao conectar com o servidor da agenda');
+          if (!baseUrl.endsWith('/exec')) {
+            throw new Error('A URL não termina em /exec. Verifique se você copiou o link de "App da Web" em vez do link da planilha.');
+          }
+
+          const scriptUrl = baseUrl.includes('?') ? `${baseUrl}&mode=agenda` : `${baseUrl}?mode=agenda`;
+          const url = `/api/proxy-sheet?url=${encodeURIComponent(scriptUrl)}`;
           
+          const response = await fetch(url).catch(() => {
+            throw new Error('Erro de conexão: O servidor não respondeu. Tente recarregar a página.');
+          });
+          
+          const contentType = response.headers.get("content-type");
+          const isJson = contentType && contentType.includes("application/json");
+
+          if (!response.ok) {
+            let errorMessage = `Erro ${response.status}`;
+            if (isJson) {
+              const errData = await response.json().catch(() => ({}));
+              errorMessage = errData.error || errorMessage;
+            }
+            throw new Error(errorMessage);
+          }
+          
+          if (!isJson) {
+            throw new Error('Servidor retornou um formato inesperado. Verifique as configurações.');
+          }
+
           const data = await response.json();
-          
-          // Assuming the Apps Script returns an array of objects
-          // [{ "Dia da Semana": "Segunda", "Horário": "08:00", "Paciente": "💚", ... }]
           const newSchedule: NonNullable<Specialist['schedule']> = {};
 
           data.forEach((row: any) => {
@@ -1026,7 +1056,13 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
           }
         } catch (error) {
           console.error('Erro ao buscar dados da planilha:', error);
-          setSheetError(error instanceof Error ? error.message : 'Erro na integração');
+          let message = 'Erro na integração';
+          if (error instanceof TypeError && error.message.includes('fetch')) {
+            message = 'Bloqueio de conexão (CORS). Verifique se o Script foi publicado como Web App para "Qualquer pessoa" e se a URL termina em /exec';
+          } else {
+            message = error instanceof Error ? error.message : 'Erro na integração';
+          }
+          setSheetError(message);
         } finally {
           setIsLoadingSheet(false);
         }
@@ -1092,7 +1128,7 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
           });
           if (Object.keys(newSchedule).length > 0) setSheetSchedule(newSchedule);
         } catch (error) {
-          setSheetError('Use o Google Apps Script para melhor integração');
+          setSheetError(error instanceof Error ? error.message : 'Erro na integração');
         } finally {
           setIsLoadingSheet(false);
         }
@@ -1101,7 +1137,13 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
     }
   }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab]);
 
-  const scheduleToUse = sheetSchedule || spec.schedule;
+  // Só mostra a agenda se houver dados e não houver erro de conexão (ou se for admin querendo ver o erro)
+  const hasValidData = sheetSchedule && Object.keys(sheetSchedule).length > 0;
+  const showAgendaSection = hasValidData && !sheetError;
+  
+  // No modo Admin, mostramos a seção mesmo com erro para que o administrador saiba o que corrigir
+  const displayAgenda = isAdminUnlocked ? (hasValidData || sheetError || isLoadingSheet) : showAgendaSection;
+
   const canBook = selectedDay && selectedTime && selectedPlan;
 
   const handleWhatsAppClick = () => {
@@ -1138,7 +1180,7 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
             ))}
           </div>
 
-          {scheduleToUse && (
+          {displayAgenda && (
             <div className="pt-6 border-t border-outline-variant/30 space-y-4">
               {spec.attendedAges && spec.attendedAges.length > 0 && (
                 <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
@@ -1150,76 +1192,85 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
                   </p>
                 </div>
               )}
-              {(spec.googleSheetsId || spec.googleAppsScriptUrl) && (
+              {isAdminUnlocked && (spec.googleSheetsId || spec.googleAppsScriptUrl) && (
                 <div className="flex items-center gap-2 mb-2 px-2">
                   <div className={`w-1.5 h-1.5 rounded-full ${isLoadingSheet ? 'bg-amber-500 animate-pulse' : (sheetError ? 'bg-red-500' : 'bg-green-500')}`} />
                   <p className={`text-[9px] font-bold uppercase tracking-widest ${sheetError ? 'text-red-500/80' : 'text-on-surface-variant/60'}`}>
-                    {isLoadingSheet ? 'Sincronizando Agenda...' : (sheetError ? `Erro: ${sheetError}` : (spec.googleAppsScriptUrl ? 'Agenda Web App Conectada' : 'Agenda Integrada em Tempo Real'))}
+                    {isLoadingSheet ? 'Sincronizando Agenda...' : (sheetError ? `Aviso Admin: ${sheetError}` : (spec.googleAppsScriptUrl ? 'Agenda Conectada (Web App)' : 'Planilha Conectada'))}
                   </p>
                 </div>
               )}
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Agendar Horário</p>
-              
-              <div className="space-y-4 pt-4">
-                {/* Day Selection */}
-                <div className="flex flex-wrap gap-2">
-                  {Object.keys(scheduleToUse)
-                    .sort((a, b) => {
-                      const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-                      return days.indexOf(a) - days.indexOf(b);
-                    })
-                    .map(day => (
-                      <button
-                        key={day}
-                        onClick={() => {
-                          setSelectedDay(day === selectedDay ? null : day);
-                          setSelectedTime(null);
-                        }}
-                        className={`px-4 py-2.5 rounded-xl text-[10px] font-bold transition-all border ${
-                          selectedDay === day 
-                          ? 'bg-primary text-white border-primary shadow-md' 
-                          : 'bg-surface-container text-primary border-outline-variant/30 hover:border-primary/50'
-                        }`}
-                      >
-                        {day}
-                      </button>
-                    ))}
-                </div>
 
-                {/* Time Selection */}
-                {selectedDay && scheduleToUse[selectedDay] && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }} 
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-variant/20 space-y-3"
-                  >
-                    {(Object.entries(scheduleToUse[selectedDay].periods) as [Shift, string[]][])
-                      .sort(([a], [b]) => {
-                        const periods = [Shift.Morning as string, Shift.Afternoon as string, Shift.Night as string];
-                        return periods.indexOf(a) - periods.indexOf(b);
-                      })
-                      .map(([period, times]) => times && times.length > 0 && (
-                        <div key={period} className="space-y-1.5">
-                          <p className="text-[8px] font-black uppercase text-on-surface-variant/60">{period}</p>
-                          <div className="flex flex-wrap gap-2">
-                            {times.map(time => (
-                              <button
-                                key={time}
-                                onClick={() => setSelectedTime(time === selectedTime ? null : time)}
-                                className={`px-3 py-2 rounded-lg text-[10px] font-medium transition-all ${
-                                  selectedTime === time
-                                  ? 'bg-secondary text-white shadow-sm'
-                                  : 'bg-white text-primary border border-outline-variant/10 hover:border-secondary/30'
-                                }`}
-                              >
-                                {time}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                  </motion.div>
-                )}
+              {sheetError && isAdminUnlocked ? (
+                <div className="p-4 bg-red-50 rounded-2xl border border-red-100 animate-in fade-in duration-500">
+                  <p className="text-[10px] text-red-600 font-bold uppercase mb-1">Erro Admin Sincronização:</p>
+                  <p className="text-xs text-red-500 leading-tight mb-2">{sheetError}</p>
+                  <p className="text-[9px] text-red-400 italic">Este aviso não aparece para o público. O público não vê a agenda se houver erro.</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Agendar Horário</p>
+                  
+                  <div className="space-y-4 pt-4">
+                    {/* Day Selection */}
+                    <div className="flex flex-wrap gap-2">
+                      {Object.keys(sheetSchedule || spec.schedule || {})
+                        .sort((a, b) => {
+                          const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                          return days.indexOf(a) - days.indexOf(b);
+                        })
+                        .map(day => (
+                          <button
+                            key={day}
+                            onClick={() => {
+                              setSelectedDay(day === selectedDay ? null : day);
+                              setSelectedTime(null);
+                            }}
+                            className={`px-4 py-2.5 rounded-xl text-[10px] font-bold transition-all border ${
+                              selectedDay === day 
+                              ? 'bg-primary text-white border-primary shadow-md' 
+                              : 'bg-surface-container text-primary border-outline-variant/30 hover:border-primary/50'
+                            }`}
+                          >
+                            {day}
+                          </button>
+                        ))}
+                    </div>
+
+                    {/* Time Selection */}
+                    {selectedDay && (sheetSchedule || spec.schedule)?.[selectedDay] && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }} 
+                        animate={{ opacity: 1, y: 0 }}
+                        className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-variant/20 space-y-3"
+                      >
+                        {(Object.entries((sheetSchedule || spec.schedule)![selectedDay].periods) as [Shift, string[]][])
+                          .sort(([a], [b]) => {
+                            const periods = [Shift.Morning as string, Shift.Afternoon as string, Shift.Night as string];
+                            return periods.indexOf(a) - periods.indexOf(b);
+                          })
+                          .map(([period, times]) => times && times.length > 0 && (
+                            <div key={period} className="space-y-1.5">
+                              <p className="text-[8px] font-black uppercase text-on-surface-variant/60">{period}</p>
+                              <div className="flex flex-wrap gap-2">
+                                {times.map(time => (
+                                  <button
+                                    key={time}
+                                    onClick={() => setSelectedTime(time === selectedTime ? null : time)}
+                                    className={`px-3 py-2 rounded-lg text-[10px] font-medium transition-all ${
+                                      selectedTime === time
+                                      ? 'bg-secondary text-white shadow-sm'
+                                      : 'bg-white text-primary border border-outline-variant/10 hover:border-secondary/30'
+                                    }`}
+                                  >
+                                    {time}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                      </motion.div>
+                    )}
 
                 {/* Plan Selection */}
                 <div className="space-y-4">
@@ -1257,12 +1308,14 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
                           <span>{plan.name}</span>
                         </button>
                       ))}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+            </>
+          )}
+        </div>
+      )}
 
           <button 
             disabled={!canBook}
@@ -1297,7 +1350,7 @@ function SpecialistCard({ spec, insurancePlans }: SpecialistCardProps) {
   );
 }
 
-function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, shouldScrollToList }: CorpoClinicoProps) {
+function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isAdminUnlocked, shouldScrollToList }: CorpoClinicoProps) {
   useEffect(() => {
     if (shouldScrollToList) {
       const element = document.getElementById('topo-especialistas');
@@ -1480,7 +1533,11 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, sho
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
              {specialistsToShow.map(spec => (
                <div key={spec.id}>
-                 <SpecialistCard spec={spec} insurancePlans={settings.insurancePlans || []} />
+                 <SpecialistCard 
+                   spec={spec} 
+                   insurancePlans={settings.insurancePlans || []} 
+                   isAdminUnlocked={isAdminUnlocked}
+                 />
                </div>
              ))}
           </div>
@@ -2166,21 +2223,83 @@ function AdminScreen({
                       <div className="md:col-span-2 space-y-4 pt-4 border-t border-outline">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2 md:col-span-2">
-                            <p className="text-[10px] uppercase font-bold tracking-widest text-primary">URL do Script (Google Apps Script Web App)</p>
-                            <input 
-                              className="p-2 border-b border-outline w-full focus:border-primary outline-none" 
-                              value={s.googleAppsScriptUrl || ''} 
-                              onChange={e => updateSpecialist(s.id, { googleAppsScriptUrl: e.target.value })} 
-                              placeholder="Fica na URL do Web App implantado (https://script.google.com/macros/s/.../exec)" 
-                            />
+                            <p className="text-[10px] uppercase font-bold tracking-widest text-primary">URL de Integração (App da Web do Google Scripts)</p>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <input 
+                                className="p-3 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm" 
+                                value={s.googleAppsScriptUrl || ''} 
+                                onChange={e => {
+                                  const newSpecs = [...specialists];
+                                  newSpecs[i] = { ...s, googleAppsScriptUrl: e.target.value };
+                                  onUpdateSpecialists(newSpecs);
+                                }} 
+                                placeholder="Deve terminar em /exec" 
+                              />
+                              <button 
+                                onClick={async () => {
+                                  if (!s.googleAppsScriptUrl) {
+                                    alert('Insira a URL antes de vincular.');
+                                    return;
+                                  }
+                                  if (!s.googleAppsScriptUrl.trim().endsWith('/exec')) {
+                                    alert('❌ ATENÇÃO: Sua URL não termina em /exec. Você provavelmente colou o link do rascunho ou da edição. No Google Scripts, vá em Implantar > Nova Implantação e copie a URL correta.');
+                                  }
+                                  try {
+                                    const scriptUrl = s.googleAppsScriptUrl.trim().includes('?') ? `${s.googleAppsScriptUrl.trim()}&mode=agenda` : `${s.googleAppsScriptUrl.trim()}?mode=agenda`;
+                                    const url = `/api/proxy-sheet?url=${encodeURIComponent(scriptUrl)}`;
+                                    const res = await fetch(url);
+                                    const contentType = res.headers.get("content-type");
+                                    const isJson = contentType && contentType.includes("application/json");
+
+                                    if (res.ok && isJson) {
+                                      alert('✅ CONECTADO! Sua agenda foi vinculada com sucesso.');
+                                    } else {
+                                      const errData = await res.json().catch(() => ({}));
+                                      alert(`⚠️ FALHA: ${errData.error || 'Verifique se publicou como "Qualquer pessoa" (Anyone).'}\n\nDica: Abra a URL do script no navegador e veja se o Google pede autorização.`);
+                                    }
+                                  } catch (e) {
+                                    alert('❌ ERRO CRÍTICO: Não foi possível alcançar o servidor de proxy. Tente recarregar a página.');
+                                  }
+                                }}
+                                className="px-8 bg-secondary text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:shadow-lg transition-all active:scale-95 whitespace-nowrap h-[46px]"
+                              >
+                                Vincular Agenda
+                              </button>
+                            </div>
                           </div>
                         </div>
-                        <div className="bg-secondary/5 p-4 rounded-xl space-y-3">
-                          <p className="text-[10px] font-black uppercase text-secondary">Instruções de Integração (Web App):</p>
-                          <div className="text-[11px] text-primary/80 space-y-2">
-                            <p>1. No Google Apps Script: <strong>Implantar &gt; Nova Implantação &gt; App da Web</strong>.</p>
-                            <p>2. Configure para: <strong>Quem pode acessar: Qualquer pessoa</strong>.</p>
-                            <p>3. Cole a URL no campo acima. O sistema buscará os horários onde o paciente é <span className="text-sm">💚</span>.</p>
+                        <div className="bg-secondary/5 p-4 rounded-xl space-y-4">
+                          <p className="text-[10px] font-black uppercase text-secondary flex items-center gap-2">
+                            <Info size={14} /> Passo a Passo para Gerar a URL Correta:
+                          </p>
+                          <div className="text-[11px] text-primary/80 space-y-3">
+                            <p>1. No Google Apps Script, use este código (função <strong>doGet</strong>):</p>
+                            <div className="relative">
+                              <pre className="p-3 bg-white border border-outline/20 rounded-lg overflow-x-auto text-[9px] font-mono whitespace-pre shadow-inner">
+{`function doGet(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Agenda");
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0], result = [];
+    for (var i = 1; i < data.length; i++) {
+        var obj = {};
+        for (var j = 0; j < headers.length; j++) obj[headers[j]] = data[i][j];
+        result.push(obj);
+    }
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({error: err.message}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}`}
+                              </pre>
+                            </div>
+                            <p>2. Clique em <strong>Implantar &gt; Nova Implantação</strong> (OBRIGATÓRIO: Sempre crie uma nova para aplicar mudanças).</p>
+                            <p>3. Selecione <strong>Tipo: App da Web</strong>.</p>
+                            <p>4. Em "Executar como", selecione: <strong>Eu (seu-email@gmail.com)</strong>. ⚠️ MUITO IMPORTANTE.</p>
+                            <p>5. Em "Quem pode acessar", selecione: <strong>Qualquer pessoa (Anyone)</strong>.</p>
+                            <p>6. Clique em Implantar, <strong>Autorize o Acesso</strong> (clique em Avançado &gt; Acessar se aparecer aviso) e use a nova URL.</p>
                           </div>
                         </div>
                         <p className="text-[10px] uppercase font-bold tracking-widest text-primary">Faixas Etárias</p>
