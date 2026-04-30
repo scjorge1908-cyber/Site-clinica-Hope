@@ -506,24 +506,20 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
               <div className="flex flex-wrap gap-6 pt-6 border-t border-outline-variant/20">
                 {settings.insurancePlans.map(plan => (
-                  <div key={plan.id} className="flex flex-col items-center gap-1 group">
-                    <img 
-                      src={plan.logo} 
-                      alt={plan.name} 
-                      className="h-8 md:h-10 w-auto object-contain transition-all group-hover:scale-110" 
-                      title={plan.name}
-                    />
-                    <span className="text-[8px] font-black uppercase tracking-widest text-on-surface-variant/40 group-hover:text-primary transition-colors">
-                      {plan.name}
-                    </span>
-                  </div>
+                  <img 
+                    key={plan.id} 
+                    src={plan.logo} 
+                    alt={plan.name} 
+                    className="h-10 md:h-14 w-auto object-contain transition-all hover:scale-110" 
+                    title={plan.name}
+                  />
                 ))}
               </div>
             )}
           </div>
           <div className="md:text-right space-y-4">
-            <p className="text-on-surface-variant text-sm">{settings.footerRights || '© 2022 Clínica Hope. Todos os direitos reservados.'}</p>
-            <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/40">{settings.address || 'Pagani, Palhoça – SC'}</p>
+            <p className="text-on-surface-variant text-sm">{settings?.footerRights || '© 2022 Clínica Hope. Todos os direitos reservados.'}</p>
+            <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/40">{settings?.address || 'Pagani, Palhoça – SC'}</p>
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-6 mt-12 pt-8 border-t border-outline-variant/10">
@@ -596,19 +592,9 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             {settings.insurancePlans && settings.insurancePlans.length > 0 && (
               <div className="pt-12 border-t border-outline-variant/30">
                 <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-on-surface-variant/50 mb-6 font-mono">Convênios que aceitamos</p>
-                <div className="flex flex-wrap gap-x-12 gap-y-8 items-end transition-all duration-500">
+                <div className="flex flex-wrap gap-x-12 gap-y-6 items-center transition-all duration-500">
                   {settings.insurancePlans.map(plan => (
-                    <div key={plan.id} className="flex flex-col items-center gap-3 group">
-                      <img 
-                        src={plan.logo} 
-                        alt={plan.name} 
-                        className="h-10 md:h-14 w-auto object-contain group-hover:scale-110 transition-transform duration-300" 
-                        title={plan.name} 
-                      />
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/30 group-hover:text-primary transition-colors">
-                        {plan.name}
-                      </span>
-                    </div>
+                    <img key={plan.id} src={plan.logo} alt={plan.name} className="h-10 md:h-14 w-auto object-contain hover:scale-110 transition-transform duration-300" title={plan.name} />
                   ))}
                 </div>
               </div>
@@ -1033,14 +1019,18 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
           }
 
           const result = await response.json();
-          const data = result.data || result; // Handle both array and {success, data} formats
+          // The script returns an array directly when called with mode=agenda
+          const data = result.data || result; 
           const newSchedule: NonNullable<Specialist['schedule']> = {};
 
           if (Array.isArray(data)) {
             data.forEach((row: any) => {
-              const dayRaw = row["Dia da Semana"] || row["dia"] || row["Day"];
-              let time = row["Horário"] || row["horario"] || row["Time"];
-              const status = row["Paciente"] || row["paciente"] || row["Status"];
+              if (!row) return;
+              
+              // Map your script's specific keys
+              const dayRaw = row.dia || row["Dia da Semana"] || row.Day;
+              let time = row.horario || row["Horário"] || row.Time;
+              const status = row.paciente || row["Paciente"] || row.Status;
               
               if (!dayRaw || !time) return;
 
