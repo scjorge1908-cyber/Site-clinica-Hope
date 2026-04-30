@@ -166,7 +166,6 @@ export const DEFAULT_TESTIMONIALS = [
     id: '1',
     author: 'Abilio Santiago',
     text: 'Localização excelente, ambiente acolhedor e atendimento profissional da melhor qualidade.',
-    date: 'há 9 meses',
     rating: 5,
     avatar: 'AS'
   },
@@ -174,7 +173,6 @@ export const DEFAULT_TESTIMONIALS = [
     id: '2',
     author: 'Andrielly Amorim',
     text: 'Excelente atendimento!! Amamos o cuidado e o carinho com nossa filha, com certeza vamos continuar o tratamento pois já estamos sentindo os efeitos da terapia.',
-    date: 'há 2 anos',
     rating: 5,
     avatar: 'AA'
   },
@@ -182,7 +180,6 @@ export const DEFAULT_TESTIMONIALS = [
     id: '3',
     author: 'Leandro Cruz',
     text: 'Muito legal a Clínica. Gostei que é próximo ao Shopping Via Catarina. Boa localização. Muitos gentis e zelosos no atendimento.',
-    date: 'há 2 anos',
     rating: 5,
     avatar: 'LC'
   },
@@ -190,7 +187,6 @@ export const DEFAULT_TESTIMONIALS = [
     id: '4',
     author: 'Adriano Cruz',
     text: 'Excelente atendimento! Ambiente agradável e seguro! Muito profissional! Recomendo! Nota 1.000!!',
-    date: 'há 2 anos',
     rating: 5,
     avatar: 'AC'
   }

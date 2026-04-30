@@ -142,9 +142,10 @@ export default function App() {
   
   // Data State
   const [homeSettings, setHomeSettings] = useState<HomeSettings>(DEFAULT_HOME_SETTINGS);
-  const [specialists, setSpecialists] = useState<Specialist[]>(DEFAULT_SPECIALISTS);
-  const [approaches, setApproaches] = useState<Approach[]>(DEFAULT_APPROACHES);
+  const [specialists, setSpecialists] = useState<Specialist[]>([]);
+  const [approaches, setApproaches] = useState<Approach[]>([]);
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>([]);
+  const [isDataInitialized, setIsDataInitialized] = useState(false);
   
   const [scrollIntent, setScrollIntent] = useState(false);
 
@@ -160,11 +161,15 @@ export default function App() {
 
     // Real-time listeners
     const unsubHome = onSnapshot(doc(db, COLLECTIONS.SETTINGS, DOCS.HOME_SETTINGS), (doc) => {
-      if (doc.exists()) setHomeSettings(doc.data() as HomeSettings);
+      if (doc.exists()) {
+        setHomeSettings(doc.data() as HomeSettings);
+      }
+      setIsDataInitialized(true);
       setIsLoading(false);
     }, (error) => {
       console.error("Erro no listener de HomeSettings:", error);
       setIsLoading(false);
+      setIsDataInitialized(true);
     });
 
     const unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
@@ -334,6 +339,7 @@ export default function App() {
               onLogout={handleLogout}
               insurancePlans={insurancePlans}
               onUpdateInsurance={updateInsurancePlans}
+              isDataLoaded={isDataInitialized}
             />
           )}
         </motion.div>
@@ -753,7 +759,6 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                   </div>
                   <div>
                     <h5 className="text-sm font-bold text-primary">{item.author}</h5>
-                    <p className="text-[10px] text-on-surface-variant/60 font-medium uppercase tracking-wider">{item.date}</p>
                   </div>
                 </div>
               </div>
@@ -1924,6 +1929,7 @@ interface AdminScreenProps {
   onLogout: () => void;
   insurancePlans: InsurancePlan[];
   onUpdateInsurance: (plans: InsurancePlan[]) => void;
+  isDataLoaded: boolean;
 }
 
 function AdminScreen({ 
@@ -1936,7 +1942,8 @@ function AdminScreen({
   onUpdateApproaches, 
   onLogout,
   insurancePlans,
-  onUpdateInsurance
+  onUpdateInsurance,
+  isDataLoaded
 }: AdminScreenProps) {
   const [localSettings, setLocalSettings] = useState<HomeSettings>(settings);
   const [localSpecialists, setLocalSpecialists] = useState<Specialist[]>(specialists);
@@ -1955,14 +1962,14 @@ function AdminScreen({
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
 
   useEffect(() => {
-    if (!hasInitialized && specialists.length > 0) {
+    if (isDataLoaded && !hasInitialized) {
       setLocalSpecialists(specialists);
       setLocalSettings(settings);
       setLocalApproaches(approaches);
       setLocalInsurancePlans(insurancePlans);
       setHasInitialized(true);
     }
-  }, [specialists, settings, approaches, insurancePlans, hasInitialized]);
+  }, [isDataLoaded, specialists, settings, approaches, insurancePlans, hasInitialized]);
 
   const addSpecialist = () => {
     const id = Date.now().toString();
@@ -2079,6 +2086,7 @@ function AdminScreen({
   const handleSaveSettings = async () => {
     setSaveStatus({ ...saveStatus, settings: true });
     await onUpdateSettings(localSettings);
+    await onUpdateInsurance(localInsurancePlans);
     setTimeout(() => {
       setSaveStatus(prev => ({ ...prev, settings: false }));
     }, 2000);
@@ -2161,15 +2169,22 @@ function AdminScreen({
             </div>
             <button 
               onClick={() => {
-                const btn = document.getElementById('refresh-btn');
-                if (btn) btn.classList.add('animate-spin');
-                // Limpa cache e recarrega
-                if ('caches' in window) {
-                  caches.keys().then((names) => {
-                    for (let name of names) caches.delete(name);
-                  });
+                if (confirm("Isso irá recarregar a página e buscar os dados mais recentes do servidor. Certifique-se de que salvou suas alterações. Deseja continuar?")) {
+                  const btn = document.getElementById('refresh-btn');
+                  if (btn) btn.classList.add('animate-spin');
+                  
+                  // Clear everything possible to force a fresh fetch
+                  if ('caches' in window) {
+                    caches.keys().then((names) => {
+                      for (let name of names) caches.delete(name);
+                    });
+                  }
+                  
+                  // Use a query param to cache bust the main request if possible
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('reload', Date.now().toString());
+                  window.location.href = url.toString();
                 }
-                setTimeout(() => window.location.reload(), 500);
               }}
               id="refresh-btn"
               className="p-3 bg-secondary text-white rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
