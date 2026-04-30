@@ -1066,22 +1066,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             appointments.forEach((row: any) => {
               if (!row) return;
               
-              // Filter by specialist (fuzzy match by name OR exact match by ID)
-              const psycNameRaw = (row.psicologa || row["Psicóloga"] || row.psicologo || row["Psicólogo"] || row.profissional || row["Profissional"])?.toString();
-              const rowIdRaw = (row.id || row["ID"] || row.codigo || row["Código"])?.toString();
-              
-              let isMatch = false;
-              if (spec.sheetSpecialistId && rowIdRaw) {
-                isMatch = rowIdRaw.trim() === spec.sheetSpecialistId.trim();
-              } else if (psycNameRaw) {
-                isMatch = psycNameRaw.toLowerCase().includes(spec.name.toLowerCase());
-              } else {
-                // If no specific professional column found, assume this sheet is dedicated to this specialist
-                isMatch = true;
-              }
-
-              if (!isMatch) return;
-
               const dayRaw = row.dia || row["Dia da Semana"] || row.Day;
               let time = row.horario || row["Horário"] || row.Time;
               const status = row.paciente || row["Paciente"] || row.Status;
@@ -1182,21 +1166,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             .map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim()))
             .filter(row => row.length >= 3 && row[0] !== '');
 
-          const headers = rows[0].map(h => h.toLowerCase());
-          const psycIdx = headers.findIndex(h => h.includes('psicologa') || h.includes('profissional') || h.includes('psicólogo'));
-          const idIdx = headers.findIndex(h => h === 'id' || h === 'codigo' || h === 'código');
-
           const newSchedule: NonNullable<Specialist['schedule']> = {};
           rows.slice(1).forEach(row => {
-            let isMatch = true;
-            if (spec.sheetSpecialistId && idIdx !== -1 && row[idIdx]) {
-                isMatch = row[idIdx].trim() === spec.sheetSpecialistId.trim();
-            } else if (psycIdx !== -1 && row[psycIdx]) {
-                isMatch = row[psycIdx].toLowerCase().includes(spec.name.toLowerCase());
-            }
-
-            if (!isMatch) return;
-
             const [dayRaw, time, status] = row;
             if (!dayRaw || !time) return;
             const dayMap: {[key: string]: string} = {
@@ -2399,15 +2370,6 @@ function AdminScreen({
                           <div className="space-y-2 md:col-span-2">
                               <div className="flex flex-col sm:flex-row gap-4">
                                 <div className="flex-grow space-y-1">
-                                  <label className="text-[9px] font-black uppercase text-primary/40 ml-1">ID na Planilha (Opcional)</label>
-                                  <input 
-                                    className="p-3 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
-                                    value={s.sheetSpecialistId || ''} 
-                                    onChange={e => updateSpecialist(s.id, { sheetSpecialistId: e.target.value })} 
-                                    placeholder="Ex: 123" 
-                                  />
-                                </div>
-                                <div className="flex-[2] space-y-1">
                                   <label className="text-[9px] font-black uppercase text-primary/40 ml-1">URL de Integração</label>
                                   <div className="relative group">
                                     <input 
@@ -2546,7 +2508,7 @@ function AdminScreen({
                               <p>Publique como <strong>App da Web</strong> para <strong>Qualquer pessoa (Anyone)</strong>.</p>
                             </div>
                             <div className="sm:col-span-2 p-3 bg-amber-50 rounded-xl border border-amber-100 italic">
-                               💡 Dica: O sistema buscará automaticamente as linhas que contêm o nome "<strong>{s.name}</strong>" ou o status "💚" (Livre).
+                               💡 Dica: O sistema buscará automaticamente as linhas que contêm o status "💚" (Livre). Cada especialista deve ter sua própria URL dedicada.
                             </div>
                           </div>
                         </div>
