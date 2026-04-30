@@ -506,13 +506,17 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
               <div className="flex flex-wrap gap-6 pt-6 border-t border-outline-variant/20">
                 {settings.insurancePlans.map(plan => (
-                  <img 
-                    key={plan.id} 
-                    src={plan.logo} 
-                    alt={plan.name} 
-                    className="h-10 md:h-14 w-auto object-contain transition-all hover:scale-110" 
-                    title={plan.name}
-                  />
+                  <div key={plan.id} className="flex flex-col items-center gap-1 group">
+                    <img 
+                      src={plan.logo} 
+                      alt={plan.name} 
+                      className="h-8 md:h-10 w-auto object-contain transition-all group-hover:scale-110" 
+                      title={plan.name}
+                    />
+                    <span className="text-[8px] font-black uppercase tracking-widest text-on-surface-variant/40 group-hover:text-primary transition-colors">
+                      {plan.name}
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
@@ -592,9 +596,19 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             {settings.insurancePlans && settings.insurancePlans.length > 0 && (
               <div className="pt-12 border-t border-outline-variant/30">
                 <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-on-surface-variant/50 mb-6 font-mono">Convênios que aceitamos</p>
-                <div className="flex flex-wrap gap-x-12 gap-y-6 items-center transition-all duration-500">
+                <div className="flex flex-wrap gap-x-12 gap-y-8 items-end transition-all duration-500">
                   {settings.insurancePlans.map(plan => (
-                    <img key={plan.id} src={plan.logo} alt={plan.name} className="h-10 md:h-14 w-auto object-contain hover:scale-110 transition-transform duration-300" title={plan.name} />
+                    <div key={plan.id} className="flex flex-col items-center gap-3 group">
+                      <img 
+                        src={plan.logo} 
+                        alt={plan.name} 
+                        className="h-10 md:h-14 w-auto object-contain group-hover:scale-110 transition-transform duration-300" 
+                        title={plan.name} 
+                      />
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/30 group-hover:text-primary transition-colors">
+                        {plan.name}
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -2304,30 +2318,33 @@ function AdminScreen({
                               <div className="relative w-full group">
                                 <input 
                                   id={`url-input-${s.id}`}
-                                  className="p-3 pr-16 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
+                                  className="p-3 pr-24 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
                                   value={s.googleAppsScriptUrl || ''} 
                                   onChange={e => updateSpecialist(s.id, { googleAppsScriptUrl: e.target.value })} 
-                                  placeholder="Deve terminar em /exec" 
+                                  placeholder="https://script.google.com/macros/s/.../exec" 
                                 />
                                 {s.googleAppsScriptUrl && (
-                                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pointer-events-auto">
                                     <button 
                                       type="button"
-                                      title="Editar URL"
-                                      onClick={() => document.getElementById(`url-input-${s.id}`)?.focus()}
-                                      className="p-2 hover:bg-primary/10 text-primary/40 hover:text-primary rounded-lg transition-colors cursor-pointer"
+                                      title="Editar Texto"
+                                      onClick={() => {
+                                        const input = document.getElementById(`url-input-${s.id}`);
+                                        input?.focus();
+                                      }}
+                                      className="p-2 hover:bg-primary/10 text-primary/30 hover:text-primary rounded-lg transition-colors cursor-pointer"
                                     >
                                       <Edit2 size={14} />
                                     </button>
                                     <button 
                                       type="button"
-                                      title="Excluir link"
+                                      title="Limpar URL"
                                       onClick={() => {
-                                        if (confirm("Deseja realmente remover este link de integração?")) {
+                                        if (confirm("Deseja realmente remover o link de integração desta especialista?")) {
                                           updateSpecialist(s.id, { googleAppsScriptUrl: '' });
                                         }
                                       }}
-                                      className="p-2 hover:bg-error/10 text-error/60 hover:text-error rounded-lg transition-colors cursor-pointer"
+                                      className="p-2 hover:bg-error/10 text-error/40 hover:text-error rounded-lg transition-colors cursor-pointer"
                                     >
                                       <Trash2 size={14} />
                                     </button>
@@ -2352,21 +2369,28 @@ function AdminScreen({
 
                                     if (res.ok && isJson) {
                                       const data = await res.json();
-                                      if (data.success || Array.isArray(data)) {
-                                        alert('✅ AGENDA VINCULADA COM SUCESSO!\nOs horários agora são buscados em tempo real do Google Sheets.');
+                                      const scheduleData = data.data || data; 
+                                      if (Array.isArray(scheduleData)) {
+                                        alert('✅ CONECTADO!\nSua agenda foi vinculada e os horários livres já estão sendo sincronizados.');
                                         updateSpecialist(s.id, { googleAppsScriptUrl: s.googleAppsScriptUrl.trim() });
+                                      } else if (data.success === false) {
+                                        alert(`⚠️ O SCRIPT AVISOU: ${data.error || 'Erro na planilha.'}`);
                                       } else {
-                                        alert(`⚠️ O Script retornou: ${data.message || 'Erro desconhecido'}`);
+                                        alert('⚠️ FORMATO INVÁLIDO: O script respondeu, mas não enviou uma lista de horários. Verifique o nome da aba "Agenda".');
                                       }
                                     } else if (isJson) {
                                       const errData = await res.json();
-                                      alert(`❌ ERRO: ${errData.error || 'Falha na conexão.'}`);
+                                      if (errData.code === 'HTML_INSTEAD_OF_JSON') {
+                                         alert(`❌ ERRO DE CÓDIGO (.gs):\n${errData.error}\n\nO Google enviou uma página em vez de dados. Verifique se você não tem dois "doGet" no seu script.`);
+                                      } else {
+                                         alert(`❌ ERRO: ${errData.error || 'Falha na conexão.'}`);
+                                      }
                                     } else {
                                       const text = await res.text();
-                                      if (text.includes('accounts.google.com') || text.includes('ServiceLogin')) {
-                                        alert('❌ BLOQUEIO DO GOOGLE: Você precisa autorizar o script ou mudar para "Qualquer pessoa". Abra o link do script no navegador e clique em "Revisar Permissões".');
+                                      if (text.includes('accounts.google.com') || text.includes('ServiceLogin') || text.includes('google-signin')) {
+                                        alert('❌ BLOQUEIO DO GOOGLE:\nVocê precisa autorizar o script ou mudar para "Qualquer pessoa".\n\n1. Abra o link do script no navegador\n2. Clique em "Revisar Permissões"\n3. Autorize o acesso.');
                                       } else {
-                                        alert('❌ RESPOSTA INVÁLIDA: O script retornou HTML. No código .gs, use ContentService e não HtmlService.');
+                                        alert('❌ RESPOSTA INVÁLIDA: O script retornou HTML. Isso acontece quando você usa "HtmlService" no código .gs. Use "ContentService" conforme o exemplo abaixo.');
                                       }
                                     }
                                   } catch (e) {
