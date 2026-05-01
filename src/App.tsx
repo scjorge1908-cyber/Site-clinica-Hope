@@ -171,6 +171,20 @@ export default function App() {
       }
     };
 
+    // Fail-safe: loading timeout
+    const loadingTimeout = setTimeout(() => {
+      if (isLoading) {
+        console.warn("Loading timeout reached. Showing available data.");
+        setIsDataInitialized(true);
+        setIsLoading(false);
+        // Ensure some data is set if still null
+        setHomeSettings(prev => prev || DEFAULT_HOME_SETTINGS);
+        setSpecialists(prev => prev || []);
+        setApproaches(prev => prev || []);
+        setInsurancePlans(prev => prev || []);
+      }
+    }, 4000);
+
     // Real-time listeners
     const unsubHome = onSnapshot(doc(db, COLLECTIONS.SETTINGS, DOCS.HOME_SETTINGS), (doc) => {
       if (doc.exists()) {
@@ -225,6 +239,7 @@ export default function App() {
     });
 
     return () => {
+      clearTimeout(loadingTimeout);
       unsubscribeAuth();
       unsubHome();
       unsubSpecs();
@@ -290,25 +305,31 @@ export default function App() {
 
   if (isLoading || !homeSettings || !specialists || !approaches || !insurancePlans) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-6">
-        <motion.div 
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full shadow-lg shadow-primary/10"
-        />
-        <div className="flex flex-col items-center gap-2">
-          <p className="text-primary font-bold text-lg tracking-tight">Clínica Hope</p>
-          <div className="flex gap-1">
-            {[0, 1, 2].map((i) => (
-              <motion.div
-                key={i}
-                animate={{ opacity: [0.3, 1, 0.3] }}
-                transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                className="w-1.5 h-1.5 bg-primary/40 rounded-full"
-              />
-            ))}
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center">
+        <div className="relative">
+          <motion.div 
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+            className="w-16 h-16 border-2 border-primary/10 border-t-primary rounded-full"
+          />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-2 h-2 bg-secondary rounded-full animate-pulse" />
           </div>
         </div>
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-8 flex flex-col items-center gap-2"
+        >
+          <p className="text-primary font-medium tracking-widest uppercase text-xs">Clínica Hope</p>
+          <div className="h-0.5 w-12 bg-primary/10 overflow-hidden rounded-full">
+            <motion.div 
+              animate={{ x: [-48, 48] }}
+              transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
+              className="h-full w-full bg-secondary"
+            />
+          </div>
+        </motion.div>
       </div>
     );
   }
