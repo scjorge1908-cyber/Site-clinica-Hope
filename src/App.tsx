@@ -44,6 +44,7 @@ import {
   ShieldCheck, 
   LogOut,
   User,
+  Github,
   Baby,
   Heart,
   Brain,
@@ -58,6 +59,7 @@ import {
   Edit2,
   RefreshCw
 } from 'lucide-react';
+import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Cropper from 'react-easy-crop';
 import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan } from './types';
 import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL } from './constants';
@@ -70,7 +72,7 @@ import {
   saveApproaches, 
   getInsurancePlans, 
   saveInsurancePlans,
-  loginWithGoogle,
+  loginWithGithub,
   logout as firebaseLogout,
   auth,
   COLLECTIONS,
@@ -251,22 +253,38 @@ export default function App() {
   const updateSettings = async (newSettings: HomeSettings) => {
     const { insurancePlans: _, ...cleanSettings } = newSettings;
     setHomeSettings(cleanSettings as HomeSettings);
-    await saveHomeSettings(cleanSettings);
+    try {
+      await saveHomeSettings(cleanSettings);
+    } catch (e) {
+      console.error("Erro ao salvar configurações:", e);
+    }
   };
 
   const updateSpecialists = async (newSpecialists: Specialist[]) => {
     setSpecialists(newSpecialists);
-    await saveSpecialists(newSpecialists);
+    try {
+      await saveSpecialists(newSpecialists);
+    } catch (e) {
+      console.error("Erro ao salvar especialistas:", e);
+    }
   };
 
   const updateApproaches = async (newApproaches: Approach[]) => {
     setApproaches(newApproaches);
-    await saveApproaches(newApproaches);
+    try {
+      await saveApproaches(newApproaches);
+    } catch (e) {
+      console.error("Erro ao salvar abordagens:", e);
+    }
   };
 
   const updateInsurancePlans = async (newPlans: InsurancePlan[]) => {
     setInsurancePlans(newPlans);
-    await saveInsurancePlans(newPlans);
+    try {
+      await saveInsurancePlans(newPlans);
+    } catch (e) {
+      console.error("Erro ao salvar planos de saúde:", e);
+    }
   };
 
   const handleLogout = async () => {
@@ -398,6 +416,7 @@ export default function App() {
           )}
         </motion.div>
       </AnimatePresence>
+      <FloatingWhatsApp />
     </div>
   );
 }
@@ -617,10 +636,20 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
-    if (specialists.length === 0) return;
+    if (specialists.length === 0) {
+      setIndex(0);
+      return;
+    }
+    
+    // Garantir que o índice está dentro dos limites se a lista mudar
+    setIndex(prev => (prev >= specialists.length ? 0 : prev));
+
     const timer = setInterval(() => {
-      setIndex((prev) => (prev + 1) % specialists.length);
-    }, 3000); // 3 segundos conforme solicitado
+      setIndex((prev) => {
+        if (specialists.length === 0) return 0;
+        return (prev + 1) % specialists.length;
+      });
+    }, 7000); // 7 segundos conforme solicitado
     return () => clearInterval(timer);
   }, [specialists.length]);
 
@@ -744,24 +773,44 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             <h2 className="text-4xl font-bold text-primary tracking-tight">Especialistas</h2>
           </div>
           
-          <div className="relative max-w-md mx-auto">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -50 }}
-                transition={{ duration: 0.5, ease: "easeInOut" }}
-              >
-                {specialists.length > 0 && (
-                  <SpecialistCard 
-                    spec={specialists[index]} 
-                    insurancePlans={settings.insurancePlans || []}
-                    isAdminUnlocked={isAdminUnlocked}
-                  />
-                )}
-              </motion.div>
-            </AnimatePresence>
+          <div className="relative">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <AnimatePresence mode="popLayout" initial={false}>
+                {(() => {
+                  if (specialists.length === 0) return null;
+                  
+                  const displayCount = 3; 
+                  const visibleSpecs = [];
+                  const total = specialists.length;
+                  const countToRender = Math.min(total, displayCount);
+                  
+                  for (let i = 0; i < countToRender; i++) {
+                    const specIndex = (index + i) % total;
+                    visibleSpecs.push(specialists[specIndex]);
+                  }
+
+                  return visibleSpecs.map((spec, i) => {
+                    if (!spec) return null;
+                    return (
+                      <motion.div
+                        key={`${spec.id}-${index}`}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        transition={{ duration: 0.4, delay: i * 0.1 }}
+                        className={`${i > 0 ? 'hidden md:block' : 'block'}`}
+                      >
+                        <SpecialistCard 
+                          spec={spec} 
+                          insurancePlans={settings.insurancePlans || []}
+                          isAdminUnlocked={isAdminUnlocked}
+                        />
+                      </motion.div>
+                    );
+                  });
+                })()}
+              </AnimatePresence>
+            </div>
 
             {/* Navigation Dots */}
             <div className="flex justify-center gap-3 mt-10">
@@ -1056,6 +1105,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
   const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(null);
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
+  const [isDescExpanded, setIsDescExpanded] = useState(false);
+  const [isTouched, setIsTouched] = useState(false);
 
   useEffect(() => {
     if (spec.googleAppsScriptUrl) {
@@ -1073,8 +1124,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             throw new Error('A URL não termina em /exec. Verifique se você copiou o link de "App da Web" em vez do link da planilha.');
           }
 
-          const scriptUrl = baseUrl.includes('?') ? `${baseUrl}&mode=agenda` : `${baseUrl}?mode=agenda`;
-          const url = `/api/proxy-sheet?url=${encodeURIComponent(scriptUrl)}`;
+          const scriptUrl = baseUrl.includes('?') ? `${baseUrl}&mode=agenda&t=${Date.now()}` : `${baseUrl}?mode=agenda&t=${Date.now()}`;
+          const url = `/api/proxy-sheet?url=${encodeURIComponent(scriptUrl)}&ts=${Date.now()}`;
           
           let appointments: any[] = [];
 
@@ -1094,8 +1145,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             if (appointments.length === 0) {
               // Se o proxy falhar ou retornar HTML, tentamos JSONP direto do navegador
               const jsonpUrl = baseUrl.includes('?') 
-                ? `${baseUrl}&action=getDadosDaAgenda` 
-                : `${baseUrl}?action=getDadosDaAgenda`;
+                ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` 
+                : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
               
               const jsonpData = await new Promise<any>((resolve) => {
                 const callbackName = `bg_cb_${Date.now()}`;
@@ -1207,7 +1258,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
       };
 
       fetchSheetData();
-      const interval = setInterval(fetchSheetData, 300000);
+      const interval = setInterval(fetchSheetData, 60000); // 1 minute
       return () => clearInterval(interval);
     } else if (spec.googleSheetsId) {
       // Fallback to direct CSV if still present and Apps Script URL is not
@@ -1277,7 +1328,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
       };
       fetchSheetData();
     }
-  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab]);
+  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab, spec]);
 
   // Só mostra a agenda se houver dados e não houver erro de conexão (ou se for admin querendo ver o erro)
   const hasValidData = sheetSchedule && Object.keys(sheetSchedule).length > 0;
@@ -1316,10 +1367,15 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
   return (
     <motion.div 
       layout
-      className="bg-white rounded-[3rem] overflow-hidden soft-shadow border border-outline-variant/30 flex flex-col group"
+      onTouchStart={() => setIsTouched(true)}
+      onTouchEnd={() => setIsTouched(false)}
+      className="bg-white rounded-[3rem] overflow-hidden soft-shadow border border-outline-variant/30 flex flex-col group h-full"
     >
-      <div className="h-96 relative overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-700">
-        <img src={spec.img} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" />
+      <div className={`h-96 relative overflow-hidden transition-all duration-700 ${isTouched ? 'grayscale-0' : 'grayscale group-hover:grayscale-0'}`}>
+        <img 
+          src={spec.img} 
+          className={`w-full h-full object-cover transition-transform duration-1000 ${isTouched ? 'scale-105' : 'group-hover:scale-105'}`} 
+        />
         <div className="absolute top-6 right-6 bg-white/90 backdrop-blur px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-primary border border-white">
           CRP {spec.crp}
         </div>
@@ -1330,13 +1386,27 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             <h4 className="text-2xl font-bold text-primary">{spec.name}</h4>
             <Verified size={20} className="text-secondary" />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest rounded-full">
               {getSpecialtyIcon(spec.spec)}
               {spec.spec}
             </span>
           </div>
-          <p className="text-on-surface-variant text-sm font-medium leading-relaxed italic line-clamp-3">"{spec.desc}"</p>
+
+          <div className="space-y-2">
+            <p className={`text-on-surface-variant text-sm font-medium leading-relaxed italic ${!isDescExpanded ? 'line-clamp-3' : ''}`}>
+              "{spec.desc}"
+            </p>
+            {spec.desc && spec.desc.length > 120 && (
+              <button 
+                onClick={() => setIsDescExpanded(!isDescExpanded)}
+                className="text-secondary text-[10px] font-black uppercase tracking-widest hover:underline flex items-center gap-1"
+              >
+                {isDescExpanded ? 'Ler menos' : 'Ler mais'}
+                <ArrowForward size={10} className={isDescExpanded ? '-rotate-90' : 'rotate-90'} />
+              </button>
+            )}
+          </div>
         </div>
         
         <div className="space-y-6">
@@ -1530,7 +1600,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
           <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
             <div className="space-y-3">
               <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
-                 <Info size={14} /> Informação Importante para Planos de Saúde
+                 <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
               </p>
               <p className="text-[10px] text-primary/70 leading-relaxed font-medium">
                 Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
@@ -1859,7 +1929,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                 <AssignmentTurnedIn size={32} />
               </div>
               <div className="space-y-4">
-                <h4 className="text-xl font-bold text-primary tracking-tight italic">Informação Importante para Planos de Saúde</h4>
+                <h4 className="text-xl font-bold text-primary tracking-tight italic">Informação importante para quem for agendar pelo plano de saúde</h4>
                 <p className="text-on-surface-variant font-medium leading-relaxed max-w-4xl">
                   Para agendamentos via <span className="text-secondary font-bold">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="text-secondary font-bold">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos. 
                   <span className="block mt-4 text-sm bg-white/50 p-4 rounded-xl border border-outline-variant/30">
@@ -1903,22 +1973,25 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleGoogleLogin = async () => {
+  const handleGithubLogin = async () => {
     setIsLoading(true);
     setError('');
     try {
-      const user = await loginWithGoogle();
-      if (user.email === 'scjorge1908@gmail.com') {
+      const user = await loginWithGithub();
+      // Verificando o email ou o login do GitHub se necessário
+      // O usuário scjorge1908@gmail.com ainda é o admin, 
+      // o GitHub pode retornar esse email se estiver público
+      if (user.email === 'scjorge1908@gmail.com' || user.displayName === 'scjorge1908') {
         onUnlock();
         onNavigate(Screen.Admin, 'push');
       } else {
-        setError('Acesso negado. Apenas o administrador scjorge1908@gmail.com pode acessar o painel.');
+        setError('Acesso negado. Apenas o administrador scjorge1908 pode acessar o painel.');
       }
     } catch (err: any) {
       if (err.message?.includes('popup-closed-by-user')) {
         setError('O login foi cancelado.');
       } else {
-        setError('Houve um erro ao tentar fazer login com Google.');
+        setError('Houve um erro ao tentar fazer login com GitHub.');
       }
     } finally {
       setIsLoading(false);
@@ -1943,12 +2016,12 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
 
           <div className="space-y-6">
             <button 
-              onClick={handleGoogleLogin}
+              onClick={handleGithubLogin}
               disabled={isLoading}
               className="w-full py-5 bg-white border-2 border-outline-variant/30 text-primary rounded-2xl font-bold text-lg hover:bg-surface-container-low transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
             >
-              <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
-              {isLoading ? 'Conectando...' : 'Entrar com Google'}
+              <Github size={20} />
+              {isLoading ? 'Conectando...' : 'Entrar com GitHub'}
             </button>
 
             {error && (
@@ -1956,7 +2029,7 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
             )}
             
             <p className="text-[10px] text-center text-on-surface-variant/40 uppercase font-black tracking-widest">
-              Apenas para scjorge1908@gmail.com
+              Apenas para administrador scjorge1908
             </p>
           </div>
 

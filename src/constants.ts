@@ -191,3 +191,4 @@ export const DEFAULT_TESTIMONIALS = [
     avatar: 'AC'
   }
 ];
+
