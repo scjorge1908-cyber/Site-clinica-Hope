@@ -649,7 +649,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
         if (specialists.length === 0) return 0;
         return (prev + 1) % specialists.length;
       });
-    }, 7000); // 7 segundos conforme solicitado
+    }, 10000); // 10 segundos conforme solicitado
     return () => clearInterval(timer);
   }, [specialists.length]);
 
@@ -769,8 +769,18 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
       {/* Compact Equipe Section - Carousel */}
       <section className="section-padding bg-surface-container-low border-y border-outline-variant/30 overflow-hidden">
         <div className="max-w-7xl mx-auto space-y-16">
-          <div className="text-center">
-            <h2 className="text-4xl font-bold text-primary tracking-tight">Especialistas</h2>
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div>
+              <h2 className="text-4xl font-bold text-primary tracking-tight">Especialistas</h2>
+            </div>
+            
+            <button 
+              onClick={() => onNavigate(Screen.CorpoClinico)}
+              className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center md:self-end"
+            >
+              Agendar agora com Psicólogo
+              <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
+            </button>
           </div>
           
           <div className="relative">
