@@ -1285,28 +1285,39 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
 
             if (Array.isArray(appointments) && appointments.length > 0) {
               foundAnyData = true;
+              
+              // 1. Detect if sheet is Shared or Dedicated
+              const sNameNormalized = spec.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              const sFirstName = sNameNormalized.split(' ')[0].replace(/michel+e/g, 'michele');
+              
+              let specNameFoundInSheet = false;
+              for (const row of appointments) {
+                const rowStr = JSON.stringify(row).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (rowStr.includes(sFirstName)) {
+                  specNameFoundInSheet = true;
+                  break;
+                }
+              }
+
+              // 2. Process rows
               appointments.forEach((row: any) => {
                 if (!row) return;
                 
                 let dayRaw = '';
                 let timeRaw = '';
-                let isAvailable = false;
-                let profMatch = true; // Por padrão aceita se não houver coluna de profissional
+                let hasGreenHeart = false;
+                let profMatch = !specNameFoundInSheet; // If name not found in whole sheet, assume dedicated
 
-                const isArray = Array.isArray(row);
-                const rowEntries = isArray ? row.map((v, i) => [i.toString(), v]) : Object.entries(row);
-                
-                for (const [key, valRaw] of rowEntries) {
+                const entries = Object.entries(row);
+                for (const [key, valRaw] of entries) {
                   const val = valRaw ? valRaw.toString().trim() : '';
-                  const lKey = isArray ? '' : key.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                  const lKey = key.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                   const lVal = val.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                   
-                  // Foco exclusivo no coração verde conforme solicitado
-                  if (val.includes('💚')) {
-                    isAvailable = true;
-                  }
+                  // Availability check
+                  if (val.includes('💚')) hasGreenHeart = true;
 
-                  // Identifica Dia (Segunda, Terça, etc) - busca por palavras chave ou nomes dos dias
+                  // Day identification
                   if (!dayRaw && (
                     lVal.includes('segunda') || lVal.includes('terca') || lVal.includes('terça') || 
                     lVal.includes('quarta') || lVal.includes('quinta') || lVal.includes('sexta') || 
@@ -1315,26 +1326,25 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                     dayRaw = val;
                   }
                   
-                  // Identifica Horário - busca por formato 00:00 ou palavra chave
+                  // Time identification
                   if (!timeRaw && (val.includes(':') || lKey.includes('hor'))) {
                     timeRaw = val;
                   }
-                  
-                  // Filtro de profissional: só aplica se realmente houver uma coluna identificada como tal
-                  // e se o valor não for o próprio status (coração)
-                  const profKeys = ['profissional', 'psicologo', 'psicologa', 'nome', 'especialista'];
-                  if (profKeys.some(pk => lKey.includes(pk)) && val.length > 3 && !val.includes('💚')) {
-                     const pName = lVal.replace('psi ', '').replace('dra. ', '').replace('dr. ', '').trim();
-                     const sName = spec.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace('dra. ', '').replace('dr. ', '').trim();
-                     const pBase = pName.split(' ')[0].replace(/michel+e/g, 'michele');
-                     const sBase = sName.split(' ')[0].replace(/michel+e/g, 'michele');
-                     if (!sName.includes(pName) && !pName.includes(sName) && !sBase.includes(pBase) && !pBase.includes(sBase)) {
-                        profMatch = false;
-                     }
+
+                  // Professional Filter (only if sheet is shared)
+                  if (specNameFoundInSheet && !profMatch) {
+                    const profKeys = ['profissional', 'psicologo', 'psicologa', 'nome', 'especialista', 'professional', 'specialist'];
+                    if (profKeys.some(pk => lKey.includes(pk)) && val.length > 3 && !val.includes('💚')) {
+                       const pName = lVal.replace('psi ', '').replace('dra. ', '').replace('dr. ', '').trim();
+                       const pBase = pName.split(' ')[0].replace(/michel+e/g, 'michele');
+                       if (sNameNormalized.includes(pName) || pName.includes(sNameNormalized) || sFirstName === pBase) {
+                          profMatch = true;
+                       }
+                    }
                   }
                 }
 
-                if (isAvailable && profMatch && dayRaw && timeRaw) {
+                if (hasGreenHeart && profMatch && dayRaw && timeRaw) {
                   const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
                   const processedTime = timeMatch ? timeMatch[1] : timeRaw;
                   
@@ -1346,7 +1356,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                   const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                   const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
                   
-                  // Só processa horários válidos (ex: 15:00 ou Segunda)
                   if (day.length > 3 && processedTime.includes(':')) {
                     if (!newSchedule[day]) newSchedule[day] = { periods: {} };
                     const hourMatch = processedTime.match(/(\d{1,2})/);
@@ -1372,37 +1381,46 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             if (response.ok) {
               foundAnyData = true;
               const csvText = await response.text();
+              const sNameNormalized = spec.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              const sFirstName = sNameNormalized.split(' ')[0].replace(/michel+e/g, 'michele');
+              const specNameFoundInCSV = csvText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(sFirstName);
+
               const rows = csvText.split(/\r?\n/).map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim())).filter(row => row.length >= 3);
 
               rows.slice(1).forEach(row => {
-                const [dayRaw, time, status] = row;
-                if (!dayRaw || !time || !status) return;
+                const [dayRaw, timeRaw, statusRaw] = row;
+                if (!dayRaw || !timeRaw || !statusRaw) return;
 
-                const professionalInRow = row.slice(3).find(val => val && val.length > 3 && (val.toLowerCase().includes('psi') || val.toLowerCase().includes(spec.name.split(' ')[0].toLowerCase())));
-                if (professionalInRow && spec.name) {
-                  const sName = spec.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace('dra. ', '').replace('dr. ', '').trim();
-                  const pName = professionalInRow.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace('psi ', '').trim();
-                  const pBase = pName.split(' ')[0].replace(/michel+e/g, 'michele');
-                  const sBase = sName.split(' ')[0].replace(/michel+e/g, 'michele');
-                  if (!sName.includes(pName) && !pName.includes(sName) && !sBase.includes(pBase) && !pBase.includes(sBase)) return;
+                let profMatch = !specNameFoundInCSV;
+                if (specNameFoundInCSV && !profMatch) {
+                  const professionalInRow = row.slice(3).find(val => val && val.length > 3 && !val.includes('💚'));
+                  if (professionalInRow) {
+                    const pName = professionalInRow.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace('psi ', '').replace('dra. ', '').replace('dr. ', '').trim();
+                    const pBase = pName.split(' ')[0].replace(/michel+e/g, 'michele');
+                    if (sNameNormalized.includes(pName) || pName.includes(sNameNormalized) || sFirstName === pBase) {
+                      profMatch = true;
+                    }
+                  }
                 }
 
-                const dayMap: {[key: string]: string} = {
-                  'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'terca': 'Terça', 'terça': 'Terça', 'terça-feira': 'Terça',
-                  'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'quinta': 'Quinta', 'quinta-feira': 'Quinta',
-                  'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sabado': 'Sábado', 'sábado': 'Sábado'
-                };
-                const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
-                
-                if (status.includes('💚')) {
+                if (statusRaw.includes('💚') && profMatch) {
+                  const dayMap: {[key: string]: string} = {
+                    'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'terca': 'Terça', 'terça': 'Terça', 'terça-feira': 'Terça',
+                    'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'quinta': 'Quinta', 'quinta-feira': 'Quinta',
+                    'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sabado': 'Sábado', 'sábado': 'Sábado'
+                  };
+                  const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                  const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
+                  
                   if (!newSchedule[day]) newSchedule[day] = { periods: {} };
-                  const hourMatch = time.match(/(\d{1,2})/);
+                  const hourMatch = timeRaw.match(/(\d{1,2})/);
                   if (hourMatch) {
                     const hour = parseInt(hourMatch[1]);
                     const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
                     if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
-                    if (!newSchedule[day].periods[shift]?.includes(time)) newSchedule[day].periods[shift]?.push(time);
+                    const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
+                    const processedTime = timeMatch ? timeMatch[1] : timeRaw;
+                    if (!newSchedule[day].periods[shift]?.includes(processedTime)) newSchedule[day].periods[shift]?.push(processedTime);
                   }
                 }
               });
