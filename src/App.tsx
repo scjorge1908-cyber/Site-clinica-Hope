@@ -930,6 +930,8 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                           spec={spec} 
                           insurancePlans={settings.insurancePlans || []}
                           isAdminUnlocked={isAdminUnlocked}
+                          isCarousel={true}
+                          onNavigate={onNavigate}
                         />
                       </motion.div>
                     );
@@ -1222,9 +1224,11 @@ interface SpecialistCardProps {
   spec: Specialist;
   insurancePlans: InsurancePlan[];
   isAdminUnlocked?: boolean;
+  isCarousel?: boolean;
+  onNavigate?: (screen: Screen, transition?: TransitionType, scroll?: boolean) => void;
 }
 
-function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCardProps) {
+function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate }: SpecialistCardProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
@@ -1536,20 +1540,33 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
         </div>
         
         <div className="space-y-6">
-          <div className="flex flex-wrap gap-2">
-            {spec.ageGroups.map(g => (
-              <span key={g} className="inline-flex items-center gap-1.5 bg-surface-container text-on-surface-variant px-3 py-1 rounded-full text-[10px] font-bold uppercase">
-                {g.toLowerCase().includes('criança') && <Baby size={12} />}
-                {g.toLowerCase().includes('adolescente') && <Users size={12} />}
-                {g.toLowerCase().includes('adulto') && <User size={12} />}
-                {g.toLowerCase().includes('idoso') && <Users size={12} />}
-                {g}
-              </span>
-            ))}
-          </div>
+          {!isCarousel && (
+            <div className="flex flex-wrap gap-2">
+              {spec.ageGroups.map(g => (
+                <span key={g} className="inline-flex items-center gap-1.5 bg-surface-container text-on-surface-variant px-3 py-1 rounded-full text-[10px] font-bold uppercase">
+                  {g.toLowerCase().includes('criança') && <Baby size={12} />}
+                  {g.toLowerCase().includes('adolescente') && <Users size={12} />}
+                  {g.toLowerCase().includes('adulto') && <User size={12} />}
+                  {g.toLowerCase().includes('idoso') && <Users size={12} />}
+                  {g}
+                </span>
+              ))}
+            </div>
+          )}
 
-          {displayAgenda && (
-            <div className="pt-6 border-t border-outline-alt/30 space-y-4">
+          {isCarousel ? (
+            <div className="pt-4">
+              <button 
+                onClick={() => onNavigate?.(Screen.CorpoClinico, 'push')}
+                className="w-full py-4 rounded-2xl font-bold bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2"
+              >
+                <CalendarMonth size={18} />
+                Ver Disponibilidade
+              </button>
+            </div>
+          ) : (
+            displayAgenda && (
+              <div className="pt-6 border-t border-outline-alt/30 space-y-4">
               {spec.attendedAges && spec.attendedAges.length > 0 && (
                 <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                   <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
@@ -1705,9 +1722,11 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             </>
           )}
         </div>
-      )}
+      )
+    )}
+  </div>
 
-          {!isAgendaFull && (
+          {!isAgendaFull && !isCarousel && (
             <button 
               disabled={!canBook}
               onClick={handleWhatsAppClick}
@@ -1723,21 +1742,22 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
           )}
 
           {/* Footer Disclaimer */}
-          <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
-            <div className="space-y-3">
-              <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
-                 <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
-              </p>
-              <p className="text-[10px] text-primary/70 leading-relaxed font-medium">
-                Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
-              </p>
-              <div className="text-[9px] bg-white/40 p-3 rounded-xl border border-secondary/5 text-primary/60 leading-normal">
-                💡 <span className="font-bold">Dica:</span> Se você não tiver o encaminhamento, verifique no aplicativo do seu plano se existe a opção de <span className="font-bold underline">teleatendimento</span>. É um processo rápido que pode auxiliar você neste momento de decisão.
+          {!isCarousel && (
+            <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
+              <div className="space-y-3">
+                <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
+                   <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
+                </p>
+                <p className="text-[10px] text-primary/70 leading-relaxed font-medium">
+                  Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
+                </p>
+                <div className="text-[9px] bg-white/40 p-3 rounded-xl border border-secondary/5 text-primary/60 leading-normal">
+                  💡 <span className="font-bold">Dica:</span> Se você não tiver o encaminhamento, verifique no aplicativo do seu plano se existe a opção de <span className="font-bold underline">teleatendimento</span>. É um processo rápido que pode auxiliar você neste momento de decisão.
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
-      </div>
     </motion.div>
   );
 }
