@@ -1232,31 +1232,11 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [isTouched, setIsTouched] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (cardRef.current) {
-      observer.observe(cardRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if ((spec.googleAppsScriptUrl || spec.googleSheetsId) && isVisible) {
+    if (spec.googleAppsScriptUrl || spec.googleSheetsId) {
       const fetchSheetData = async () => {
-        // Evita múltiplas requisições simultâneas
         if (isLoadingSheet) return;
         
         setIsLoadingSheet(true);
@@ -1303,7 +1283,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                       delete (window as any)[callbackName];
                       resolve(null);
                     }
-                  }, 30000); // Reduzido para 30s
+                  }, 30000);
                   document.body.appendChild(script);
                 });
 
@@ -1319,12 +1299,47 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
             if (Array.isArray(appointments) && appointments.length > 0) {
               appointments.forEach((row: any) => {
                 if (!row) return;
-                const dayRaw = row.dia || row["Dia da Semana"] || row.Day;
-                let time = row.horario || row["Horário"] || row.Time;
-                const status = row.paciente || row["Paciente"] || row.Status;
                 
-                if (!dayRaw || !time) return;
-                const timeStr = time.toString();
+                // 1. Identificação robusta das colunas
+                let dayRaw = '';
+                let timeRaw = '';
+                let statusRaw = '';
+                let professionalInRow = '';
+
+                const rowKeys = Object.keys(row);
+                for (const key of rowKeys) {
+                  const lKey = key.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                  const val = row[key] ? row[key].toString() : '';
+
+                  if (!dayRaw && (lKey.includes('dia') || lKey.includes('day'))) dayRaw = val;
+                  else if (!timeRaw && (lKey.includes('hor') || lKey.includes('time'))) timeRaw = val;
+                  else if (!statusRaw && (lKey.includes('paciente') || lKey.includes('status') || val.includes('💚'))) statusRaw = val;
+                  
+                  // Identificação de profissional (coluna extra)
+                  if (!professionalInRow) {
+                    const profKeys = ['profissional', 'psicologo', 'psicologa', 'nome', 'specialist', 'professional', 'psi', 'especialista'];
+                    if (profKeys.some(pk => lKey.includes(pk)) && !lKey.includes('paciente')) {
+                      professionalInRow = val;
+                    }
+                  }
+                }
+
+                // 2. Filtro por profissional (opcional, apenas se houver coluna de profissional e nome do especialista)
+                if (professionalInRow && spec.name) {
+                  const pName = professionalInRow.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace('psi ', '').replace('dra. ', '').replace('dr. ', '').trim();
+                  const sName = spec.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace('dra. ', '').replace('dr. ', '').trim();
+                  
+                  // Normalização Michelle/Michele/Michele/Michelle
+                  const pBase = pName.split(' ')[0].replace(/michel+e/g, 'michele');
+                  const sBase = sName.split(' ')[0].replace(/michel+e/g, 'michele');
+
+                  if (!sName.includes(pName) && !pName.includes(sName) && !sBase.includes(pBase) && !pBase.includes(sBase)) {
+                    return; 
+                  }
+                }
+
+                if (!dayRaw || !timeRaw) return;
+                const timeStr = timeRaw.toString();
                 const timeMatch = timeStr.match(/(\d{1,2}:\d{2})/);
                 const processedTime = timeMatch ? timeMatch[1] : timeStr;
 
@@ -1336,10 +1351,10 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                   'sexta': 'Sexta', 'sexta-feira': 'Sexta',
                   'sábado': 'Sábado', 'sabado': 'Sábado'
                 };
-                const dayKey = dayRaw.toString().toLowerCase().trim();
+                const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                 const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
                 
-                if (status === '💚' || (status && status.toString().includes('💚'))) {
+                if (statusRaw === '💚' || (statusRaw && statusRaw.includes('💚'))) {
                   if (!newSchedule[day]) newSchedule[day] = { periods: {} };
                   const hourMatch = processedTime.match(/(\d{1,2})/);
                   if (hourMatch) {
@@ -1357,6 +1372,13 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                 }
               });
             }
+
+            // Ordenar horários
+            Object.keys(newSchedule).forEach(day => {
+              Object.keys(newSchedule[day].periods).forEach(period => {
+                newSchedule[day].periods[period as Shift]?.sort((a, b) => a.localeCompare(b));
+              });
+            });
 
             if (Object.keys(newSchedule).length > 0) {
               setSheetSchedule(newSchedule);
@@ -1382,8 +1404,25 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
 
             const newSchedule: NonNullable<Specialist['schedule']> = {};
             rows.slice(1).forEach(row => {
+              // No formato CSV procuramos o profissional em qualquer coluna após a 3 (0,1,2 são dia, hora, status)
               const [dayRaw, time, status] = row;
               if (!dayRaw || !time) return;
+
+              const professionalInRow = row.slice(3).find(val => {
+                if (!val) return false;
+                const v = val.toLowerCase();
+                return v.includes('psi') || v.includes('dra') || v.includes('dr') || v.includes(spec.name.split(' ')[0].toLowerCase());
+              });
+
+              if (professionalInRow && spec.name) {
+                const sName = spec.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace('dra. ', '').replace('dr. ', '').trim();
+                const pName = professionalInRow.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace('psi ', '').trim();
+                const pBase = pName.split(' ')[0].replace('michelle', 'michele');
+                const sBase = sName.split(' ')[0].replace('michelle', 'michele');
+
+                if (!sName.includes(pName) && !pName.includes(sName) && !sBase.includes(pBase) && !pBase.includes(sBase)) return;
+              }
+
               const dayMap: {[key: string]: string} = {
                 'segunda': 'Segunda', 'segunda-feira': 'Segunda',
                 'terça': 'Terça', 'terça-feira': 'Terça',
@@ -1404,10 +1443,20 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                   else if (hour >= 13 && hour < 18) shift = Shift.Afternoon;
                   else if (hour >= 18 && hour <= 22) shift = Shift.Night;
                   if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
-                  if (!newSchedule[day].periods[shift]?.includes(time)) newSchedule[day].periods[shift]?.push(time);
+                  if (!newSchedule[day].periods[shift]?.includes(time)) {
+                    newSchedule[day].periods[shift]?.push(time);
+                  }
                 }
               }
             });
+
+            // Ordenar horários
+            Object.keys(newSchedule).forEach(day => {
+              Object.keys(newSchedule[day].periods).forEach(period => {
+                newSchedule[day].periods[period as Shift]?.sort((a, b) => a.localeCompare(b));
+              });
+            });
+
             setSheetSchedule(newSchedule);
           }
         } catch (error) {
@@ -1422,7 +1471,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
       const interval = setInterval(fetchSheetData, 60000);
       return () => clearInterval(interval);
     }
-  }, [isVisible, spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab, spec]);
+  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab, spec]);
 
   // Só mostra a agenda se houver dados e não houver erro de conexão (ou se for admin querendo ver o erro)
   const hasValidData = sheetSchedule && Object.keys(sheetSchedule).length > 0;
