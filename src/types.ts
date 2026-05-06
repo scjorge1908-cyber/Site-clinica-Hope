@@ -86,6 +86,7 @@ export interface Specialist {
   googleSheetsId?: string;
   googleSheetsTab?: string;
   googleAppsScriptUrl?: string;
+  lastSync?: string;
   schedule?: {
     [day: string]: {
       periods: {

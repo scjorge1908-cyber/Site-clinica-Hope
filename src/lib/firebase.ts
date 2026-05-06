@@ -179,6 +179,16 @@ export async function saveApproaches(approaches: any[]) {
   }
 }
 
+export async function updateSpecialistSchedule(specialistId: string, schedule: any) {
+  const path = `${COLLECTIONS.SPECIALISTS}/${specialistId}`;
+  try {
+    const docRef = doc(db, COLLECTIONS.SPECIALISTS, specialistId);
+    await setDoc(docRef, { schedule, lastSync: new Date().toISOString() }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 export async function saveInsurancePlans(plans: any[]) {
   try {
     const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.INSURANCE));

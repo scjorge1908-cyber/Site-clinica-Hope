@@ -10,7 +10,10 @@ service cloud.firestore {
     // Allow public read on all collections
     match /specialists/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['schedule', 'lastSync'])
+      );
+      allow create, delete: if isAdmin();
     }
     match /approaches/{docId} {
       allow read: if true;
