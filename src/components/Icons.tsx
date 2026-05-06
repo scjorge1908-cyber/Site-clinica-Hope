@@ -28,7 +28,9 @@ import {
   Info,
   Globe,
   FileCheck,
-  Menu
+  Menu,
+  ArrowLeft,
+  Clock
 } from 'lucide-react';
 
 export const Psychology = Brain;
@@ -59,3 +61,5 @@ export const Verified = BadgeCheck;
 export const Public = Globe;
 export const AssignmentTurnedIn = FileCheck;
 export const MenuIcon = Menu;
+export const ArrowBack = ArrowLeft;
+export const AccessTime = Clock;

@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, GithubAuthProvider, signOut } from 'firebase/auth';
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { 
   getFirestore, 
   doc, 
@@ -20,7 +20,6 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth();
 const googleProvider = new GoogleAuthProvider();
-const githubProvider = new GithubAuthProvider();
 
 export async function forceResetFirebase() {
   try {
@@ -80,16 +79,6 @@ export async function loginWithGoogle() {
   }
 }
 
-export async function loginWithGithub() {
-  try {
-    const result = await signInWithPopup(auth, githubProvider);
-    return result.user;
-  } catch (error) {
-    console.error("Erro ao fazer login com GitHub:", error);
-    throw error;
-  }
-}
-
 export async function logout() {
   await signOut(auth);
 }
@@ -99,7 +88,9 @@ export const COLLECTIONS = {
   SETTINGS: 'settings',
   SPECIALISTS: 'specialists',
   APPROACHES: 'approaches',
-  INSURANCE: 'insurance_plans'
+  INSURANCE: 'insurance_plans',
+  SUBLEASE_ROOMS: 'sublease_rooms',
+  SUBLEASE_BOOKINGS: 'sublease_bookings'
 };
 
 // Document IDs
@@ -229,6 +220,69 @@ export async function getInsurancePlans() {
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function getSubleaseRooms() {
+  const path = COLLECTIONS.SUBLEASE_ROOMS;
+  try {
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.SUBLEASE_ROOMS));
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function saveSubleaseRooms(rooms: any[]) {
+  try {
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.SUBLEASE_ROOMS));
+    const existingIds = querySnapshot.docs.map(doc => doc.id);
+    const newIds = rooms.map(r => r.id);
+    
+    const batch = writeBatch(db);
+    
+    const toDelete = existingIds.filter(id => !newIds.includes(id));
+    for (const id of toDelete) {
+      batch.delete(doc(db, COLLECTIONS.SUBLEASE_ROOMS, id));
+    }
+
+    for (const r of rooms) {
+      if (!r.id) continue;
+      batch.set(doc(db, COLLECTIONS.SUBLEASE_ROOMS, r.id), r);
+    }
+    
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, COLLECTIONS.SUBLEASE_ROOMS);
+  }
+}
+
+export async function getSubleaseBookings() {
+  const path = COLLECTIONS.SUBLEASE_BOOKINGS;
+  try {
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.SUBLEASE_BOOKINGS));
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function saveSubleaseBooking(booking: any) {
+  const path = `${COLLECTIONS.SUBLEASE_BOOKINGS}/${booking.id}`;
+  try {
+    await setDoc(doc(db, COLLECTIONS.SUBLEASE_BOOKINGS, booking.id), booking);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function updateSubleaseBookingStatus(bookingId: string, status: string) {
+  const path = `${COLLECTIONS.SUBLEASE_BOOKINGS}/${bookingId}`;
+  try {
+    const docRef = doc(db, COLLECTIONS.SUBLEASE_BOOKINGS, bookingId);
+    await setDoc(docRef, { status }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 

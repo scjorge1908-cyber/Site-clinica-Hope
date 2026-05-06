@@ -5,7 +5,54 @@ export enum Screen {
   Agendamento = 'Agendamento',
   Admin = 'Admin',
   Abordagens = 'Abordagens',
-  Login = 'Login'
+  Login = 'Login',
+  Sublocacao = 'Sublocacao'
+}
+
+export interface SubleaseRoom {
+  id: string;
+  name: string;
+  description: string;
+  amenities: string[];
+  photos: [string, string];
+  schedule: {
+    [day: string]: {
+      periods: {
+        id: string; // 'manha', 'tarde', 'noite'
+        start: string;
+        end: string;
+        available: boolean;
+        priceBlock: number;
+        priceHour: number;
+        slots: {
+          id: string;
+          start: string;
+          end: string;
+          available: boolean;
+        }[];
+      }[];
+    };
+  };
+}
+
+export interface SubleaseBooking {
+  id: string;
+  roomId: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  day: string; // YYYY-MM-DD
+  dayLabel: string; // 'Segunda', etc
+  items: {
+    type: 'block' | 'hour';
+    periodId: string; // 'manha', etc
+    slotId?: string;
+    label: string;
+    price: number;
+  }[];
+  totalPrice: number;
+  status: 'pending' | 'confirmed' | 'cancelled';
+  createdAt: number;
 }
 
 export type TransitionType = 'push' | 'push_back' | 'none';

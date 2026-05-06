@@ -30,7 +30,9 @@ import {
   Close,
   Info,
   AssignmentTurnedIn,
-  MenuIcon
+  MenuIcon,
+  ArrowBack,
+  AccessTime
 } from './components/Icons';
 import { 
   Instagram, 
@@ -40,19 +42,21 @@ import {
   ConciergeBell, 
   Volume2, 
   Snowflake, 
-  ParkingCircle, 
-  ShieldCheck, 
+  ShieldCheck,
+  Accessibility,
   LogOut,
+  LogIn,
   User,
-  Github,
   Baby,
   Heart,
   Brain,
   Briefcase,
   Users,
+  ParkingCircle,
   Stethoscope,
   GraduationCap,
   Sun,
+  Cloud,
   CloudSun,
   Moon,
   Trash2,
@@ -61,8 +65,8 @@ import {
 } from 'lucide-react';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Cropper from 'react-easy-crop';
-import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan } from './types';
-import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL } from './constants';
+import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan, SubleaseRoom, SubleaseBooking } from './types';
+import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL, DEFAULT_SUBLEASE_ROOMS } from './constants';
 import { 
   getHomeSettings, 
   saveHomeSettings, 
@@ -72,15 +76,20 @@ import {
   saveApproaches, 
   getInsurancePlans, 
   saveInsurancePlans,
-  loginWithGithub,
+  getSubleaseRooms,
+  saveSubleaseRooms,
+  getSubleaseBookings,
+  saveSubleaseBooking,
+  updateSubleaseBookingStatus,
+  loginWithGoogle,
   logout as firebaseLogout,
   auth,
   COLLECTIONS,
-  DOCS
+  DOCS,
+  db
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { onSnapshot, collection, doc } from 'firebase/firestore';
-import { db } from './lib/firebase';
 
 // Helper for Local Storage
 const LS_KEYS = {
@@ -147,16 +156,27 @@ export default function App() {
   const [specialists, setSpecialists] = useState<Specialist[] | null>(null);
   const [approaches, setApproaches] = useState<Approach[] | null>(null);
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[] | null>(null);
+  const [subleaseRooms, setSubleaseRooms] = useState<SubleaseRoom[] | null>(null);
+  const [subleaseBookings, setSubleaseBookings] = useState<SubleaseBooking[] | null>(null);
   const [isDataInitialized, setIsDataInitialized] = useState(false);
+  const [user, setUser] = useState<any>(null);
   
   const [scrollIntent, setScrollIntent] = useState(false);
 
   // Initial Load from Firebase (Real-time Sync) and Auth check
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (user && user.email === 'scjorge1908@gmail.com') {
-        setIsAdminUnlocked(true);
+    const unsubscribeAuth = onAuthStateChanged(auth, (authUser) => {
+      setUser(authUser);
+      if (authUser) {
+        console.log("Usuário logado:", authUser.email);
+        if (authUser.email === 'scjorge1908@gmail.com') {
+          setIsAdminUnlocked(true);
+          console.log("Admin desbloqueado via email");
+        } else {
+          setIsAdminUnlocked(false);
+        }
       } else {
+        console.log("Usuário não logado");
         setIsAdminUnlocked(false);
       }
     });
@@ -165,9 +185,11 @@ export default function App() {
     let specsLoaded = false;
     let approachesLoaded = false;
     let insuranceLoaded = false;
+    let roomsLoaded = false;
+    let bookingsLoaded = false;
 
     const checkAllLoaded = () => {
-      if (homeLoaded && specsLoaded && approachesLoaded && insuranceLoaded) {
+      if (homeLoaded && specsLoaded && approachesLoaded && insuranceLoaded && roomsLoaded && bookingsLoaded) {
         setIsDataInitialized(true);
         setIsLoading(false);
       }
@@ -184,6 +206,8 @@ export default function App() {
         setSpecialists(prev => prev || []);
         setApproaches(prev => prev || []);
         setInsurancePlans(prev => prev || []);
+        setSubleaseRooms(prev => prev || []);
+        setSubleaseBookings(prev => prev || []);
       }
     }, 4000);
 
@@ -240,6 +264,27 @@ export default function App() {
       checkAllLoaded();
     });
 
+    const unsubRooms = onSnapshot(collection(db, COLLECTIONS.SUBLEASE_ROOMS), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as SubleaseRoom[];
+      setSubleaseRooms(data.length > 0 ? data : DEFAULT_SUBLEASE_ROOMS);
+      roomsLoaded = true;
+      checkAllLoaded();
+    }, (error) => {
+      // Log only if it's not a permission error or if we're debugging
+      if (error.message.toLowerCase().includes('permission')) {
+        console.warn("Acesso restrito a salas (comum para não-admins):", error.message);
+      } else {
+        console.error("Erro no listener de salas:", error);
+      }
+      setSubleaseRooms([]);
+      roomsLoaded = true;
+      checkAllLoaded();
+    });
+
+    // Mark as loaded but actual listen is in separate effect
+    bookingsLoaded = true;
+    checkAllLoaded();
+
     return () => {
       clearTimeout(loadingTimeout);
       unsubscribeAuth();
@@ -247,8 +292,27 @@ export default function App() {
       unsubSpecs();
       unsubApproaches();
       unsubInsurance();
+      unsubRooms();
     };
   }, []);
+
+  // Separate effect for bookings listener (Admins only)
+  useEffect(() => {
+    if (!isAdminUnlocked) {
+      setSubleaseBookings([]);
+      return;
+    }
+
+    const unsubBookings = onSnapshot(collection(db, COLLECTIONS.SUBLEASE_BOOKINGS), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as SubleaseBooking[];
+      setSubleaseBookings(data);
+    }, (error) => {
+      console.error("Erro no listener de reservas (Admin):", error);
+      setSubleaseBookings([]);
+    });
+
+    return () => unsubBookings();
+  }, [isAdminUnlocked]);
 
   const updateSettings = async (newSettings: HomeSettings) => {
     const { insurancePlans: _, ...cleanSettings } = newSettings;
@@ -284,6 +348,15 @@ export default function App() {
       await saveInsurancePlans(newPlans);
     } catch (e) {
       console.error("Erro ao salvar planos de saúde:", e);
+    }
+  };
+
+  const updateSubleaseRooms = async (newRooms: SubleaseRoom[]) => {
+    setSubleaseRooms(newRooms);
+    try {
+      await saveSubleaseRooms(newRooms);
+    } catch (e) {
+      console.error("Erro ao salvar salas de sublocação:", e);
     }
   };
 
@@ -392,6 +465,36 @@ export default function App() {
           )}
           {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} settings={homeSettings} />}
           {currentScreen === Screen.Abordagens && <AbordagensScreen onNavigate={navigateTo} approaches={approaches} settings={homeSettings} />}
+          {currentScreen === Screen.Sublocacao && (
+            <SublocacaoScreen 
+              rooms={subleaseRooms || []} 
+              user={user} 
+              settings={safeSettings}
+              onBooking={async (roomId, day, dayLabel, items, totalPrice) => {
+                const booking: SubleaseBooking = {
+                  id: Date.now().toString(),
+                  roomId,
+                  userId: user.uid,
+                  userName: user.displayName || user.email || 'Usuário',
+                  userEmail: user.email || '',
+                  day,
+                  dayLabel,
+                  items,
+                  totalPrice,
+                  status: 'pending',
+                  createdAt: Date.now()
+                };
+                try {
+                  await saveSubleaseBooking(booking);
+                  alert('Sua solicitação de reserva foi enviada com sucesso! Aguarde a confirmação via WhatsApp ou e-mail.');
+                } catch (e) {
+                  alert('Erro ao processar sua reserva. Tente novamente mais tarde.');
+                }
+              }}
+              onNavigate={navigateTo}
+            />
+          )}
+
           {currentScreen === Screen.Login && (
             <LoginScreen 
               onNavigate={navigateTo} 
@@ -404,13 +507,23 @@ export default function App() {
               onNavigate={navigateTo}
               settings={safeSettings}
               onUpdateSettings={updateSettings}
-              specialists={specialists}
+              specialists={specialists || []}
               onUpdateSpecialists={updateSpecialists}
-              approaches={approaches}
+              approaches={approaches || []}
               onUpdateApproaches={updateApproaches}
               onLogout={handleLogout}
-              insurancePlans={insurancePlans}
+              insurancePlans={insurancePlans || []}
               onUpdateInsurance={updateInsurancePlans}
+              subleaseRooms={subleaseRooms || []}
+              onUpdateSubleaseRooms={updateSubleaseRooms}
+              subleaseBookings={subleaseBookings || []}
+              onUpdateSubleaseBookingStatus={async (id, status) => {
+                try {
+                  await updateSubleaseBookingStatus(id, status);
+                } catch (e) {
+                  alert('Erro ao atualizar status da reserva.');
+                }
+              }}
               isDataLoaded={isDataInitialized}
             />
           )}
@@ -445,6 +558,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
     { id: Screen.SEO, label: 'A Clínica' },
     { id: Screen.Abordagens, label: 'Abordagens' },
     { id: Screen.CorpoClinico, label: 'Especialistas' },
+    // { id: Screen.Sublocacao, label: 'Sublocação' },
   ];
 
   return (
@@ -517,7 +631,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="absolute right-0 top-0 h-[calc(100vh-5rem)] w-full sm:w-80 bg-white shadow-2xl border-l border-outline-variant/30 flex flex-col p-8 overflow-y-auto"
+              className="absolute right-0 top-0 h-[calc(100vh-5rem)] w-full sm:w-80 bg-white shadow-2xl border-l border-outline-alt/30 flex flex-col p-8 overflow-y-auto"
             >
               <div className="flex flex-col gap-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-secondary/60 mb-2">Navegação</p>
@@ -559,7 +673,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
 
       <main className="flex-grow">{children}</main>
 
-      <footer className="py-20 bg-surface-container-low border-t border-outline-variant/30">
+      <footer className="py-20 bg-surface-container-low border-t border-outline-alt/30">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <div className="flex flex-col gap-6">
             <div className="flex items-center gap-3">
@@ -587,7 +701,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             </div>
             
             {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
-              <div className="flex flex-wrap gap-6 pt-6 border-t border-outline-variant/20">
+              <div className="flex flex-wrap gap-6 pt-6 border-t border-outline-alt/20">
                 {settings.insurancePlans.map(plan => (
                   <div key={plan.id} className="flex flex-col items-center gap-1 group">
                     <img 
@@ -609,7 +723,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/40">{settings?.address || 'Pagani, Palhoça – SC'}</p>
           </div>
         </div>
-        <div className="max-w-7xl mx-auto px-6 mt-12 pt-8 border-t border-outline-variant/10">
+        <div className="max-w-7xl mx-auto px-6 mt-12 pt-8 border-t border-outline-alt/10">
           <p className="text-[11px] text-on-surface-variant/50 text-center max-w-5xl mx-auto leading-relaxed">
             Todos os profissionais atuam de forma autônoma e independente, sendo responsáveis por seus próprios atendimentos, conduzidos em conformidade com o Código de Ética Profissional do Psicólogo e com respeito ao sigilo profissional.
             A responsabilidade técnica e ética pelos atendimentos é exclusiva de cada profissional, não cabendo à clínica ingerência sobre a condução dos casos.
@@ -688,7 +802,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             </div>
 
             {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
-              <div className="pt-12 border-t border-outline-variant/30">
+              <div className="pt-12 border-t border-outline-alt/30">
                 <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-on-surface-variant/50 mb-6 font-mono">Convênios que aceitamos</p>
                 <div className="flex flex-wrap gap-x-12 gap-y-10 items-end transition-all duration-500">
                   {settings.insurancePlans.map(plan => (
@@ -714,7 +828,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             animate={{ opacity: 1, scale: 1 }}
             className="relative"
           >
-            <div className="aspect-square rounded-[4rem] overflow-hidden soft-shadow relative z-10 border border-outline-variant/30">
+            <div className="aspect-square rounded-[4rem] overflow-hidden soft-shadow relative z-10 border border-outline-alt/30">
               <img 
                 src={settings.heroImageUrl} 
                 className="w-full h-full object-cover transition-transform duration-[5s] hover:scale-105"
@@ -747,7 +861,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             {approaches.slice(0, 4).map((app, idx) => (
               <div 
                 key={app.id} 
-                className="bg-surface-container p-8 rounded-[2.5rem] group hover:bg-white hover:soft-shadow hover:translate-y-[-8px] transition-all duration-500 border border-transparent hover:border-outline-variant/30"
+                className="bg-surface-container p-8 rounded-[2.5rem] group hover:bg-white hover:soft-shadow hover:translate-y-[-8px] transition-all duration-500 border border-transparent hover:border-outline-alt/30"
               >
                 <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-primary mb-8 group-hover:bg-secondary-container transition-colors">
                   {idx === 0 && <Psychology size={28} />}
@@ -767,7 +881,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
       </section>
 
       {/* Compact Equipe Section - Carousel */}
-      <section className="section-padding bg-surface-container-low border-y border-outline-variant/30 overflow-hidden">
+      <section className="section-padding bg-surface-container-low border-y border-outline-alt/30 overflow-hidden">
         <div className="max-w-7xl mx-auto space-y-16">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
             <div>
@@ -829,7 +943,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                   key={i}
                   onClick={() => setIndex(i)}
                   className={`h-1.5 rounded-full transition-all duration-500 ${
-                    index === i ? 'bg-primary w-8' : 'bg-outline-variant w-2'
+                    index === i ? 'bg-primary w-8' : 'bg-outline-alt w-2'
                   }`}
                 />
               ))}
@@ -854,7 +968,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {DEFAULT_TESTIMONIALS.map(item => (
-              <div key={item.id} className="bg-surface-container-low p-8 rounded-[2.5rem] border border-outline-variant/30 flex flex-col justify-between hover:soft-shadow transition-all group">
+              <div key={item.id} className="bg-surface-container-low p-8 rounded-[2.5rem] border border-outline-alt/30 flex flex-col justify-between hover:soft-shadow transition-all group">
                 <div className="space-y-6">
                   <div className="flex justify-between items-start">
                     <div className="flex gap-1 text-[#FBBC05]">
@@ -866,7 +980,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                   </div>
                   <p className="text-on-surface-variant font-medium leading-relaxed italic text-sm">"{item.text}"</p>
                 </div>
-                <div className="flex items-center gap-4 mt-8 pt-6 border-t border-outline-variant/10">
+                <div className="flex items-center gap-4 mt-8 pt-6 border-t border-outline-alt/10">
                   <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-xs">
                     {item.avatar}
                   </div>
@@ -949,7 +1063,7 @@ function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (s
                     {app.desc}
                   </p>
                 </div>
-                <div className="p-8 bg-surface-container rounded-[2.5rem] border border-outline-variant/30 space-y-6">
+                <div className="p-8 bg-surface-container rounded-[2.5rem] border border-outline-alt/30 space-y-6">
                   <p className="text-on-surface-variant font-medium leading-loose">
                     {app.details}
                   </p>
@@ -1010,7 +1124,7 @@ function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSetti
                  { icon: <ShieldCheck size={20} />, label: 'Portaria 24h' }
                ].map((item, index) => (
                  <div key={index} className="group relative">
-                   <div className="p-4 bg-white rounded-2xl shadow-sm border border-outline-variant/30 text-primary hover:bg-secondary/10 hover:text-secondary transition-all duration-300">
+                   <div className="p-4 bg-white rounded-2xl shadow-sm border border-outline-alt/30 text-primary hover:bg-secondary/10 hover:text-secondary transition-all duration-300">
                      {item.icon}
                    </div>
                    <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
@@ -1050,7 +1164,7 @@ function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSetti
         </div>
       </section>
 
-      <section className="section-padding bg-surface-container-low border-t border-outline-variant/30">
+      <section className="section-padding bg-surface-container-low border-t border-outline-alt/30">
         <div className="max-w-7xl mx-auto space-y-16">
           <div className="text-center space-y-4">
             <h2 className="text-4xl font-bold text-primary tracking-tight">O que dizem sobre nós</h2>
@@ -1058,14 +1172,14 @@ function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSetti
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {DEFAULT_TESTIMONIALS.map(item => (
-              <div key={item.id} className="bg-white p-8 rounded-[2.5rem] border border-outline-variant/30 flex flex-col justify-between hover:soft-shadow transition-all group">
+              <div key={item.id} className="bg-white p-8 rounded-[2.5rem] border border-outline-alt/30 flex flex-col justify-between hover:soft-shadow transition-all group">
                 <div className="space-y-6">
                   <div className="flex gap-1 text-secondary">
                     {[...Array(item.rating)].map((_, i) => <Star key={i} size={16} fill="currentColor" />)}
                   </div>
                   <p className="text-on-surface-variant font-medium leading-relaxed italic text-sm">"{item.text}"</p>
                 </div>
-                <div className="flex items-center gap-4 mt-8 pt-6 border-t border-outline-variant/10">
+                <div className="flex items-center gap-4 mt-8 pt-6 border-t border-outline-alt/10">
                   <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-xs">
                     {item.avatar}
                   </div>
@@ -1081,7 +1195,7 @@ function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSetti
               href="https://maps.app.goo.gl/qnU86jo4xeY7dz7V8" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-8 py-4 bg-white border border-outline-variant/50 rounded-2xl text-primary font-bold text-sm hover:soft-shadow transition-all group"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white border border-outline-alt/50 rounded-2xl text-primary font-bold text-sm hover:soft-shadow transition-all group"
             >
               Ver todas as avaliações no Google
               <ArrowForward size={16} className="group-hover:translate-x-1 transition-transform" />
@@ -1379,7 +1493,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
       layout
       onTouchStart={() => setIsTouched(true)}
       onTouchEnd={() => setIsTouched(false)}
-      className="bg-white rounded-[3rem] overflow-hidden soft-shadow border border-outline-variant/30 flex flex-col group h-full"
+      className="bg-white rounded-[3rem] overflow-hidden soft-shadow border border-outline-alt/30 flex flex-col group h-full"
     >
       <div className={`h-96 relative overflow-hidden transition-all duration-700 ${isTouched ? 'grayscale-0' : 'grayscale group-hover:grayscale-0'}`}>
         <img 
@@ -1433,7 +1547,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
           </div>
 
           {displayAgenda && (
-            <div className="pt-6 border-t border-outline-variant/30 space-y-4">
+            <div className="pt-6 border-t border-outline-alt/30 space-y-4">
               {spec.attendedAges && spec.attendedAges.length > 0 && (
                 <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                   <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
@@ -1516,7 +1630,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                       <motion.div 
                         initial={{ opacity: 0, y: 10 }} 
                         animate={{ opacity: 1, y: 0 }}
-                        className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-variant/20 space-y-3"
+                        className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-alt/20 space-y-3"
                       >
                         {(Object.entries((sheetSchedule || spec.schedule)![selectedDay].periods) as [Shift, string[]][])
                           .sort(([a], [b]) => {
@@ -1718,7 +1832,7 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
 
       {/* Guide Stepper */}
       <section className="px-6 pb-20">
-        <div className="max-w-4xl mx-auto bg-white rounded-[3.5rem] shadow-xl border border-outline-variant/30 overflow-hidden">
+        <div className="max-w-4xl mx-auto bg-white rounded-[3.5rem] shadow-xl border border-outline-alt/30 overflow-hidden">
           <div className="h-2 bg-surface-container">
             <motion.div 
               className="h-full bg-primary"
@@ -1744,7 +1858,7 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
                       key={age} 
                       onClick={() => handleAgeGroupSelect(age)} 
                       className={`p-8 rounded-[2rem] border-2 flex flex-col items-center gap-4 font-bold text-xl transition-all ${
-                        selectedAge === age ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-outline-variant/50 text-primary hover:border-primary'
+                        selectedAge === age ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-outline-alt/50 text-primary hover:border-primary'
                       }`}
                     >
                       <div className={`p-4 rounded-2xl ${selectedAge === age ? 'bg-white/20' : 'bg-primary/5'}`}>
@@ -1767,7 +1881,7 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
                         key={age} 
                         onClick={() => toggleSpecificAge(age)} 
                         className={`w-12 h-12 rounded-full border-2 font-bold transition-all ${
-                          selectedSpecificAges.includes(age) ? 'bg-primary text-white border-primary shadow-md scale-110' : 'bg-white border-outline-variant/50 text-primary'
+                          selectedSpecificAges.includes(age) ? 'bg-primary text-white border-primary shadow-md scale-110' : 'bg-white border-outline-alt/50 text-primary'
                         }`}
                       >
                         {age}
@@ -1788,7 +1902,7 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
                         key={shift} 
                         onClick={() => toggleShift(shift)} 
                         className={`p-8 rounded-[2rem] border-2 flex flex-col items-center gap-4 font-bold transition-all ${
-                          selectedShifts.includes(shift) ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-outline-variant/50 text-primary hover:border-primary'
+                          selectedShifts.includes(shift) ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-outline-alt/50 text-primary hover:border-primary'
                         }`}
                       >
                         <div className={`p-4 rounded-2xl ${selectedShifts.includes(shift) ? 'bg-white/20' : 'bg-primary/5'}`}>
@@ -1812,7 +1926,7 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
 
         {/* Results List */}
         <div id="lista-especialistas" className="max-w-7xl mx-auto mt-32 space-y-20">
-          <div className="flex justify-between items-end border-b border-outline-variant/50 pb-8">
+          <div className="flex justify-between items-end border-b border-outline-alt/50 pb-8">
             <h2 className="text-4xl font-bold text-primary tracking-tight">Especialistas Recomendados</h2>
             <button onClick={resetFilters} className="text-secondary font-bold text-sm underline">Limpar filtros</button>
           </div>
@@ -1830,7 +1944,7 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
           </div>
 
           {specialistsToShow.length === 0 && (
-            <div className="text-center py-20 bg-surface-container-low rounded-[4rem] border-2 border-dashed border-outline-variant/50">
+            <div className="text-center py-20 bg-surface-container-low rounded-[4rem] border-2 border-dashed border-outline-alt/50">
                <SentimentVeryDissatisfied size={64} className="mx-auto text-on-surface-variant/30" />
                <p className="text-xl font-bold text-primary mt-6">Nenhum especialista atende a todos os critérios.</p>
                <button onClick={resetFilters} className="btn-primary mt-8">Tentar outra busca</button>
@@ -1891,7 +2005,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
           </motion.div>
 
           {/* Form Card */}
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-white p-8 sm:p-12 md:p-20 rounded-[3rem] sm:rounded-[4rem] border border-outline-variant/30 soft-shadow">
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-white p-8 sm:p-12 md:p-20 rounded-[3rem] sm:rounded-[4rem] border border-outline-alt/30 soft-shadow">
              <div className="space-y-12">
                 <div className="space-y-2">
                    <h3 className="text-3xl font-bold text-primary">Envie uma Mensagem</h3>
@@ -1942,7 +2056,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                 <h4 className="text-xl font-bold text-primary tracking-tight italic">Informação importante para quem for agendar pelo plano de saúde</h4>
                 <p className="text-on-surface-variant font-medium leading-relaxed max-w-4xl">
                   Para agendamentos via <span className="text-secondary font-bold">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="text-secondary font-bold">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos. 
-                  <span className="block mt-4 text-sm bg-white/50 p-4 rounded-xl border border-outline-variant/30">
+                  <span className="block mt-4 text-sm bg-white/50 p-4 rounded-xl border border-outline-alt/30">
                     💡 <span className="font-bold">Dica:</span> Se você não tiver o encaminhamento, verifique no aplicativo do seu plano se existe a opção de <span className="font-bold underline">teleatendimento</span>. É um processo rápido que pode auxiliar você neste momento de decisão.
                   </span>
                 </p>
@@ -1983,25 +2097,22 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleGithubLogin = async () => {
+  const handleGoogleLogin = async () => {
     setIsLoading(true);
     setError('');
     try {
-      const user = await loginWithGithub();
-      // Verificando o email ou o login do GitHub se necessário
-      // O usuário scjorge1908@gmail.com ainda é o admin, 
-      // o GitHub pode retornar esse email se estiver público
-      if (user.email === 'scjorge1908@gmail.com' || user.displayName === 'scjorge1908') {
+      const user = await loginWithGoogle();
+      if (user.email === 'scjorge1908@gmail.com') {
         onUnlock();
         onNavigate(Screen.Admin, 'push');
       } else {
-        setError('Acesso negado. Apenas o administrador scjorge1908 pode acessar o painel.');
+        setError('Acesso negado. Apenas o administrador scjorge1908@gmail.com pode acessar o painel.');
       }
     } catch (err: any) {
       if (err.message?.includes('popup-closed-by-user')) {
         setError('O login foi cancelado.');
       } else {
-        setError('Houve um erro ao tentar fazer login com GitHub.');
+        setError('Houve um erro ao tentar fazer login com Google.');
       }
     } finally {
       setIsLoading(false);
@@ -2014,7 +2125,7 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-white rounded-[3rem] p-10 md:p-16 soft-shadow border border-outline-variant/30 space-y-10"
+          className="max-w-md w-full bg-white rounded-[3rem] p-10 md:p-16 soft-shadow border border-outline-alt/30 space-y-10"
         >
           <div className="text-center space-y-4">
             <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mx-auto mb-6">
@@ -2026,12 +2137,17 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
 
           <div className="space-y-6">
             <button 
-              onClick={handleGithubLogin}
+              onClick={handleGoogleLogin}
               disabled={isLoading}
-              className="w-full py-5 bg-white border-2 border-outline-variant/30 text-primary rounded-2xl font-bold text-lg hover:bg-surface-container-low transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
+              className="w-full py-5 bg-white border border-outline-alt/30 text-primary rounded-2xl font-bold text-lg hover:bg-surface-container-low transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50 shadow-sm"
             >
-              <Github size={20} />
-              {isLoading ? 'Conectando...' : 'Entrar com GitHub'}
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              {isLoading ? 'Conectando...' : 'Entrar com Gmail'}
             </button>
 
             {error && (
@@ -2039,7 +2155,7 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
             )}
             
             <p className="text-[10px] text-center text-on-surface-variant/40 uppercase font-black tracking-widest">
-              Apenas para administrador scjorge1908
+              Acesso exclusivo para: scjorge1908@gmail.com
             </p>
           </div>
 
@@ -2066,7 +2182,416 @@ interface AdminScreenProps {
   onLogout: () => void;
   insurancePlans: InsurancePlan[];
   onUpdateInsurance: (plans: InsurancePlan[]) => void;
+  subleaseRooms: SubleaseRoom[];
+  onUpdateSubleaseRooms: (rooms: SubleaseRoom[]) => void;
+  subleaseBookings: SubleaseBooking[];
+  onUpdateSubleaseBookingStatus: (id: string, status: 'confirmed' | 'cancelled') => void;
   isDataLoaded: boolean;
+}
+
+function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: { 
+  rooms: SubleaseRoom[], 
+  user: any, 
+  onBooking: (roomId: string, day: string, dayLabel: string, items: any[], totalPrice: number) => void,
+  onNavigate: (s: Screen) => void,
+  settings: HomeSettings
+}) {
+  const [selectedRoom, setSelectedRoom] = useState<SubleaseRoom | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [cart, setCart] = useState<{
+    type: 'block' | 'hour';
+    periodId: string;
+    slotId?: string;
+    label: string;
+    price: number;
+  }[]>([]);
+
+  const totalPrice = cart.reduce((sum, item) => sum + item.price, 0);
+
+  const toggleItem = (item: {
+    type: 'block' | 'hour';
+    periodId: string;
+    slotId?: string;
+    label: string;
+    price: number;
+  }) => {
+    const exists = cart.find(i => 
+      i.type === item.type && 
+      i.periodId === item.periodId && 
+      i.slotId === item.slotId
+    );
+    if (exists) {
+      setCart(cart.filter(i => i !== exists));
+    } else {
+      if (item.type === 'block') {
+        setCart([...cart.filter(i => !(i.type === 'hour' && i.periodId === item.periodId)), item]);
+      } else {
+        const blockSelected = cart.find(i => i.type === 'block' && i.periodId === item.periodId);
+        if (blockSelected) {
+          setCart([...cart.filter(i => i !== blockSelected), item]);
+        } else {
+          setCart([...cart, item]);
+        }
+      }
+    }
+  };
+
+  const handleBooking = () => {
+    if (!user) {
+      onNavigate(Screen.Login);
+      return;
+    }
+    if (!selectedRoom || !selectedDay || cart.length === 0) return;
+
+    onBooking(selectedRoom.id, '2026-05-10', selectedDay, cart, totalPrice);
+    setSelectedRoom(null);
+    setCart([]);
+    setSelectedDay(null);
+  };
+
+  // Se uma sala estiver selecionada, mostramos a visão de tela cheia
+  if (selectedRoom) {
+    return (
+      <Layout activeScreen={Screen.Sublocacao} onNavigate={onNavigate} settings={settings}>
+        <div className="min-h-screen bg-background animate-fade-in pb-20 pt-28">
+          {/* Barra de Navegação Superior Fixa Interna */}
+          <div className="sticky top-20 z-40 bg-white/95 backdrop-blur-xl border-b border-outline/10 px-6 py-4 flex justify-between items-center shadow-md -mt-4 mb-8">
+            <button 
+              onClick={() => {
+                setSelectedRoom(null);
+                setCart([]);
+                setSelectedDay(null);
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container text-primary font-black uppercase text-[10px] tracking-widest hover:bg-primary hover:text-white transition-all group"
+            >
+              <ArrowBack size={14} className="group-hover:-translate-x-1 transition-transform" />
+              Ver Todas as Salas
+            </button>
+            
+            <div className="hidden lg:flex items-center gap-4">
+               <h2 className="text-lg font-black text-primary italic font-serif tracking-tighter truncate max-w-xs">{selectedRoom.name}</h2>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <div className="hidden md:flex flex-col items-end">
+                <span className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">Total:</span>
+                <span className="text-lg font-black text-primary tracking-tighter">R$ {totalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <button 
+                onClick={handleBooking}
+                disabled={cart.length === 0}
+                className="px-6 py-3 bg-primary text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30"
+              >
+                Reservar Agora
+              </button>
+            </div>
+          </div>
+
+          <div className="max-w-[1600px] mx-auto px-6 md:px-8">
+            <div className="flex flex-col lg:flex-row gap-8">
+              
+              {/* Esquerda: Fotos e Características */}
+              <div className="lg:w-1/4 space-y-6">
+                <div className="space-y-4">
+                  <div className="aspect-[4/3] rounded-[2rem] overflow-hidden border border-outline/10 modern-shadow">
+                    <img src={selectedRoom.photos[0]} className="w-full h-full object-cover" />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <span className="text-[9px] font-black text-secondary uppercase tracking-[0.2em] leading-none">Ambiente Clínico</span>
+                    <p className="text-on-surface-variant font-medium leading-normal italic text-sm opacity-80">
+                      "{selectedRoom.description}"
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedRoom.amenities.map(amenity => (
+                      <span key={amenity} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 text-primary text-[9px] font-black uppercase tracking-widest rounded-lg border border-primary/5 transition-colors hover:bg-primary/10">
+                        {amenity === 'WiFi' && <Wifi size={12} />}
+                        {amenity === 'Café' && <ConciergeBell size={12} />}
+                        {amenity === 'Ar-condicionado' && <Snowflake size={12} />}
+                        {amenity === 'Sala de espera' && <Users size={12} />}
+                        {amenity === 'Banheiro' && <Accessibility size={12} />}
+                        {amenity === 'Rádio' && <Volume2 size={12} />}
+                        {amenity === 'Portaria 24h' && <ShieldCheck size={12} />}
+                        {amenity}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-surface-container/40 border border-outline/5 p-6 rounded-[2rem] space-y-4">
+                  <div className="flex items-center gap-2 text-primary opacity-60">
+                    <Info size={16} />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Informações</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex gap-3">
+                      <div className="w-6 h-6 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+                        <span className="text-[8px] font-black text-primary">1</span>
+                      </div>
+                      <p className="text-[10px] font-medium text-on-surface-variant/70 leading-tight">Escolha hora avulsa ou blocos.</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="w-6 h-6 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+                        <span className="text-[8px] font-black text-primary">2</span>
+                      </div>
+                      <p className="text-[10px] font-medium text-on-surface-variant/70 leading-tight">Aprovação rápida via WhatsApp.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Direita: Seleção de Datas e Horários */}
+              <div className="lg:w-3/4 space-y-6">
+                <div className="bg-white rounded-[3rem] border border-outline-alt/20 modern-shadow p-6 md:p-10 space-y-8">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-secondary/10 rounded-xl flex items-center justify-center">
+                         <CalendarMonth size={20} className="text-secondary" />
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-black text-primary tracking-tighter italic font-serif leading-none">Dias Disponíveis</h4>
+                        <p className="text-[9px] font-bold text-on-surface-variant/40 uppercase tracking-widest mt-1">Selecione o dia da semana</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {Object.keys(selectedRoom.schedule).map(day => (
+                        <button
+                          key={day}
+                          onClick={() => setSelectedDay(day)}
+                          className={`px-5 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${
+                            selectedDay === day 
+                              ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-105' 
+                              : 'bg-surface-container/50 text-primary hover:bg-white hover:border-outline-alt/30 border border-transparent'
+                          }`}
+                        >
+                          {day}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="h-px bg-outline/10 w-full" />
+
+                  {selectedDay ? (
+                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-fade-in">
+                      {selectedRoom.schedule[selectedDay].periods.map(period => (
+                        <div key={period.id} className="bg-surface-container/20 rounded-[2.5rem] p-6 border border-outline-alt/10 flex flex-col justify-between space-y-6">
+                           <div className="space-y-4">
+                             <div className="flex items-start justify-between">
+                               <div className="flex items-center gap-3">
+                                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                                   period.id === 'manha' ? 'bg-amber-50 text-amber-600' : 
+                                   period.id === 'tarde' ? 'bg-orange-50 text-orange-600' : 
+                                   'bg-indigo-50 text-indigo-600'
+                                 }`}>
+                                   {period.id === 'manha' ? <Sun size={16} /> : period.id === 'tarde' ? <CloudSun size={16} /> : <Cloud size={16} />}
+                                 </div>
+                                 <div>
+                                   <h5 className="text-[14px] font-black text-primary uppercase tracking-tighter italic font-serif leading-none">
+                                     {period.id === 'manha' ? 'Matutino' : period.id === 'tarde' ? 'Vespertino' : 'Noturno'}
+                                   </h5>
+                                   <p className="text-[8px] font-bold text-on-surface-variant/40 uppercase tracking-widest mt-1">{period.start} — {period.end}</p>
+                                 </div>
+                               </div>
+                             </div>
+
+                             <div className="grid grid-cols-4 gap-2">
+                               {period.slots.map(slot => {
+                                 const isSelected = cart.find(i => i.type === 'hour' && i.periodId === period.id && i.slotId === slot.id);
+                                 const isBlockSelected = cart.find(i => i.type === 'block' && i.periodId === period.id);
+                                 
+                                 return (
+                                   <button
+                                     key={slot.id}
+                                     disabled={!slot.available || !!isBlockSelected}
+                                     onClick={() => toggleItem({
+                                       type: 'hour',
+                                       periodId: period.id,
+                                       slotId: slot.id,
+                                       label: `${slot.start}`,
+                                       price: period.priceHour
+                                     })}
+                                     className={`relative flex flex-col items-center justify-center py-2.5 rounded-lg border transition-all duration-300 ${
+                                       isBlockSelected 
+                                         ? 'bg-secondary/5 border-secondary/10 text-secondary/30 grayscale opacity-40 scale-95 cursor-default' 
+                                         : isSelected
+                                           ? 'bg-primary text-white border-primary shadow-md z-10'
+                                           : 'bg-white border-outline-alt/10 text-primary hover:border-primary/40 hover:-translate-y-1'
+                                     }`}
+                                   >
+                                     <span className="text-[11px] font-black tracking-tighter">{slot.start}</span>
+                                     <div className={`absolute top-1 right-1 w-0.5 h-0.5 rounded-full ${isSelected || isBlockSelected ? 'bg-secondary' : 'bg-outline/10'}`} />
+                                   </button>
+                                 );
+                               })}
+                             </div>
+                           </div>
+
+                           <button
+                             onClick={() => toggleItem({
+                               type: 'block',
+                               periodId: period.id,
+                               label: `Bloco ${period.id === 'manha' ? 'Manhã' : period.id === 'tarde' ? 'Tarde' : 'Noite'}`,
+                               price: period.priceBlock
+                             })}
+                             className={`w-full py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                               cart.find(i => i.type === 'block' && i.periodId === period.id)
+                                ? 'bg-secondary text-white border-secondary shadow-md'
+                                : 'bg-white text-secondary border-secondary/20 hover:border-secondary hover:bg-secondary/5'
+                             }`}
+                           >
+                             Reservar Bloco (R$ {period.priceBlock.toFixed(2)})
+                           </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-16 text-center space-y-4 max-w-sm mx-auto">
+                      <div className="w-16 h-16 bg-surface-container/50 rounded-full flex items-center justify-center mx-auto opacity-20">
+                        <CalendarMonth size={32} className="text-primary" />
+                      </div>
+                      <p className="text-[11px] font-medium text-on-surface-variant/50 uppercase tracking-widest italic">Selecione um dia acima</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tabela de Valores - Conforme solicitado */}
+                <div className="bg-white/50 backdrop-blur rounded-[2.5rem] border border-outline-alt/10 p-6 flex flex-col md:flex-row gap-6 items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center shrink-0">
+                      <LocalOffer size={18} className="text-primary" />
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-black text-primary italic font-serif leading-none mb-1">Investimento</h5>
+                      <p className="text-[8px] font-bold text-on-surface-variant/40 uppercase tracking-widest">Valores fixos</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-4 items-center">
+                    <div className="space-y-0.5">
+                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Hora Avulsa</p>
+                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 31,90</p>
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Bloco Manhã</p>
+                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 550,00</p>
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Bloco Tarde</p>
+                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 550,00</p>
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Bloco Noite</p>
+                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 420,00</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout activeScreen={Screen.Sublocacao} onNavigate={onNavigate} settings={settings}>
+      <div className="min-h-screen bg-background pt-40 pb-24">
+        <div className="max-w-7xl mx-auto px-8">
+          <div className="text-center space-y-6 mb-24">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              className="inline-flex items-center gap-3 px-6 py-2 bg-secondary/10 text-secondary rounded-full text-xs font-black uppercase tracking-widest mb-4"
+            >
+              <div className="w-2 h-2 bg-secondary rounded-full animate-pulse" />
+              Infraestrutura Completa
+            </motion.div>
+            <h1 className="text-6xl md:text-8xl font-black text-primary tracking-tighter leading-none italic font-serif">
+              Sublocação <br/>
+              <span className="text-secondary drop-shadow-sm">de Salas</span>
+            </h1>
+            <p className="text-on-surface-variant max-w-2xl mx-auto text-lg font-medium leading-relaxed italic opacity-80">
+              Salas equipadas e confortáveis para atendimentos clínicos, pensadas para o seu bem-estar e dos seus pacientes.
+            </p>
+          </div>
+
+          {rooms.length === 0 ? (
+            <div className="text-center py-24 bg-surface-container rounded-[3rem] border-2 border-dashed border-outline-alt/30 max-w-2xl mx-auto space-y-4">
+              <div className="w-16 h-16 bg-primary/5 rounded-full flex items-center justify-center mx-auto">
+                <Info size={32} className="text-primary/40" />
+              </div>
+              <h3 className="text-xl font-bold text-primary">Nenhuma sala disponível</h3>
+              <p className="text-on-surface-variant font-medium text-sm">
+                No momento não temos salas disponíveis para sublocação. <br/>
+                Por favor, verifique novamente mais tarde ou entre em contato.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
+              {rooms.map(room => (
+                <motion.div 
+                  key={room.id}
+                  layout
+                  whileHover={{ y: -10 }}
+                  className="bg-white rounded-[4rem] overflow-hidden soft-shadow border border-outline-alt/20 flex flex-col group transition-all"
+                >
+                  <div className="h-80 relative overflow-hidden">
+                    <img src={room.photos[0]} alt={room.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+                    <div className="absolute top-8 left-8 bg-white/95 backdrop-blur px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest text-primary border border-white shadow-sm">
+                      Disponível para Reserva
+                    </div>
+                  </div>
+
+                  <div className="p-10 flex-grow space-y-8">
+                    <div className="space-y-4">
+                      <h3 className="text-3xl font-bold text-primary tracking-tight leading-none italic font-serif">{room.name}</h3>
+                      <p className="text-sm text-on-surface-variant/70 font-medium line-clamp-3 italic leading-relaxed">"{room.description}"</p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {room.amenities.slice(0, 4).map(amenity => (
+                        <span key={amenity} className="inline-flex items-center gap-2 px-4 py-2 bg-surface-container text-primary text-[10px] font-black uppercase tracking-widest rounded-xl border border-outline/10">
+                          {amenity === 'WiFi' && <Wifi size={14} />}
+                          {amenity === 'Ar-condicionado' && <Snowflake size={14} />}
+                          {amenity}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="space-y-4 pt-8 border-t border-outline/10">
+                      <div className="flex items-center gap-3 text-secondary">
+                        <CalendarMonth size={18} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Atendimento Disponível</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.keys(room.schedule).map(day => (
+                          <span key={day} className="px-3 py-1.5 bg-secondary/5 text-secondary text-[9px] font-black uppercase rounded-xl border border-secondary/10">
+                            {day}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={() => setSelectedRoom(room)}
+                      className="w-full py-6 bg-primary text-white rounded-[2rem] font-black text-sm hover:shadow-2xl hover:shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-4 group"
+                    >
+                      <AssignmentTurnedIn size={22} className="group-hover:rotate-12 transition-transform" />
+                      Explorar Ambientes e Horários
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Layout>
+  );
 }
 
 function AdminScreen({ 
@@ -2080,18 +2605,23 @@ function AdminScreen({
   onLogout,
   insurancePlans,
   onUpdateInsurance,
+  subleaseRooms,
+  onUpdateSubleaseRooms,
+  subleaseBookings,
+  onUpdateSubleaseBookingStatus,
   isDataLoaded
 }: AdminScreenProps) {
   const [localSettings, setLocalSettings] = useState<HomeSettings>(settings);
   const [localSpecialists, setLocalSpecialists] = useState<Specialist[]>(specialists);
   const [localApproaches, setLocalApproaches] = useState<Approach[]>(approaches);
   const [localInsurancePlans, setLocalInsurancePlans] = useState<InsurancePlan[]>(insurancePlans);
+  const [localSubleaseRooms, setLocalSubleaseRooms] = useState<SubleaseRoom[]>(subleaseRooms);
 
   const [hasInitialized, setHasInitialized] = useState(false);
-  const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens' | 'sublocacao' | 'reservas_sublocacao'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
 
-  const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | null>(null);
+  const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | 'sublease_1' | 'sublease_2' | null>(null);
   const [croppingItemId, setCroppingItemId] = useState<string | null>(null);
   const [cropImage, setCropImage] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -2104,9 +2634,89 @@ function AdminScreen({
       setLocalSettings(settings);
       setLocalApproaches(approaches);
       setLocalInsurancePlans(insurancePlans);
+      setLocalSubleaseRooms(subleaseRooms);
       setHasInitialized(true);
     }
-  }, [isDataLoaded, specialists, settings, approaches, insurancePlans, hasInitialized]);
+  }, [isDataLoaded, specialists, settings, approaches, insurancePlans, subleaseRooms, hasInitialized]);
+
+  const addRoom = () => {
+    const id = Date.now().toString();
+    const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    const schedule: any = {};
+    days.forEach(day => {
+      schedule[day] = {
+        periods: [
+          {
+            id: 'manha',
+            start: '07:00',
+            end: '12:00',
+            available: true,
+            priceBlock: 550,
+            priceHour: 31.9,
+            slots: [
+              { id: 'h7', start: '07:00', end: '08:00', available: true },
+              { id: 'h8', start: '08:00', end: '09:00', available: true },
+              { id: 'h9', start: '09:00', end: '10:00', available: true },
+              { id: 'h10', start: '10:00', end: '11:00', available: true },
+              { id: 'h11', start: '11:00', end: '12:00', available: true },
+            ]
+          },
+          {
+            id: 'tarde',
+            start: '13:00',
+            end: '17:00',
+            available: true,
+            priceBlock: 550,
+            priceHour: 31.9,
+            slots: [
+              { id: 'h13', start: '13:00', end: '14:00', available: true },
+              { id: 'h14', start: '14:00', end: '15:00', available: true },
+              { id: 'h15', start: '15:00', end: '16:00', available: true },
+              { id: 'h16', start: '16:00', end: '17:00', available: true },
+            ]
+          },
+          {
+            id: 'noite',
+            start: '18:00',
+            end: '21:00',
+            available: true,
+            priceBlock: 420,
+            priceHour: 31.9,
+            slots: [
+              { id: 'h18', start: '18:00', end: '19:00', available: true },
+              { id: 'h19', start: '19:00', end: '20:00', available: true },
+              { id: 'h20', start: '20:00', end: '21:00', available: true },
+            ]
+          }
+        ]
+      };
+    });
+
+    const newRoom: SubleaseRoom = {
+      id,
+      name: 'Nova Sala ' + id.slice(-3),
+      description: 'Descrição elegante e detalhada da sala clínica...',
+      amenities: ['WiFi', 'Ar-condicionado', 'Café', 'Sala de espera'],
+      photos: [
+        'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&q=80&w=1170',
+        'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&q=80&w=1170'
+      ],
+      schedule
+    };
+    setLocalSubleaseRooms([...localSubleaseRooms, newRoom]);
+  };
+
+  const removeRoom = async (id: string) => {
+    if (confirm("Deseja remover esta sala?")) {
+      const updated = localSubleaseRooms.filter(r => r.id !== id);
+      setLocalSubleaseRooms(updated);
+      await onUpdateSubleaseRooms(updated);
+    }
+  };
+
+  const updateRoom = (id: string, updates: Partial<SubleaseRoom>) => {
+    setLocalSubleaseRooms(localSubleaseRooms.map(r => r.id === id ? { ...r, ...updates } as SubleaseRoom : r));
+  };
 
   const addSpecialist = () => {
     const id = Date.now().toString();
@@ -2165,6 +2775,16 @@ function AdminScreen({
           setLocalSettings({ ...localSettings, heroImageUrl: croppedImg });
         } else if (croppingType === 'insurance' && croppingItemId) {
           updateInsurance(croppingItemId, { logo: croppedImg });
+        } else if (croppingType === 'sublease_1' && croppingItemId) {
+          const room = localSubleaseRooms.find(r => r.id === croppingItemId);
+          if (room) {
+            updateRoom(croppingItemId, { photos: [croppedImg, room.photos[1]] as [string, string] });
+          }
+        } else if (croppingType === 'sublease_2' && croppingItemId) {
+          const room = localSubleaseRooms.find(r => r.id === croppingItemId);
+          if (room) {
+            updateRoom(croppingItemId, { photos: [room.photos[0], croppedImg] as [string, string] });
+          }
         }
 
         setCroppingItemId(null);
@@ -2332,6 +2952,438 @@ function AdminScreen({
         </div>
 
         <div className="bg-white rounded-[2.5rem] modern-shadow border border-outline p-10">
+          {activeTab === 'reservas_sublocacao' && (
+            <div className="space-y-8">
+              <div className="bg-primary/5 p-8 rounded-3xl border border-primary/10">
+                <h2 className="text-3xl font-black text-primary tracking-tight">Reservas de Sublocação</h2>
+                <p className="text-on-surface-variant font-medium">Visualize e confirme as solicitações de reserva de salas.</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                {subleaseBookings.length === 0 ? (
+                  <div className="text-center py-20 bg-surface-container rounded-3xl border border-dashed border-outline">
+                    <Calendar size={48} className="mx-auto text-on-surface-variant/20 mb-4" />
+                    <p className="text-on-surface-variant font-medium">Nenhuma reserva encontrada.</p>
+                  </div>
+                ) : (
+                  subleaseBookings.sort((a, b) => b.createdAt - a.createdAt).map(booking => (
+                    <div key={booking.id} className="bg-surface-container rounded-2xl border border-outline p-6 flex flex-col md:flex-row justify-between items-center gap-6">
+                      <div className="space-y-1 text-center md:text-left">
+                        <div className="flex items-center gap-2 justify-center md:justify-start">
+                          <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${
+                            booking.status === 'confirmed' ? 'bg-secondary/10 text-secondary' : 
+                            booking.status === 'cancelled' ? 'bg-accent/10 text-accent' : 
+                            'bg-primary/10 text-primary'
+                          }`}>
+                            {booking.status}
+                          </span>
+                          <p className="text-xs font-bold text-primary">{booking.userName}</p>
+                        </div>
+                        <p className="text-[10px] text-on-surface-variant">{booking.userEmail}</p>
+                        <p className="text-sm font-bold text-secondary">
+                          {subleaseRooms.find(r => r.id === booking.roomId)?.name || 'Sala Desconhecida'} - {booking.day} ({booking.periodLabel})
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2">
+                        {booking.status === 'pending' && (
+                          <>
+                            <button 
+                              onClick={() => onUpdateSubleaseBookingStatus(booking.id, 'confirmed')}
+                              className="p-3 bg-secondary text-white rounded-xl hover:scale-105 transition-all shadow-md"
+                            >
+                              <CheckCircle size={20} />
+                            </button>
+                            <button 
+                              onClick={() => onUpdateSubleaseBookingStatus(booking.id, 'cancelled')}
+                              className="p-3 bg-accent/10 text-accent rounded-xl hover:scale-105 transition-all"
+                            >
+                              <Close size={20} />
+                            </button>
+                          </>
+                        )}
+                        {booking.status !== 'pending' && (
+                          <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40">
+                            Processado
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'sublocacao' && (
+            <div className="space-y-12">
+              <div className="flex flex-col md:flex-row justify-between items-center gap-6 bg-primary/5 p-10 rounded-3xl border border-primary/10 shadow-sm">
+                <div>
+                  <h2 className="text-4xl font-black text-primary tracking-tight">Gerenciar Sublocação</h2>
+                  <p className="text-on-surface-variant font-medium mt-2">Personalize suas salas, defina comodidades e controle os horários de reserva.</p>
+                </div>
+                <button 
+                  onClick={addRoom}
+                  className="px-10 py-5 bg-primary text-white rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-xl active:scale-95 shrink-0"
+                >
+                  <Add size={24} />
+                  Adicionar Nova Sala
+                </button>
+              </div>
+
+              <div className="space-y-12">
+                {localSubleaseRooms.map(room => (
+                  <div key={room.id} className="bg-white rounded-[3rem] border border-outline-alt/50 p-8 md:p-12 modern-shadow flex flex-col lg:flex-row gap-12 group">
+                    {/* Visual Editor Section */}
+                    <div className="lg:w-2/3 space-y-10">
+                      <div className="flex justify-between items-center border-b border-outline/30 pb-6">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-black uppercase text-primary/40 tracking-[0.2em]">Configurações da Unidade</span>
+                          <input 
+                            className="text-3xl font-black text-primary bg-transparent outline-none border-none placeholder:text-outline focus:ring-0 w-full" 
+                            value={room.name} 
+                            onChange={e => updateRoom(room.id, { name: e.target.value })} 
+                            placeholder="Ex: Consultório Premium 302" 
+                          />
+                        </div>
+                        <div className="flex gap-3">
+                          <button 
+                            onClick={async () => {
+                              setSaveStatus({ ...saveStatus, [`room-${room.id}`]: true });
+                              await onUpdateSubleaseRooms(localSubleaseRooms);
+                              setTimeout(() => setSaveStatus(prev => ({ ...prev, [`room-${room.id}`]: false })), 2000);
+                            }}
+                            className={`px-6 py-3 rounded-2xl font-bold text-sm shadow-lg transition-all flex items-center gap-2 ${saveStatus[`room-${room.id}`] ? 'bg-secondary text-white' : 'bg-primary text-white hover:shadow-primary/20'}`}
+                          >
+                            {saveStatus[`room-${room.id}`] ? <CheckCircle size={18} /> : <AssignmentTurnedIn size={18} />}
+                            {saveStatus[`room-${room.id}`] ? 'Salvo!' : 'Salvar Alterações'}
+                          </button>
+                          <button onClick={() => removeRoom(room.id)} className="p-4 bg-accent/5 text-accent rounded-2xl hover:bg-accent hover:text-white transition-all">
+                            <Delete size={20} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                        <div className="space-y-6">
+                          <div className="space-y-4">
+                            <label className="text-[10px] font-black uppercase text-primary/60 tracking-widest block">Comodidades (Estilo Digital Dynamic)</label>
+                            <div className="grid grid-cols-2 gap-3">
+                              {[
+                                { label: 'WiFi', icon: <Wifi size={14} className="animate-pulse" /> },
+                                { label: 'Café', icon: <ConciergeBell size={14} /> },
+                                { label: 'Sala de espera', icon: <Users size={14} /> },
+                                { label: 'Ar-condicionado', icon: <Snowflake size={14} className="animate-spin-slow" /> },
+                                { label: 'Banheiro', icon: <Accessibility size={14} /> },
+                                { label: 'Rádio', icon: <Volume2 size={14} /> },
+                                { label: 'Portaria 24h', icon: <ShieldCheck size={14} /> },
+                              ].map(option => {
+                                const isActive = room.amenities.includes(option.label);
+                                return (
+                                  <button
+                                    key={option.label}
+                                    onClick={() => {
+                                      const newAmenities = isActive 
+                                        ? room.amenities.filter(a => a !== option.label)
+                                        : [...room.amenities, option.label];
+                                      updateRoom(room.id, { amenities: newAmenities });
+                                    }}
+                                    className={`relative flex items-center justify-center gap-3 px-4 py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-widest transition-all border overflow-hidden group ${
+                                      isActive 
+                                        ? 'bg-primary text-white border-primary shadow-xl shadow-primary/20 scale-105' 
+                                        : 'bg-surface-container text-on-surface-variant border-outline/20 hover:border-primary/40'
+                                    }`}
+                                  >
+                                    <div className={`shrink-0 ${isActive ? 'scale-125 transition-transform' : ''}`}>
+                                      {option.icon}
+                                    </div>
+                                    {option.label}
+                                    {isActive && (
+                                       <div className="absolute top-0 right-0 p-1">
+                                          <div className="w-1.5 h-1.5 bg-secondary rounded-full animate-ping" />
+                                       </div>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <p className="text-[9px] font-bold text-on-surface-variant/40 italic mt-2">
+                               * Ícones com animações suaves simulam o efeito dinâmico solicitado.
+                            </p>
+                          </div>
+
+                          <div className="space-y-4">
+                            <label className="text-[10px] font-black uppercase text-primary/60 tracking-widest block">Descrição do Ambiente</label>
+                            <textarea 
+                              className="w-full p-5 bg-surface-container rounded-3xl border border-outline/20 focus:border-primary outline-none text-sm leading-relaxed" 
+                              rows={4} 
+                              value={room.description} 
+                              onChange={e => updateRoom(room.id, { description: e.target.value })} 
+                              placeholder="Fale sobre a decoração, iluminação e o público ideal..." 
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-8">
+                          <label className="text-[10px] font-black uppercase text-primary/60 tracking-widest block">Galeria de Fotos (Destaque & Detalhes)</label>
+                          <div className="bg-primary/5 p-6 rounded-[2rem] border border-primary/10 mb-6">
+                            <p className="text-[10px] font-black text-primary uppercase tracking-widest leading-loose">
+                              <span className="text-secondary shrink-0">Tip:</span> Para melhores resultados use fotos horizontais 4:3 (ex: 1200x900px). O editor permite ajustar o enquadramento ideal.
+                            </p>
+                          </div>
+                          {[0, 1].map(index => (
+                            <div key={index} className="flex gap-6 items-center bg-white p-6 rounded-3xl border border-outline-alt/30 soft-shadow">
+                              <div className="w-32 h-24 rounded-2xl bg-surface-container border border-outline/20 overflow-hidden shrink-0 shadow-inner group-hover:scale-105 transition-transform">
+                                <img src={room.photos[index]} className="w-full h-full object-cover" />
+                              </div>
+                              <div className="flex-grow space-y-3">
+                                <div className="flex justify-between items-center">
+                                  <p className="text-[10px] font-black text-primary uppercase tracking-widest">
+                                    {index === 0 ? 'Foto Principal (Banner)' : 'Foto Secundária (Interior)'}
+                                  </p>
+                                  <span className="text-[9px] font-bold text-on-surface-variant/40 italic">Tam. quadro: 400x300 recomendados</span>
+                                </div>
+                                <div className="flex gap-2">
+                                  <label className="cursor-pointer flex-grow text-center px-4 py-3 bg-primary/5 border border-primary/10 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary hover:text-white transition-all shadow-sm">
+                                    AJUSTAR ZOOM E CORTE
+                                    <input 
+                                      type="file" 
+                                      className="hidden" 
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        if (e.target.files?.[0]) {
+                                          const reader = new FileReader();
+                                          reader.onload = () => {
+                                            setCropImage(reader.result as string);
+                                            setCroppingItemId(room.id);
+                                            setCroppingType(index === 0 ? 'sublease_1' : 'sublease_2');
+                                          };
+                                          reader.readAsDataURL(e.target.files[0]);
+                                        }
+                                      }} 
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Schedule Editor Section */}
+                      <div className="space-y-6 pt-6 border-t border-outline/30">
+                        <div className="flex items-center gap-3">
+                          <CalendarMonth size={24} className="text-secondary" />
+                          <h4 className="text-lg font-black text-primary uppercase tracking-tighter italic font-serif">Disponibilidade Clínica</h4>
+                        </div>
+                        <div className="bg-surface-container rounded-3xl p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(day => {
+                            const dayData = room.schedule[day] || { periods: [] };
+                            return (
+                              <div key={day} className="space-y-4 bg-white p-5 rounded-2xl border border-outline/10 shadow-sm">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xs font-black text-primary uppercase">{day}</span>
+                                  <div className="h-1 w-8 bg-secondary/20 rounded-full" />
+                                </div>
+                                <div className="space-y-2">
+                                  {dayData.periods.map(period => (
+                                    <div key={period.id} className="space-y-4 p-4 bg-primary/5 rounded-2xl border border-primary/10">
+                                      <div className="flex justify-between items-center">
+                                        <div className="flex flex-col">
+                                          <span className="text-[10px] font-black uppercase text-primary leading-tight">
+                                            {period.id === 'manha' ? 'Período Manhã' : period.id === 'tarde' ? 'Período Tarde' : 'Período Noite'}
+                                          </span>
+                                          <span className="text-[8px] font-medium text-on-surface-variant italic">
+                                            {period.start} - {period.end}
+                                          </span>
+                                        </div>
+                                        <button 
+                                          onClick={() => {
+                                            const newSchedule = { ...room.schedule };
+                                            const dayObj = { ...dayData };
+                                            dayObj.periods = dayObj.periods.map(p => 
+                                              p.id === period.id ? { ...p, available: !p.available } : p
+                                            );
+                                            newSchedule[day] = dayObj;
+                                            updateRoom(room.id, { schedule: newSchedule });
+                                          }}
+                                          className={`px-3 py-1 rounded-full text-[8px] font-black uppercase transition-all ${
+                                            period.available ? 'bg-secondary text-white' : 'bg-outline-alt text-white opacity-40'
+                                          }`}
+                                        >
+                                          {period.available ? 'Ativo' : 'Inativo'}
+                                        </button>
+                                      </div>
+                                      
+                                      <div className="flex flex-wrap gap-1.5 pt-2">
+                                        {period.slots.map(slot => (
+                                          <button
+                                            key={slot.id}
+                                            onClick={() => {
+                                              const newSchedule = { ...room.schedule };
+                                              const dayObj = { ...dayData };
+                                              dayObj.periods = dayObj.periods.map(p => {
+                                                if (p.id === period.id) {
+                                                  const newSlots = p.slots.map(s => 
+                                                    s.id === slot.id ? { ...s, available: !s.available } : s
+                                                  );
+                                                  return { ...p, slots: newSlots };
+                                                }
+                                                return p;
+                                              });
+                                              newSchedule[day] = dayObj;
+                                              updateRoom(room.id, { schedule: newSchedule });
+                                            }}
+                                            className={`px-2 py-1 rounded-lg text-[8px] font-bold border transition-all ${
+                                              slot.available 
+                                                ? 'border-primary/20 bg-white text-primary' 
+                                                : 'border-outline/10 bg-surface-container-highest text-on-surface-variant/30 opacity-40'
+                                            }`}
+                                          >
+                                            {slot.start}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {dayData.periods.length === 0 && (
+                                    <button 
+                                      onClick={() => {
+                                        const newSchedule = { ...room.schedule };
+                                        newSchedule[day] = {
+                                          periods: [
+                                            {
+                                              id: 'manha',
+                                              start: '07:00',
+                                              end: '12:00',
+                                              available: true,
+                                              priceBlock: 550,
+                                              priceHour: 31.9,
+                                              slots: [
+                                                { id: 'h7', start: '07:00', end: '08:00', available: true },
+                                                { id: 'h8', start: '08:00', end: '09:00', available: true },
+                                                { id: 'h9', start: '09:00', end: '10:00', available: true },
+                                                { id: 'h10', start: '10:00', end: '11:00', available: true },
+                                                { id: 'h11', start: '11:00', end: '12:00', available: true },
+                                              ]
+                                            },
+                                            {
+                                              id: 'tarde',
+                                              start: '13:00',
+                                              end: '17:00',
+                                              available: true,
+                                              priceBlock: 550,
+                                              priceHour: 31.9,
+                                              slots: [
+                                                { id: 'h13', start: '13:00', end: '14:00', available: true },
+                                                { id: 'h14', start: '14:00', end: '15:00', available: true },
+                                                { id: 'h15', start: '15:00', end: '16:00', available: true },
+                                                { id: 'h16', start: '16:00', end: '17:00', available: true },
+                                              ]
+                                            },
+                                            {
+                                              id: 'noite',
+                                              start: '18:00',
+                                              end: '21:00',
+                                              available: true,
+                                              priceBlock: 420,
+                                              priceHour: 31.9,
+                                              slots: [
+                                                { id: 'h18', start: '18:00', end: '19:00', available: true },
+                                                { id: 'h19', start: '19:00', end: '20:00', available: true },
+                                                { id: 'h20', start: '18:00', end: '21:00', available: true }, // Adjusted to match user's night range if needed
+                                              ]
+                                            }
+                                          ]
+                                        };
+                                        updateRoom(room.id, { schedule: newSchedule });
+                                      }}
+                                      className="w-full py-2 border border-dashed border-outline/50 rounded-xl text-[9px] font-black text-primary/40 hover:text-primary hover:border-primary transition-all uppercase"
+                                    >
+                                      Habilitar Dia
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Preview Section - What users will see */}
+                    <div className="lg:w-1/3">
+                      <div className="sticky top-12 space-y-6">
+                        <div className="flex items-center gap-2">
+                          <Public size={20} className="text-secondary" />
+                          <span className="text-[10px] font-black uppercase text-secondary/60 tracking-widest">Visualização em Tempo Real</span>
+                        </div>
+                        
+                        <div className="bg-background rounded-[2.5rem] overflow-hidden modern-shadow border border-outline-alt/30 scale-95 origin-top lg:scale-100">
+                          <div className="h-48 relative overflow-hidden">
+                            <img src={room.photos[0]} className="w-full h-full object-cover" />
+                            <div className="absolute top-4 left-4 bg-white/95 backdrop-blur px-3 py-1 rounded-full text-[9px] font-bold text-primary border border-white">
+                              DISPONÍVEL AGORA
+                            </div>
+                          </div>
+                          <div className="p-6 space-y-4 bg-white">
+                            <div>
+                              <h3 className="text-xl font-bold text-primary">{room.name || 'Nova Sala de Atendimento'}</h3>
+                              <p className="text-xs text-on-surface-variant font-medium mt-1 line-clamp-2 italic opacity-80">
+                                "{room.description || 'Breve descrição da sala...'}"
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 border-y border-outline/10 py-3">
+                              {room.amenities.map(amenity => (
+                                <span key={amenity} className="inline-flex items-center gap-1 px-2 py-1 bg-primary/5 text-primary text-[8px] font-black uppercase tracking-tighter rounded-lg border border-primary/10">
+                                  {amenity === 'WiFi' && <Wifi size={10} />}
+                                  {amenity === 'Café' && <ConciergeBell size={10} />}
+                                  {amenity === 'Ar-condicionado' && <Snowflake size={10} />}
+                                  {amenity === 'Sala de espera' && <Users size={10} />}
+                                  {amenity === 'Banheiro' && <Accessibility size={10} />}
+                                  {amenity === 'Rádio' && <Volume2 size={10} />}
+                                  {amenity === 'Portaria 24h' && <ShieldCheck size={10} />}
+                                  {amenity}
+                                </span>
+                              ))}
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-1.5 text-secondary">
+                                <CalendarMonth size={12} />
+                                <span className="text-[8px] font-black uppercase tracking-widest">Atendimento</span>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {Object.keys(room.schedule).map(day => (
+                                  <span key={day} className="px-1.5 py-0.5 bg-secondary/5 text-secondary text-[7px] font-black rounded-sm border border-secondary/5">
+                                    {day}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <button className="w-full py-3 bg-primary text-white rounded-xl font-bold text-xs shadow-lg flex items-center justify-center gap-2 mt-2">
+                              <AssignmentTurnedIn size={14} />
+                              Ver Horários e Reservar
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="bg-secondary/5 border border-secondary/10 p-6 rounded-[2.5rem]">
+                          <div className="flex items-center gap-3 mb-3 text-secondary">
+                            <Info size={18} />
+                            <h5 className="text-[10px] font-black uppercase tracking-widest">Dica de Gestão</h5>
+                          </div>
+                          <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed italic">
+                            "Mantenha a descrição focada nos benefícios (como silêncio ou conforto térmico). Uma sala bem apresentada atrai 40% mais reservas."
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'home' && (
             <div className="space-y-8">
                <div className="pb-8 border-b border-outline">
@@ -2922,7 +3974,11 @@ function AdminScreen({
                     image={cropImage}
                     crop={crop}
                     zoom={zoom}
-                    aspect={1}
+                    aspect={
+                      croppingType === 'hero' ? 16 / 9 : 
+                      croppingType?.startsWith('sublease') ? 4 / 3 : 
+                      1
+                    }
                     onCropChange={setCrop}
                     onCropComplete={onCropComplete}
                     onZoomChange={setZoom}
@@ -2975,4 +4031,12 @@ interface AdminScreenProps extends ScreenProps {
   onUpdateSpecialists: (s: Specialist[]) => void;
   approaches: Approach[];
   onUpdateApproaches: (a: Approach[]) => void;
+  onLogout: () => void;
+  insurancePlans: InsurancePlan[];
+  onUpdateInsurance: (i: InsurancePlan[]) => void;
+  subleaseRooms: SubleaseRoom[];
+  onUpdateSubleaseRooms: (r: SubleaseRoom[]) => void;
+  subleaseBookings: SubleaseBooking[];
+  onUpdateSubleaseBookingStatus: (id: string, status: 'pending' | 'confirmed' | 'cancelled') => void;
+  isDataLoaded: boolean;
 }

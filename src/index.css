@@ -29,7 +29,13 @@
   --color-surface-container-highest: #d8e3fa;
   
   --color-outline: #72777f;
-  --color-outline-variant: #c2c7cf;
+  --color-outline-alt: #c2c7cf;
+  --animate-spin-slow: spin 8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @layer base {
@@ -43,7 +49,7 @@
 }
 
 .glass-nav {
-  @apply bg-white/90 backdrop-blur-md border-b border-outline-variant/30 sticky top-0 z-50;
+  @apply bg-white/90 backdrop-blur-md border-b border-outline-alt/30 sticky top-0 z-50;
 }
 
 .btn-primary {

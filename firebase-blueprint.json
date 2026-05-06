@@ -2,99 +2,94 @@
   "entities": {
     "Specialist": {
       "title": "Specialist",
-      "description": "Professional specialist working at the clinic",
+      "description": "Healthcare specialist at the clinic",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
-        "spec": { "type": "string" },
         "crp": { "type": "string" },
         "img": { "type": "string" },
-        "desc": { "type": "string" },
-        "color": { "type": "string" },
-        "tags": { "type": "array", "items": { "type": "string" } },
-        "ageGroups": { "type": "array", "items": { "type": "string" } },
-        "shifts": { "type": "array", "items": { "type": "string" } },
-        "attendedAges": { "type": "array", "items": { "type": "number" } },
-        "googleSheetsId": { "type": "string" },
-        "googleSheetsTab": { "type": "string" },
-        "googleAppsScriptUrl": { "type": "string" },
-        "schedule": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "properties": {
-              "periods": {
-                "type": "object",
-                "additionalProperties": {
-                  "type": "array",
-                  "items": { "type": "string" }
-                }
-              }
-            }
-          }
-        }
-      },
-      "required": ["id", "name", "spec", "crp", "img", "desc", "tags", "ageGroups", "shifts"]
+        "specialty": { "type": "string" },
+        "focus": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string" },
+        "instagram": { "type": "string" },
+        "plans": { "type": "array", "items": { "type": "string" } }
+      }
     },
     "Approach": {
       "title": "Approach",
-      "description": "Therapeutic approach offered by the clinic",
+      "description": "Clinical psychological approach",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "title": { "type": "string" },
-        "desc": { "type": "string" },
-        "details": { "type": "string" }
-      },
-      "required": ["id", "title", "desc", "details"]
-    },
-    "InsurancePlan": {
-      "title": "InsurancePlan",
-      "description": "Health insurance plan accepted by the clinic",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "logo": { "type": "string" }
-      },
-      "required": ["id", "name", "logo"]
+        "description": { "type": "string" },
+        "iconName": { "type": "string" }
+      }
     },
     "HomeSettings": {
-      "title": "HomeSettings",
-      "description": "Global settings for the landing page",
+      "title": "Home Settings",
+      "description": "Global settings for the home page",
       "type": "object",
       "properties": {
         "heroTitle": { "type": "string" },
         "heroSubtitle": { "type": "string" },
-        "heroText": { "type": "string" },
-        "logoUrl": { "type": "string" },
-        "heroImageUrl": { "type": "string" },
         "clinicName": { "type": "string" },
-        "seoTitle": { "type": "string" },
-        "seoText": { "type": "string" },
-        "address": { "type": "string" },
-        "footerRights": { "type": "string" }
-      },
-      "required": ["clinicName", "heroTitle", "heroSubtitle", "heroText"]
+        "logoUrl": { "type": "string" },
+        "whatsappNumber": { "type": "string" },
+        "address": { "type": "string" }
+      }
+    },
+    "SubleaseRoom": {
+      "title": "Sublease Room",
+      "description": "Room available for sublease",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "amenities": { "type": "array", "items": { "type": "string" } },
+        "photos": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 }
+      }
+    },
+    "SubleaseBooking": {
+      "title": "Sublease Booking",
+      "description": "Booking request for a sublease room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "day": { "type": "string" },
+        "periodId": { "type": "string" },
+        "periodLabel": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled"] },
+        "createdAt": { "type": "number" }
+      }
     }
   },
   "firestore": {
-    "specialists": {
+    "specialists/{docId}": {
       "schema": "Specialist",
-      "description": "Coleção de especialistas da clínica"
+      "description": "Collection of specialists"
     },
-    "approaches": {
+    "approaches/{docId}": {
       "schema": "Approach",
-      "description": "Coleção de abordagens terapêuticas"
+      "description": "Collection of clinical approaches"
     },
-    "settings": {
+    "settings/{docId}": {
       "schema": "HomeSettings",
-      "description": "Configurações globais do site (documento single 'site')"
+      "description": "Clinic settings"
     },
-    "insurancePlans": {
-      "schema": "InsurancePlan",
-      "description": "Coleção de convênios/planos de saúde aceitos"
+    "sublease_rooms/{docId}": {
+      "schema": "SubleaseRoom",
+      "description": "Rooms for sublease"
+    },
+    "sublease_bookings/{docId}": {
+      "schema": "SubleaseBooking",
+      "description": "Room booking requests"
     }
   }
 }

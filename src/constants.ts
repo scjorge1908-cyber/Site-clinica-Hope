@@ -1,4 +1,4 @@
-import { Specialist, Approach, HomeSettings, AgeGroup, Shift } from './types';
+import { Specialist, Approach, HomeSettings, AgeGroup, Shift, SubleaseRoom } from './types';
 
 export const CLINICA_LOGO_URL = 'https://images.unsplash.com/photo-1628157588553-5eeea00af15c?auto=format&fit=crop&q=80&w=300';
 
@@ -189,6 +189,67 @@ export const DEFAULT_TESTIMONIALS = [
     text: 'Excelente atendimento! Ambiente agradável e seguro! Muito profissional! Recomendo! Nota 1.000!!',
     rating: 5,
     avatar: 'AC'
+  }
+];
+
+export const DEFAULT_SUBLEASE_ROOMS: SubleaseRoom[] = [
+  {
+    id: '1',
+    name: 'Consultório Clínico Alpha',
+    description: 'Sala ampla, iluminada e com decoração minimalista, ideal para atendimentos individuais de adultos e adolescentes. Ambiente silencioso com isolamento acústico superior.',
+    amenities: ['WiFi', 'Ar-condicionado', 'Café', 'Sala de espera', 'Banheiro', 'Portaria 24h'],
+    photos: [
+      'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&q=80&w=1170',
+      'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&q=80&w=1170'
+    ],
+    schedule: {
+      'Segunda': {
+        periods: [
+          {
+            id: 'manha',
+            start: '07:00',
+            end: '12:00',
+            available: true,
+            priceBlock: 550,
+            priceHour: 31.9,
+            slots: [
+              { id: 'h7', start: '07:00', end: '08:00', available: true },
+              { id: 'h8', start: '08:00', end: '09:00', available: true },
+              { id: 'h9', start: '09:00', end: '10:00', available: true },
+              { id: 'h10', start: '10:00', end: '11:00', available: true },
+              { id: 'h11', start: '11:00', end: '12:00', available: true },
+            ]
+          },
+          {
+            id: 'tarde',
+            start: '13:00',
+            end: '17:00',
+            available: true,
+            priceBlock: 550,
+            priceHour: 31.9,
+            slots: [
+              { id: 'h13', start: '13:00', end: '14:00', available: true },
+              { id: 'h14', start: '14:00', end: '15:00', available: true },
+              { id: 'h15', start: '15:00', end: '16:00', available: true },
+              { id: 'h16', start: '16:00', end: '17:00', available: true },
+            ]
+          },
+          {
+            id: 'noite',
+            start: '18:00',
+            end: '21:00',
+            available: true,
+            priceBlock: 420,
+            priceHour: 31.9,
+            slots: [
+              { id: 'h18', start: '18:00', end: '19:00', available: true },
+              { id: 'h19', start: '19:00', end: '20:00', available: true },
+              { id: 'h20', start: '20:00', end: '21:00', available: true },
+            ]
+          }
+        ]
+      }
+    }
   }
 ];
 
