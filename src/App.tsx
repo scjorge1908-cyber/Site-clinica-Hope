@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Psychology, 
@@ -465,7 +465,8 @@ export default function App() {
           )}
           {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} settings={homeSettings} />}
           {currentScreen === Screen.Abordagens && <AbordagensScreen onNavigate={navigateTo} approaches={approaches} settings={homeSettings} />}
-          {currentScreen === Screen.Sublocacao && (
+          {/* Sublocação ocultada temporariamente */}
+          {false && currentScreen === Screen.Sublocacao && (
             <SublocacaoScreen 
               rooms={subleaseRooms || []} 
               user={user} 
@@ -1231,91 +1232,158 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [isTouched, setIsTouched] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (spec.googleAppsScriptUrl) {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if ((spec.googleAppsScriptUrl || spec.googleSheetsId) && isVisible) {
       const fetchSheetData = async () => {
+        // Evita múltiplas requisições simultâneas
+        if (isLoadingSheet) return;
+        
         setIsLoadingSheet(true);
         setSheetError(null);
         try {
           const baseUrl = (spec.googleAppsScriptUrl || '').trim();
-          if (!baseUrl) {
-            setIsLoadingSheet(false);
-            return;
-          }
           
-          if (!baseUrl.endsWith('/exec')) {
-            throw new Error('A URL não termina em /exec. Verifique se você copiou o link de "App da Web" em vez do link da planilha.');
-          }
-
-          const scriptUrl = baseUrl.includes('?') ? `${baseUrl}&mode=agenda&t=${Date.now()}` : `${baseUrl}?mode=agenda&t=${Date.now()}`;
-          const url = `/api/proxy-sheet?url=${encodeURIComponent(scriptUrl)}&ts=${Date.now()}`;
-          
-          let appointments: any[] = [];
-
-          try {
-            const response = await fetch(url).catch(() => null);
+          // Lógica para Apps Script
+          if (baseUrl && baseUrl.endsWith('/exec')) {
+            const scriptUrl = baseUrl.includes('?') ? `${baseUrl}&mode=agenda&t=${Date.now()}` : `${baseUrl}?mode=agenda&t=${Date.now()}`;
+            const url = `/api/proxy-sheet?url=${encodeURIComponent(scriptUrl)}&ts=${Date.now()}`;
             
-            if (response && response.ok) {
-              try {
-                const result = await response.json();
-                appointments = Array.isArray(result) ? result : (result.data || []);
-              } catch (e) {
-                console.warn("Proxy returned non-JSON, likely Cookie Check page. Switching to JSONP.");
-                // Fallback handled below because appointments will be empty
-              }
-            }
-            
-            if (appointments.length === 0) {
-              // Se o proxy falhar ou retornar HTML, tentamos JSONP direto do navegador
-              const jsonpUrl = baseUrl.includes('?') 
-                ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` 
-                : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
+            let appointments: any[] = [];
+
+            try {
+              const response = await fetch(url).catch(() => null);
               
-              const jsonpData = await new Promise<any>((resolve) => {
-                const callbackName = `bg_cb_${Date.now()}`;
-                const script = document.createElement('script');
-                script.src = `${jsonpUrl}&callback=${callbackName}`;
-                (window as any)[callbackName] = (res: any) => {
-                  document.body.removeChild(script);
-                  delete (window as any)[callbackName];
-                  resolve(res);
-                };
-                setTimeout(() => {
-                  if ((window as any)[callbackName]) {
+              if (response && response.ok) {
+                try {
+                  const result = await response.json();
+                  appointments = Array.isArray(result) ? result : (result.data || []);
+                } catch (e) {
+                  console.warn("Proxy returned non-JSON. Falling back.");
+                }
+              }
+              
+              if (appointments.length === 0) {
+                const jsonpUrl = baseUrl.includes('?') 
+                  ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` 
+                  : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
+                
+                const jsonpData = await new Promise<any>((resolve) => {
+                  const callbackName = `bg_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+                  const script = document.createElement('script');
+                  script.src = `${jsonpUrl}&callback=${callbackName}`;
+                  (window as any)[callbackName] = (res: any) => {
                     document.body.removeChild(script);
                     delete (window as any)[callbackName];
-                    resolve(null);
-                  }
-                }, 45000);
-                document.body.appendChild(script);
-              });
+                    resolve(res);
+                  };
+                  setTimeout(() => {
+                    if ((window as any)[callbackName]) {
+                      document.body.removeChild(script);
+                      delete (window as any)[callbackName];
+                      resolve(null);
+                    }
+                  }, 30000); // Reduzido para 30s
+                  document.body.appendChild(script);
+                });
 
-              if (jsonpData) {
-                appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
+                if (jsonpData) {
+                  appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
+                }
               }
+            } catch (e) {
+              console.error("Erro na sincronização:", e);
             }
-          } catch (e) {
-            console.error("Erro na sincronização:", e);
-          }
 
-          const newSchedule: NonNullable<Specialist['schedule']> = {};
+            const newSchedule: NonNullable<Specialist['schedule']> = {};
+            if (Array.isArray(appointments) && appointments.length > 0) {
+              appointments.forEach((row: any) => {
+                if (!row) return;
+                const dayRaw = row.dia || row["Dia da Semana"] || row.Day;
+                let time = row.horario || row["Horário"] || row.Time;
+                const status = row.paciente || row["Paciente"] || row.Status;
+                
+                if (!dayRaw || !time) return;
+                const timeStr = time.toString();
+                const timeMatch = timeStr.match(/(\d{1,2}:\d{2})/);
+                const processedTime = timeMatch ? timeMatch[1] : timeStr;
 
-          if (Array.isArray(appointments) && appointments.length > 0) {
-            appointments.forEach((row: any) => {
-              if (!row) return;
-              
-              const dayRaw = row.dia || row["Dia da Semana"] || row.Day;
-              let time = row.horario || row["Horário"] || row.Time;
-              const status = row.paciente || row["Paciente"] || row.Status;
-              
+                const dayMap: {[key: string]: string} = {
+                  'segunda': 'Segunda', 'segunda-feira': 'Segunda',
+                  'terça': 'Terça', 'terça-feira': 'Terça',
+                  'quarta': 'Quarta', 'quarta-feira': 'Quarta',
+                  'quinta': 'Quinta', 'quinta-feira': 'Quinta',
+                  'sexta': 'Sexta', 'sexta-feira': 'Sexta',
+                  'sábado': 'Sábado', 'sabado': 'Sábado'
+                };
+                const dayKey = dayRaw.toString().toLowerCase().trim();
+                const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
+                
+                if (status === '💚' || (status && status.toString().includes('💚'))) {
+                  if (!newSchedule[day]) newSchedule[day] = { periods: {} };
+                  const hourMatch = processedTime.match(/(\d{1,2})/);
+                  if (hourMatch) {
+                    const hour = parseInt(hourMatch[1]);
+                    let shift: Shift = Shift.Afternoon;
+                    if (hour >= 7 && hour < 13) shift = Shift.Morning;
+                    else if (hour >= 13 && hour < 18) shift = Shift.Afternoon;
+                    else if (hour >= 18 && hour <= 22) shift = Shift.Night;
+
+                    if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
+                    if (!newSchedule[day].periods[shift]?.includes(processedTime)) {
+                      newSchedule[day].periods[shift]?.push(processedTime);
+                    }
+                  }
+                }
+              });
+            }
+
+            if (Object.keys(newSchedule).length > 0) {
+              setSheetSchedule(newSchedule);
+            } else {
+              setSheetSchedule({});
+            }
+          } else if (spec.googleSheetsId) {
+            // Lógica CSV legado
+            let sheetId = spec.googleSheetsId;
+            if (sheetId.includes('/d/')) {
+              const parts = sheetId.split('/d/');
+              if (parts.length > 1) sheetId = parts[1].split('/')[0];
+            }
+            const tabName = spec.googleSheetsTab || 'Agenda';
+            const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Acesso negado à planilha');
+            const csvText = await response.text();
+            
+            const rows = csvText.split(/\r?\n/)
+              .map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim()))
+              .filter(row => row.length >= 3 && row[0] !== '');
+
+            const newSchedule: NonNullable<Specialist['schedule']> = {};
+            rows.slice(1).forEach(row => {
+              const [dayRaw, time, status] = row;
               if (!dayRaw || !time) return;
-
-              // Extract time HH:mm even if it comes with dates like "30/12/1899 18:53"
-              const timeStr = time.toString();
-              const timeMatch = timeStr.match(/(\d{1,2}:\d{2})/);
-              const processedTime = timeMatch ? timeMatch[1] : timeStr;
-
               const dayMap: {[key: string]: string} = {
                 'segunda': 'Segunda', 'segunda-feira': 'Segunda',
                 'terça': 'Terça', 'terça-feira': 'Terça',
@@ -1324,135 +1392,37 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
                 'sexta': 'Sexta', 'sexta-feira': 'Sexta',
                 'sábado': 'Sábado', 'sabado': 'Sábado'
               };
-              const dayKey = dayRaw.toString().toLowerCase().trim();
+              const dayKey = dayRaw.toLowerCase().trim();
               const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
-              
-              // FILTER: Only free slots
-              if (status === '💚' || (status && status.toString().includes('💚'))) {
-                if (!newSchedule[day]) {
-                  newSchedule[day] = { periods: {} };
-                }
-
-                const hourMatch = processedTime.match(/(\d{1,2})/);
+              if (status && status.includes('💚')) {
+                if (!newSchedule[day]) newSchedule[day] = { periods: {} };
+                const hourMatch = time.match(/(\d{1,2})/);
                 if (hourMatch) {
                   const hour = parseInt(hourMatch[1]);
                   let shift: Shift = Shift.Afternoon;
-                  
                   if (hour >= 7 && hour < 13) shift = Shift.Morning;
                   else if (hour >= 13 && hour < 18) shift = Shift.Afternoon;
                   else if (hour >= 18 && hour <= 22) shift = Shift.Night;
-
-                  if (!newSchedule[day].periods[shift]) {
-                    newSchedule[day].periods[shift] = [];
-                  }
-                  
-                  if (!newSchedule[day].periods[shift]?.includes(processedTime)) {
-                    newSchedule[day].periods[shift]?.push(processedTime);
-                  }
+                  if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
+                  if (!newSchedule[day].periods[shift]?.includes(time)) newSchedule[day].periods[shift]?.push(time);
                 }
               }
             });
-          }
-
-          // Sort times within periods
-          Object.keys(newSchedule).forEach(day => {
-            Object.keys(newSchedule[day].periods).forEach(p => {
-              const shift = p as Shift;
-              newSchedule[day].periods[shift]?.sort();
-            });
-          });
-
-          if (Object.keys(newSchedule).length > 0) {
             setSheetSchedule(newSchedule);
-          } else {
-            setSheetSchedule({}); // Sucesso, mas sem horários livres
           }
         } catch (error) {
-          console.error('Erro ao buscar dados da planilha:', error);
-          let message = 'Erro na integração';
-          if (error instanceof TypeError && error.message.includes('fetch')) {
-            message = 'Bloqueio de conexão (CORS). Verifique se o Script foi publicado como Web App para "Qualquer pessoa" e se a URL termina em /exec';
-          } else {
-            message = error instanceof Error ? error.message : 'Erro na integração';
-          }
-          setSheetError(message);
-        } finally {
-          setIsLoadingSheet(false);
-        }
-      };
-
-      fetchSheetData();
-      const interval = setInterval(fetchSheetData, 60000); // 1 minute
-      return () => clearInterval(interval);
-    } else if (spec.googleSheetsId) {
-      // Fallback to direct CSV if still present and Apps Script URL is not
-      const fetchSheetData = async () => {
-        setIsLoadingSheet(true);
-        setSheetError(null);
-        try {
-          let sheetId = spec.googleSheetsId || '';
-          if (sheetId.includes('/d/')) {
-            const parts = sheetId.split('/d/');
-            if (parts.length > 1) sheetId = parts[1].split('/')[0];
-          }
-          const tabName = spec.googleSheetsTab || 'Agenda';
-          const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}`;
-          const response = await fetch(url);
-          if (!response.ok) throw new Error('Acesso negado à planilha');
-          const csvText = await response.text();
-          
-          const rows = csvText.split(/\r?\n/)
-            .map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim()))
-            .filter(row => row.length >= 3 && row[0] !== '');
-
-          const newSchedule: NonNullable<Specialist['schedule']> = {};
-          rows.slice(1).forEach(row => {
-            const [dayRaw, time, status] = row;
-            if (!dayRaw || !time) return;
-            const dayMap: {[key: string]: string} = {
-              'segunda': 'Segunda', 'segunda-feira': 'Segunda',
-              'terça': 'Terça', 'terça-feira': 'Terça',
-              'quarta': 'Quarta', 'quarta-feira': 'Quarta',
-              'quinta': 'Quinta', 'quinta-feira': 'Quinta',
-              'sexta': 'Sexta', 'sexta-feira': 'Sexta',
-              'sábado': 'Sábado', 'sabado': 'Sábado'
-            };
-            const dayKey = dayRaw.toLowerCase().trim();
-            const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
-            if (status && status.includes('💚')) {
-              if (!newSchedule[day]) newSchedule[day] = { periods: {} };
-              const hourMatch = time.match(/(\d{1,2})/);
-              if (hourMatch) {
-                const hour = parseInt(hourMatch[1]);
-                let shift: Shift = Shift.Afternoon;
-                if (hour >= 7 && hour < 13) shift = Shift.Morning;
-                else if (hour >= 13 && hour < 18) shift = Shift.Afternoon;
-                else if (hour >= 18 && hour <= 22) shift = Shift.Night;
-                if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
-                if (!newSchedule[day].periods[shift]?.includes(time)) newSchedule[day].periods[shift]?.push(time);
-              }
-            }
-          });
-          Object.keys(newSchedule).forEach(day => {
-            Object.keys(newSchedule[day].periods).forEach(p => {
-              const shift = p as Shift;
-              newSchedule[day].periods[shift]?.sort();
-            });
-          });
-          if (Object.keys(newSchedule).length > 0) {
-            setSheetSchedule(newSchedule);
-          } else {
-            setSheetSchedule({});
-          }
-        } catch (error) {
+          console.error('Erro ao buscar dados:', error);
           setSheetError(error instanceof Error ? error.message : 'Erro na integração');
         } finally {
           setIsLoadingSheet(false);
         }
       };
+
       fetchSheetData();
+      const interval = setInterval(fetchSheetData, 60000);
+      return () => clearInterval(interval);
     }
-  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab, spec]);
+  }, [isVisible, spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab, spec]);
 
   // Só mostra a agenda se houver dados e não houver erro de conexão (ou se for admin querendo ver o erro)
   const hasValidData = sheetSchedule && Object.keys(sheetSchedule).length > 0;
@@ -1490,6 +1460,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked }: SpecialistCar
 
   return (
     <motion.div 
+      ref={cardRef}
       layout
       onTouchStart={() => setIsTouched(true)}
       onTouchEnd={() => setIsTouched(false)}
@@ -2093,6 +2064,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
   );
 }
 
+// --- Componente de Tela de Login (Versão Gmail v2) ---
 function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: Screen, transition?: TransitionType) => void; onUnlock: () => void; settings: HomeSettings }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -2952,7 +2924,8 @@ function AdminScreen({
         </div>
 
         <div className="bg-white rounded-[2.5rem] modern-shadow border border-outline p-10">
-          {activeTab === 'reservas_sublocacao' && (
+          {/* Sublocação ocultada temporariamente conforme pedido */}
+          {false && activeTab === 'reservas_sublocacao' && (
             <div className="space-y-8">
               <div className="bg-primary/5 p-8 rounded-3xl border border-primary/10">
                 <h2 className="text-3xl font-black text-primary tracking-tight">Reservas de Sublocação</h2>
@@ -3015,7 +2988,8 @@ function AdminScreen({
             </div>
           )}
 
-          {activeTab === 'sublocacao' && (
+          {/* Sublocação ocultada temporariamente conforme pedido */}
+          {false && activeTab === 'sublocacao' && (
             <div className="space-y-12">
               <div className="flex flex-col md:flex-row justify-between items-center gap-6 bg-primary/5 p-10 rounded-3xl border border-primary/10 shadow-sm">
                 <div>
