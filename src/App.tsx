@@ -1441,38 +1441,75 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
             setSheetSchedule(newSchedule);
             const currentScheduleStr = JSON.stringify(spec.schedule || {});
             const newScheduleStr = JSON.stringify(newSchedule);
-            if (newScheduleStr !== currentScheduleStr) {
-              await updateSpecialistSchedule(spec.id, newSchedule);
+            
+            // Verifica se houve mudança REAL
+            const isDifferent = newScheduleStr !== currentScheduleStr;
+            
+            // Throttle e Regra de Segurança:
+            // Apenas ADMINS podem disparar a atualização do Firestore para economizar cota.
+            // Usuários normais consultam a planilha ao vivo mas não "gastam" cota de escrita do banco.
+            const quotaLock = localStorage.getItem('firestore_quota_lock');
+            const isLocked = quotaLock && (Date.now() - parseInt(quotaLock) < 3600000); // 1 hora de bloqueio
+
+            let shouldSync = isAdminUnlocked && isDifferent && !isLocked;
+            if (shouldSync && spec.lastSync) {
+              const lastSyncTime = new Date(spec.lastSync).getTime();
+              const now = Date.now();
+              const oneHour = 60 * 60 * 1000;
+              if (now - lastSyncTime < oneHour) {
+                shouldSync = false;
+              }
+            }
+
+            if (shouldSync) {
+              try {
+                await updateSpecialistSchedule(spec.id, newSchedule);
+              } catch (e: any) {
+                const msg = e.message || '';
+                if (msg.includes('resource-exhausted') || msg.includes('Quota exceeded')) {
+                  console.warn('Cota de escrita atingida. Pausando sincronização por 1h.');
+                  localStorage.setItem('firestore_quota_lock', Date.now().toString());
+                } else {
+                  throw e;
+                }
+              }
             }
           }
-        } catch (error) {
-          console.error('Erro sincronização:', error);
+        } catch (error: any) {
+          // Erro de cota ou outros erros técnicos agora são silenciosos para o usuário
+          // para não exibir informações de "limite" ou "quota" no site.
+          if (error.message?.includes('resource-exhausted') || error.message?.includes('Quota exceeded')) {
+             console.warn('Sincronização limitada pela cota do Firestore.');
+          } else {
+             console.error('Erro sincronização:', error);
+          }
         } finally {
           setIsLoadingSheet(false);
         }
       };
 
       fetchSheetData();
-      // Intervalo maior (5 min) já que temos cache
-      const interval = setInterval(fetchSheetData, 300000);
+      // Intervalo muito maior (10 min) já que temos cache e precisamos economizar cota
+      const interval = setInterval(fetchSheetData, 600000);
       return () => clearInterval(interval);
     }
-  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab, spec.id]); // spec.name e spec.schedule removidos para evitar loop
+  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab, spec.id, isAdminUnlocked]); // spec.name e spec.schedule removidos para evitar loop
 
   // Só mostra a agenda se houver dados e não houver erro de conexão (ou se for admin querendo ver o erro)
   const hasValidData = sheetSchedule && Object.keys(sheetSchedule).length > 0;
   const hasAnySchedule = hasValidData || (spec.schedule && Object.keys(spec.schedule).length > 0);
   
-  // Sincronização concluída (seja com erro, com dados ou vazio)
-  const isSyncComplete = !isLoadingSheet && (sheetSchedule !== null || sheetError !== null);
+  // Sincronização concluída (mesmo que tenha falhado silenciosamente)
+  const isSyncComplete = !isLoadingSheet;
   
   // Agenda está "cheia" quando tentamos buscar e não encontramos nada (e não há agenda manual)
-  const isAgendaFull = isSyncComplete && !hasAnySchedule && !sheetError && (spec.googleAppsScriptUrl || spec.googleSheetsId);
-
-  const showAgendaSection = (hasAnySchedule || isAgendaFull) && !sheetError;
+  const isAgendaFull = isSyncComplete && !hasAnySchedule && (spec.googleAppsScriptUrl || spec.googleSheetsId);
   
-  // No modo Admin, mostramos a seção mesmo com erro para que o administrador saiba o que corrigir
-  const displayAgenda = isAdminUnlocked ? (isSyncComplete || sheetError) : showAgendaSection;
+  // Caso haja erro crítico (não cota), mostramos algo genérico. Se for cota, ignoramos o erro visual.
+  const showAgendaSection = hasAnySchedule || isAgendaFull;
+  
+  // No modo Admin, mostramos a seção para depuração
+  const displayAgenda = isAdminUnlocked ? (isSyncComplete || !!sheetError) : showAgendaSection;
 
   const canBook = selectedDay && selectedTime && selectedPlan;
 
@@ -1651,6 +1688,12 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                         animate={{ opacity: 1, y: 0 }}
                         className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-alt/20 space-y-3"
                       >
+                        {selectedDay && !selectedTime && (
+                          <div className="flex items-center gap-2 mb-2 animate-pulse">
+                            <ArrowForward size={14} className="text-amber-500 animate-bounce" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Selecione o horário</p>
+                          </div>
+                        )}
                         {(Object.entries((sheetSchedule || spec.schedule)![selectedDay].periods) as [Shift, string[]][])
                           .sort(([a], [b]) => {
                             const periods = [Shift.Morning as string, Shift.Afternoon as string, Shift.Night as string];
@@ -1681,8 +1724,13 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
                 {/* Plan Selection */}
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Selecione seu Convênio</p>
+                  <div className={`space-y-2 p-3 rounded-3xl transition-all duration-500 ${selectedTime && !selectedPlan ? 'bg-amber-400/10 ring-4 ring-amber-400/20 animate-pulse' : ''}`}>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Selecione seu Convênio</p>
+                      {selectedTime && !selectedPlan && (
+                        <p className="text-[9px] font-black uppercase text-amber-500 animate-pulse">Selecione o convênio</p>
+                      )}
+                    </div>
 
                     <div className="grid grid-cols-2 gap-2">
                       <button
@@ -1733,11 +1781,11 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
               className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
                 !canBook 
                 ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
-                : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2'
+                : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2 shadow-2xl ring-4 ring-primary/20 animate-pulse'
               }`}
             >
               <Chat size={18} />
-              {canBook ? 'Agendar via WhatsApp' : 'Selecione dia, hora e plano'}
+              {canBook ? 'Enviar sua solicitação' : 'Selecione dia, hora e plano'}
             </button>
           )}
 
@@ -1866,7 +1914,7 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
             <div className="text-center space-y-4">
               <span className="text-xs font-bold text-secondary uppercase tracking-[0.3em]">Passo {Math.floor(step)} de 3</span>
               <h2 className="text-3xl font-bold text-primary">
-                {step === 1 && "Quem busca atendimento?"}
+                {step === 1 && "Para quem você busca atendimento?"}
                 {step === 1.5 && "Qual a idade do paciente?"}
                 {step === 3 && "Preferência de horário?"}
               </h2>
