@@ -572,11 +572,11 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             onClick={() => { onNavigate(Screen.Home, 'push_back'); setMenuOpen(false); }}
             className="flex items-center gap-3 group shrink-0"
           >
-            <div className="w-10 h-10 bg-primary/10 rounded-xl overflow-hidden flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all shadow-sm">
+            <div className="group shrink-0">
               {settings?.logoUrl ? (
-                <img src={settings.logoUrl} className="w-full h-full object-cover" alt="Logo" />
+                <img src={settings.logoUrl} className="h-10 w-auto object-contain" alt="Logo" />
               ) : (
-                <Spa size={24} />
+                <Spa size={32} className="text-primary" />
               )}
             </div>
             <span className="text-xl font-bold tracking-tight text-primary hidden sm:block">
@@ -808,16 +808,13 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                 <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-on-surface-variant/50 mb-6 font-mono">Convênios que aceitamos</p>
                 <div className="flex flex-wrap gap-x-12 gap-y-10 items-end transition-all duration-500">
                   {settings.insurancePlans.map(plan => (
-                    <div key={plan.id} className="flex flex-col items-center gap-3 group">
+                    <div key={plan.id} className="group">
                       <img 
                         src={plan.logo} 
                         alt={plan.name} 
-                        className="h-10 md:h-14 w-auto object-contain group-hover:scale-110 transition-transform duration-300" 
+                        className="h-7 md:h-8 w-auto object-contain group-hover:scale-110 transition-transform duration-300" 
                         title={plan.name} 
                       />
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/70 group-hover:text-primary transition-colors text-center max-w-[100px]">
-                        {plan.name}
-                      </span>
                     </div>
                   ))}
                 </div>
@@ -1228,6 +1225,15 @@ interface SpecialistCardProps {
   onNavigate?: (screen: Screen, transition?: TransitionType, scroll?: boolean) => void;
 }
 
+function sortKeys(obj: any): any {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sortKeys);
+  return Object.keys(obj).sort().reduce((result: any, key) => {
+    result[key] = sortKeys(obj[key]);
+    return result;
+  }, {});
+}
+
 function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate }: SpecialistCardProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -1439,31 +1445,38 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
             });
 
             setSheetSchedule(newSchedule);
-            const currentScheduleStr = JSON.stringify(spec.schedule || {});
-            const newScheduleStr = JSON.stringify(newSchedule);
+            
+            // Comparação profunda com chaves ordenadas para evitar disparos falsos
+            const currentScheduleSorted = sortKeys(spec.schedule || {});
+            const newScheduleSorted = sortKeys(newSchedule);
+            const currentScheduleStr = JSON.stringify(currentScheduleSorted);
+            const newScheduleStr = JSON.stringify(newScheduleSorted);
             
             // Verifica se houve mudança REAL
             const isDifferent = newScheduleStr !== currentScheduleStr;
             
             // Throttle e Regra de Segurança:
-            // Apenas ADMINS podem disparar a atualização do Firestore para economizar cota.
-            // Usuários normais consultam a planilha ao vivo mas não "gastam" cota de escrita do banco.
+            // 1. Apenas ADMINS podem disparar a atualização do Firestore.
+            // 2. Não sincroniza no modo Carousel (tela inicial) para reduzir carga.
+            // 3. Verifica bloqueio temporário de cota (localStorage).
+            // 4. Throttle de 12 horas para a mesma agenda.
             const quotaLock = localStorage.getItem('firestore_quota_lock');
-            const isLocked = quotaLock && (Date.now() - parseInt(quotaLock) < 3600000); // 1 hora de bloqueio
+            const isLocked = quotaLock && (Date.now() - parseInt(quotaLock) < 3600000); 
 
-            let shouldSync = isAdminUnlocked && isDifferent && !isLocked;
+            let shouldSync = isAdminUnlocked && !isCarousel && isDifferent && !isLocked;
+            
             if (shouldSync && spec.lastSync) {
               const lastSyncTime = new Date(spec.lastSync).getTime();
               const now = Date.now();
-              const oneHour = 60 * 60 * 1000;
-              if (now - lastSyncTime < oneHour) {
+              const throttleTime = 12 * 60 * 60 * 1000; // 12 horas
+              if (now - lastSyncTime < throttleTime) {
                 shouldSync = false;
               }
             }
 
             if (shouldSync) {
               try {
-                await updateSpecialistSchedule(spec.id, newSchedule);
+                await updateSpecialistSchedule(spec.id, newScheduleSorted);
               } catch (e: any) {
                 const msg = e.message || '';
                 if (msg.includes('resource-exhausted') || msg.includes('Quota exceeded')) {
@@ -1747,20 +1760,21 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                         <button
                           key={plan.id}
                           onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
-                          className={`p-4 rounded-xl border text-[10px] font-bold transition-all flex items-center justify-center gap-2 ${
+                          className={`p-2 rounded-xl transition-all flex items-center justify-center border-2 ${
                             selectedPlan === plan.name
-                            ? 'bg-secondary text-white border-secondary shadow-md'
-                            : 'bg-surface-container-low text-primary border-outline-variant/30 hover:border-secondary/20'
+                            ? 'bg-secondary/10 border-secondary shadow-sm scale-105'
+                            : 'bg-transparent border-transparent hover:bg-surface-container-low hover:scale-105'
                           }`}
                         >
-                          {plan.logo && (
+                          {plan.logo ? (
                             <img 
                               src={plan.logo} 
                               alt={plan.name} 
-                              className={`h-5 w-auto object-contain transition-all ${selectedPlan === plan.name ? 'brightness-0 invert' : ''}`} 
+                              className={`h-7 w-auto object-contain transition-all ${selectedPlan === plan.name ? '' : 'grayscale-[0.3]'}`} 
                             />
+                          ) : (
+                            <span className={`text-[10px] font-bold ${selectedPlan === plan.name ? 'text-secondary' : 'text-primary'}`}>{plan.name}</span>
                           )}
-                          <span>{plan.name}</span>
                         </button>
                       ))}
                     </div>
@@ -3520,14 +3534,14 @@ function AdminScreen({
               <div className="pb-8 border-b border-outline">
                 <h2 className="text-2xl font-display font-black text-primary mb-6">Identidade Visual</h2>
                 <div className="flex items-center gap-8">
-                  <div className="w-24 h-24 bg-surface border border-outline rounded-[2rem] overflow-hidden flex items-center justify-center text-primary relative group">
+                  <div className="p-4 bg-white border border-outline rounded-xl flex items-center justify-center text-primary relative group">
                     {localSettings.logoUrl ? (
-                      <img src={localSettings.logoUrl} className="w-full h-full object-cover" alt="Logo Preview" />
+                      <img src={localSettings.logoUrl} className="h-7 w-auto object-contain" alt="Logo Preview" />
                     ) : (
-                      <Spa size={40} />
+                      <Spa size={24} />
                     )}
-                    <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity">
-                      <PhotoCamera size={24} />
+                    <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity rounded-xl">
+                      <PhotoCamera size={16} />
                       <span className="text-[10px] font-bold mt-1 uppercase">Trocar Logo</span>
                       <input type="file" className="hidden" accept="image/*" onChange={handleLogoChange} />
                     </label>
@@ -3612,16 +3626,16 @@ function AdminScreen({
                         <Delete size={14} />
                       </button>
                       <div className="flex flex-col items-center gap-4">
-                        <div className="w-20 h-20 rounded-2xl overflow-hidden bg-white border border-outline relative group/logo">
-                          <img src={plan.logo} className="w-full h-full object-contain p-3" />
-                          <label className="absolute inset-0 bg-black/40 opacity-0 group-hover/logo:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity">
-                            <PhotoCamera size={20} />
+                        <div className="p-4 rounded-xl border border-outline bg-white flex items-center justify-center relative group/logo">
+                          <img src={plan.logo} className="h-7 w-auto object-contain" />
+                          <label className="absolute inset-0 bg-black/40 opacity-0 group-hover/logo:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity rounded-xl">
+                            <PhotoCamera size={16} />
                             <span className="text-[8px] font-bold mt-1">Trocar Logo</span>
                             <input type="file" className="hidden" accept="image/*" onChange={(e) => handleInsuranceLogoChange(e, plan.id)} />
                           </label>
                         </div>
                         <input 
-                          className="w-full text-center font-bold text-sm bg-transparent border-b border-outline/50 focus:border-primary outline-none pb-1"
+                          className="w-full text-center font-bold text-[10px] uppercase tracking-widest bg-transparent border-b border-outline/50 focus:border-primary outline-none pb-1"
                           value={plan.name}
                           onChange={(e) => updateInsurance(plan.id, { name: e.target.value })}
                           placeholder="Nome do Plano"
