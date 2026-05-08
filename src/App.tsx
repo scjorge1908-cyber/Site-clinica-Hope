@@ -86,6 +86,7 @@ import {
   updateSpecialistSchedule,
   loginWithGoogle,
   logout as firebaseLogout,
+  forceResetFirebase,
   auth,
   COLLECTIONS,
   DOCS,
@@ -3018,22 +3019,50 @@ function AdminScreen({
                 </button>
               ))}
             </div>
-            <button 
-              onClick={async () => {
-                if (confirm("Isso irá recarregar a página e buscar os dados mais recentes do servidor limpando o cache local. Certifique-se de que salvou suas alterações. Deseja continuar?")) {
-                  const btn = document.getElementById('refresh-btn');
-                  if (btn) btn.classList.add('animate-spin');
-                  const { forceResetFirebase } = await import('./lib/firebase');
-                  await forceResetFirebase();
-                }
-              }}
-              id="refresh-btn"
-              className="p-3 bg-secondary text-white rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
-              title="Atualizar Site e Dados"
-            >
-              <RefreshCw size={20} />
-              <span className="text-[10px] font-black uppercase tracking-widest">Atualizar Site</span>
-            </button>
+            <div className="flex gap-4 items-center">
+              <button 
+                disabled={isQuotaLocked}
+                onClick={async () => {
+                  try {
+                    setSaveStatus({ ...saveStatus, global: true });
+                    await onUpdateSettings(localSettings);
+                    await onUpdateInsurance(localInsurancePlans);
+                    await onUpdateSpecialists(localSpecialists);
+                    await onUpdateApproaches(localApproaches);
+                    setTimeout(() => setSaveStatus(prev => ({ ...prev, global: false })), 2000);
+                  } catch (e) {
+                    alert("Erro ao salvar todas as alterações.");
+                  }
+                }}
+                className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 ${
+                  isQuotaLocked 
+                  ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
+                  : saveStatus['global'] 
+                    ? 'bg-green-500 text-white shadow-green-500/20' 
+                    : 'bg-primary text-white shadow-primary/20 hover:scale-105'
+                }`}
+                title="Publicar todas as alterações no site"
+              >
+                {saveStatus['global'] ? <CheckCircle size={18} /> : <Send size={18} />}
+                <span>{saveStatus['global'] ? 'Publicado!' : 'Publicar Alterações'}</span>
+              </button>
+
+              <button 
+                onClick={async () => {
+                  if (confirm("Deseja sincronizar os dados com o servidor? Isso irá recarregar as informações mais recentes e descartar qualquer alteração não salva localmente.")) {
+                    const btn = document.getElementById('sync-btn');
+                    if (btn) btn.classList.add('animate-spin');
+                    await forceResetFirebase();
+                  }
+                }}
+                id="sync-btn"
+                className="p-3 bg-secondary/10 text-secondary rounded-2xl shadow-sm hover:shadow-md hover:bg-secondary hover:text-white transition-all flex items-center gap-2 group"
+                title="Sincronizar com o Servidor (Limpar Cache)"
+              >
+                <RefreshCw size={20} className="group-hover:rotate-180 transition-transform duration-700" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Sincronizar</span>
+              </button>
+            </div>
             <button 
               onClick={onLogout}
               className="p-3 bg-white border border-outline rounded-2xl shadow-sm hover:bg-accent hover:text-white transition-all text-accent flex items-center gap-2"
@@ -3648,7 +3677,7 @@ function AdminScreen({
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {(localSettings.insurancePlans || []).map(plan => (
+                  {localInsurancePlans.map(plan => (
                     <div key={plan.id} className="p-6 border border-outline rounded-3xl bg-surface/30 group relative">
                       <button 
                         onClick={() => removeInsurance(plan.id)}
@@ -3698,7 +3727,7 @@ function AdminScreen({
                   }`}
                 >
                   {isQuotaLocked ? <AlertTriangle size={16} /> : saveStatus['settings'] ? <CheckCircle size={16} /> : <Settings size={16} />}
-                  {isQuotaLocked ? 'Banco de Dados Esgotado' : saveStatus['settings'] ? 'Site Atualizado!' : 'Salvar Alterações do Site'}
+                  {isQuotaLocked ? 'Banco de Dados Esgotado' : saveStatus['settings'] ? 'Site Atualizado!' : 'Atualizar Dados do Site'}
                 </button>
               </div>
             </div>
@@ -4067,7 +4096,7 @@ function AdminScreen({
                             }`}
                           >
                             {isQuotaLocked ? <AlertTriangle size={14} /> : saveStatus[s.id] ? <CheckCircle size={14} /> : <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin hidden group-active:block" />}
-                            {isQuotaLocked ? 'Bloqueado' : saveStatus[s.id] ? 'Salvo!' : 'Salvar Informações'}
+                            {isQuotaLocked ? 'Bloqueado' : saveStatus[s.id] ? 'Salvo!' : 'Atualizar Perfil'}
                           </button>
                           <button onClick={() => removeSpecialist(s.id)} className="p-4 text-accent hover:bg-accent/10 rounded-full transition-colors opacity-0 group-hover:opacity-100">
                             <Delete size={20} />
@@ -4119,7 +4148,7 @@ function AdminScreen({
                           }`}
                         >
                           {isQuotaLocked ? <AlertTriangle size={14} /> : saveStatus[`approach-${a.id}`] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
-                          {isQuotaLocked ? 'Bloqueado' : saveStatus[`approach-${a.id}`] ? 'Salvo!' : 'Salvar Abordagem'}
+                          {isQuotaLocked ? 'Bloqueado' : saveStatus[`approach-${a.id}`] ? 'Salvo!' : 'Atualizar Abordagem'}
                         </button>
                       </div>
                     </div>
@@ -4210,19 +4239,3 @@ function AdminScreen({
   );
 }
 
-interface AdminScreenProps extends ScreenProps {
-  settings: HomeSettings;
-  onUpdateSettings: (s: HomeSettings) => void;
-  specialists: Specialist[];
-  onUpdateSpecialists: (s: Specialist[]) => void;
-  approaches: Approach[];
-  onUpdateApproaches: (a: Approach[]) => void;
-  onLogout: () => void;
-  insurancePlans: InsurancePlan[];
-  onUpdateInsurance: (i: InsurancePlan[]) => void;
-  subleaseRooms: SubleaseRoom[];
-  onUpdateSubleaseRooms: (r: SubleaseRoom[]) => void;
-  subleaseBookings: SubleaseBooking[];
-  onUpdateSubleaseBookingStatus: (id: string, status: 'pending' | 'confirmed' | 'cancelled') => void;
-  isDataLoaded: boolean;
-}
