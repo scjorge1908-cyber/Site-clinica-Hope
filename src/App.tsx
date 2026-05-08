@@ -698,9 +698,9 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
 
       <main className="flex-grow">{children}</main>
 
-      <footer className="py-20 bg-surface-container-low border-t border-outline-alt/30">
+      <footer className="py-20 border-t border-outline-alt/30 bg-[#fdfdff]">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-8">
             <div className="flex items-center gap-4">
               <div className="shrink-0">
                 {settings?.logoUrl ? (
@@ -726,20 +726,20 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             </div>
             
             {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
-              <div className="flex flex-wrap gap-6 pt-6 border-t border-outline-alt/20">
-                {settings.insurancePlans.map(plan => (
-                  <div key={plan.id} className="flex flex-col items-center gap-1 group">
-                    <img 
-                      src={plan.logo} 
-                      alt={plan.name} 
-                      className="h-8 md:h-10 w-auto object-contain transition-all group-hover:scale-110" 
-                      title={plan.name}
-                    />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/70 group-hover:text-primary transition-colors">
-                      {plan.name}
-                    </span>
-                  </div>
-                ))}
+              <div className="bg-[#fdfdff] p-6 rounded-3xl border border-outline-alt/20 shadow-sm">
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/40 mb-4">Convênios Parceiros</p>
+                <div className="flex flex-wrap gap-6 items-center">
+                  {settings.insurancePlans.map(plan => (
+                    <div key={plan.id} className="flex flex-col items-center gap-1 group">
+                      <img 
+                        src={plan.logo} 
+                        alt={plan.name} 
+                        className="h-7 md:h-9 w-auto object-contain transition-all group-hover:scale-105" 
+                        title={plan.name}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -1030,7 +1030,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
       </section>
 
       {/* Material CTA */}
-      <section className="section-padding">
+      <section className="section-padding bg-[#f9f9ff]">
         <div className="max-w-5xl mx-auto bg-primary text-white rounded-[3rem] md:rounded-[3.5rem] p-8 sm:p-12 md:p-20 relative overflow-hidden shadow-2xl text-center group">
           <div className="relative z-10 space-y-8">
             <h2 className="text-3xl md:text-6xl font-bold tracking-tight">Pronto para dar o próximo passo?</h2>
@@ -3650,7 +3650,7 @@ function AdminScreen({
                     <div key={plan.id} className="p-6 border border-outline rounded-3xl bg-surface/30 group relative">
                       <button 
                         onClick={() => removeInsurance(plan.id)}
-                        className="absolute -top-2 -right-2 w-8 h-8 bg-white border border-outline rounded-full flex items-center justify-center text-accent opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-accent hover:text-white z-10"
+                        className="absolute -top-2 -right-2 w-8 h-8 bg-white border border-outline rounded-full flex items-center justify-center text-accent opacity-20 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-accent hover:text-white z-10"
                       >
                         <Delete size={14} />
                       </button>
@@ -3715,7 +3715,7 @@ function AdminScreen({
                   <div key={s.id} className="p-8 border border-outline rounded-[2rem] flex flex-col md:flex-row gap-8 items-start relative group">
                     <button 
                       onClick={() => removeSpecialist(s.id)}
-                      className="absolute top-4 right-4 p-2 text-accent bg-accent/5 hover:bg-accent hover:text-white rounded-full transition-all opacity-0 group-hover:opacity-100 shadow-sm"
+                      className="absolute top-4 right-4 p-2 text-accent bg-accent/5 hover:bg-accent hover:text-white rounded-full transition-all opacity-20 group-hover:opacity-100 shadow-sm"
                       title="Excluir Especialista"
                     >
                       <Trash2 size={16} />
@@ -4005,7 +4005,7 @@ function AdminScreen({
                                         delete newSched[day];
                                         updateSpecialist(s.id, { schedule: newSched });
                                       }}
-                                      className="absolute top-2 right-2 text-accent p-1 opacity-0 group-hover/item:opacity-100 hover:bg-accent/10 rounded"
+                                      className="absolute top-2 right-2 text-accent p-1 opacity-20 group-hover/item:opacity-100 hover:bg-accent/10 rounded"
                                     >
                                       <Delete size={14} />
                                     </button>
@@ -4089,7 +4089,14 @@ function AdminScreen({
               </div>
               <div className="grid grid-cols-1 gap-8">
                 {localApproaches.map(a => (
-                  <div key={a.id} className="p-8 border border-outline rounded-[2rem] space-y-6">
+                  <div key={a.id} className="p-8 border border-outline rounded-[2rem] space-y-6 group relative">
+                    <button 
+                      onClick={() => removeApproach(a.id)}
+                      className="absolute top-4 right-4 p-2 text-accent bg-accent/5 hover:bg-accent hover:text-white rounded-full transition-all opacity-20 group-hover:opacity-100 shadow-sm"
+                      title="Excluir Abordagem"
+                    >
+                      <Delete size={16} />
+                    </button>
                     <div className="space-y-6 flex-grow">
                       <input className="w-full text-xl font-bold p-2 border-b border-outline" value={a.title} onChange={e => updateApproach(a.id, { title: e.target.value })} placeholder="Título" />
                       <input className="w-full p-2 border-b border-outline text-on-surface-variant" value={a.desc} onChange={e => updateApproach(a.id, { desc: e.target.value })} placeholder="Breve descrição" />
@@ -4111,9 +4118,6 @@ function AdminScreen({
                         >
                           {isQuotaLocked ? <AlertTriangle size={14} /> : saveStatus[`approach-${a.id}`] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
                           {isQuotaLocked ? 'Bloqueado' : saveStatus[`approach-${a.id}`] ? 'Salvo!' : 'Salvar Abordagem'}
-                        </button>
-                        <button onClick={() => removeApproach(a.id)} className="p-4 text-accent hover:bg-accent/10 rounded-full transition-colors opacity-0 group-hover:opacity-100">
-                          <Delete size={20} />
                         </button>
                       </div>
                     </div>
