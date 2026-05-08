@@ -1532,14 +1532,14 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
                   const message = `Ola veja a disponibilidade: ${spec.name}. Veja horários disponíveis: ${scheduleSummary || 'sob consulta'}. Caso não encontre um horário ideal voce pode ficar na lista de espera veja o site: www.clinicahopebrasil.com.br`;
                   
-                  const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-                  
-                  // Abrir diretamente o WhatsApp para evitar bloqueios de popup ou falhas no navigator.share
+                  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
                   window.open(whatsappUrl, '_blank');
                 }}
-                className="w-fit mt-1.5 px-2.5 py-1 text-secondary/70 hover:text-secondary rounded-lg font-bold text-[9px] uppercase tracking-widest transition-all active:scale-95 flex items-center gap-1.5 hover:bg-secondary/5 group border border-secondary/10 shadow-sm"
+                className="group flex items-center gap-2 text-secondary/40 hover:text-secondary transition-all text-[9px] font-black uppercase tracking-[0.1em] mt-1.5 w-fit"
               >
-                <Share size={12} className="group-hover:rotate-12 transition-transform" />
+                <div className="w-5 h-5 rounded-full bg-secondary/5 flex items-center justify-center group-hover:bg-secondary/10 transition-colors">
+                  <Share size={10} />
+                </div>
                 Compartilhar
               </button>
             </div>
