@@ -1269,7 +1269,8 @@ function parseSheetScheduleData(jsonpData: any): Record<string, { periods: Recor
   if (Array.isArray(appointments) && appointments.length > 0) {
     appointments.forEach((row: any) => {
       try {
-        if (row && (row.status === '💚' || row.status === 'Livre')) {
+        const status = (row.status || '').toString();
+        if (row && (status === '💚' || status.toLowerCase().includes('livre'))) {
           const dayRaw = row.dia || row.day || '';
           const timeRaw = row.horario || row.time || '';
           
@@ -1318,6 +1319,14 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(spec.schedule || null);
+  
+  // Sincroniza a agenda se o fallback manual for alterado no Admin
+  useEffect(() => {
+    if (!spec.googleAppsScriptUrl && !spec.googleSheetsId) {
+      setSheetSchedule(spec.schedule || null);
+    }
+  }, [spec.schedule, spec.googleAppsScriptUrl, spec.googleSheetsId]);
+
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
@@ -1406,7 +1415,10 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
               const newCsvSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
               rows.slice(1).forEach(row => {
                 const [dayRaw, timeRaw, statusRaw] = row;
-                if (dayRaw && timeRaw && (statusRaw?.includes('💚') || statusRaw?.toLowerCase().includes('livre'))) {
+                const status = (statusRaw || '').toLowerCase().trim();
+                const isAvailable = status.includes('💚') || status.includes('livre');
+
+                if (dayRaw && timeRaw && isAvailable) {
                    const dayMap: Record<string, string> = {
                     'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'terca': 'Terça', 'terca-feira': 'Terça',
                     'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'quinta': 'Quinta', 'quinta-feira': 'Quinta',
@@ -1441,14 +1453,29 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
       };
 
       fetchSheetData();
-      const interval = setInterval(fetchSheetData, 600000);
-      return () => clearInterval(interval);
+      const interval = setInterval(fetchSheetData, 120000); // 2 minutos para um feeling de tempo real melhor
+      
+      const handleForceSync = (e: any) => {
+        if (e.detail?.specId === spec.id) {
+          fetchSheetData();
+        }
+      };
+      window.addEventListener('force-sheet-sync', handleForceSync);
+
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('force-sheet-sync', handleForceSync);
+      };
     }
   }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.id]); // spec.name e spec.schedule removidos para evitar loop
 
-  // Só mostra a agenda se houver dados e não houver erro de conexão (ou se for admin querendo ver o erro)
-  const hasValidData = sheetSchedule && Object.keys(sheetSchedule).length > 0;
-  const hasAnySchedule = hasValidData || (spec.schedule && Object.keys(spec.schedule).length > 0);
+  // Memoize the active schedule to use (prefer sheet if found data, otherwise manual)
+  const activeSchedule = useMemo(() => {
+    if (sheetSchedule && Object.keys(sheetSchedule).length > 0) return sheetSchedule;
+    return spec.schedule || null;
+  }, [sheetSchedule, spec.schedule]);
+
+  const hasAnySchedule = activeSchedule && Object.keys(activeSchedule).length > 0;
   
   // Sincronização concluída (mesmo que tenha falhado silenciosamente)
   const isSyncComplete = !isLoadingSheet;
@@ -1626,17 +1653,26 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                 </div>
               ) : isAgendaFull ? (
                 <div className="pt-2 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                  <div className="flex flex-col items-center text-center space-y-4 py-6 px-6 bg-secondary/5 rounded-3xl border border-secondary/10">
+                  <div className="flex flex-col items-center text-center space-y-4 py-8 px-6 bg-secondary/5 rounded-3xl border border-secondary/10 relative group/agenda">
+                    {isLoadingSheet && (
+                      <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center rounded-3xl z-10 animate-in fade-in">
+                        <div className="flex flex-col items-center gap-2">
+                          <RefreshCw size={24} className="text-primary animate-spin" />
+                          <p className="text-[10px] font-black uppercase tracking-widest text-primary">Sincronizando...</p>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="w-14 h-14 bg-secondary/10 flex items-center justify-center rounded-full text-secondary">
                         <CalendarMonth size={28} />
                     </div>
                     <div className="space-y-1">
                       <p className="font-black text-secondary text-xs uppercase tracking-widest">Agenda Completa</p>
-                      <p className="text-[11px] font-medium text-primary/70 leading-relaxed">No momento, esta especialista não possui horários disponíveis para agendamento imediato.</p>
+                      <p className="text-[11px] font-medium text-primary/70 leading-relaxed max-w-[200px]">No momento, esta especialista não possui horários disponíveis para agendamento imediato.</p>
                     </div>
                     
                     <a 
-                      href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá estou vindo pelo site e gostaria de ficar na fila de espera com o Psi ${spec.name}`)}`}
+                      href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
@@ -1644,6 +1680,18 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                       <Chat size={20} />
                       Lista de Espera
                     </a>
+
+                    {isAdminUnlocked && (
+                      <button 
+                        onClick={() => {
+                          const event = new CustomEvent('force-sheet-sync', { detail: { specId: spec.id } });
+                          window.dispatchEvent(event);
+                        }}
+                        className="text-[9px] font-bold uppercase tracking-widest text-primary/40 hover:text-primary transition-colors mt-2 underline"
+                      >
+                        Recarregar Planilha (Admin)
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -1653,7 +1701,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                   <div className="space-y-4 pt-4">
                     {/* Day Selection */}
                     <div className="flex flex-wrap gap-2">
-                      {Object.keys(sheetSchedule || spec.schedule || {})
+                      {Object.keys(activeSchedule || {})
                         .sort((a, b) => {
                           const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
                           return days.indexOf(a) - days.indexOf(b);
@@ -1677,7 +1725,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                     </div>
 
                     {/* Time Selection */}
-                    {selectedDay && (sheetSchedule || spec.schedule)?.[selectedDay] && (
+                    {selectedDay && activeSchedule?.[selectedDay] && (
                       <motion.div 
                         initial={{ opacity: 0, y: 10 }} 
                         animate={{ opacity: 1, y: 0 }}
@@ -1689,7 +1737,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                             <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Selecione o horário</p>
                           </div>
                         )}
-                        {(Object.entries((sheetSchedule || spec.schedule)![selectedDay].periods) as [Shift, string[]][])
+                        {(Object.entries(activeSchedule![selectedDay].periods) as [Shift, string[]][])
                           .sort(([a], [b]) => {
                             const periods = [Shift.Morning as string, Shift.Afternoon as string, Shift.Night as string];
                             return periods.indexOf(a) - periods.indexOf(b);
@@ -3863,9 +3911,14 @@ function AdminScreen({
                                     
                                     const parsedSchedule = parseSheetScheduleData(jsonpData);
                                     const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
-                                    const count = appointments.filter((r: any) => r && r.paciente && r.paciente !== '💚').length;
                                     
-                                    alert(`✅ AGENDA SINCRONIZADA!\nEncontramos ${count} agendamentos ocupados.\n\nA agenda foi atualizada localmente e no banco de dados. Clique em "Salvar Informações" para garantir.`);
+                                    // Conta horários disponíveis reais (com 💚 ou Livre)
+                                    const availableCount = appointments.filter((r: any) => {
+                                      const status = (r.status || r.paciente || '').toString().toLowerCase();
+                                      return status.includes('💚') || status.includes('livre');
+                                    }).length;
+                                    
+                                    alert(`✅ AGENDA SINCRONIZADA!\nEncontramos ${availableCount} horários disponíveis (💚).\n\nA agenda foi atualizada localmente e no banco de dados. Clique em "Salvar Informações" para garantir.`);
                                     
                                     // Atualiza Firestore IMEDIATAMENTE e localmente
                                     await updateSpecialistSchedule(s.id, parsedSchedule);
