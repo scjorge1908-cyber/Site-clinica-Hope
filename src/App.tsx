@@ -61,7 +61,9 @@ import {
   Moon,
   Trash2,
   Edit2,
-  RefreshCw
+  RefreshCw,
+  CreditCard,
+  AlertTriangle
 } from 'lucide-react';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Cropper from 'react-easy-crop';
