@@ -829,13 +829,13 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
               <div className="pt-12 border-t border-outline-alt/30">
                 <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-on-surface-variant/50 mb-6 font-mono">Convênios que aceitamos</p>
-                <div className="flex flex-wrap gap-x-12 gap-y-10 items-end transition-all duration-500">
+                <div className="flex flex-wrap gap-x-12 gap-y-8 items-center transition-all duration-500">
                   {settings.insurancePlans.map(plan => (
-                    <div key={plan.id} className="group">
+                    <div key={plan.id} className="flex items-center justify-center">
                       <img 
                         src={plan.logo} 
                         alt={plan.name} 
-                        className="h-7 md:h-8 w-auto object-contain group-hover:scale-110 transition-transform duration-300" 
+                        className="h-10 md:h-12 w-auto object-contain transition-all duration-300" 
                         title={plan.name} 
                       />
                     </div>
@@ -1724,28 +1724,42 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-2 gap-4">
                        <button
                          onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
-                         className={`px-3 py-2.5 rounded-xl transition-all flex items-center justify-center border min-h-[46px] text-center ${
+                         className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
                            selectedPlan === 'Particular'
-                           ? 'bg-secondary text-white border-secondary shadow-md scale-105 z-10'
-                           : 'bg-white text-primary border-outline-variant/30 hover:border-secondary/50'
+                           ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
+                           : 'bg-transparent text-primary hover:bg-secondary/5'
                          }`}
                        >
-                         <span className={`text-[10px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-white' : 'text-primary/60'}`}>Particular</span>
+                         <div className="w-12 h-10 flex items-center justify-center">
+                           <CreditCard size={28} className="text-secondary" />
+                         </div>
+                         <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
                        </button>
                        {insurancePlans.filter(p => p.name.toLowerCase() !== 'particular').map(plan => (
                          <button
                            key={plan.id}
                            onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
-                           className={`px-3 py-2.5 rounded-xl transition-all flex items-center justify-center border min-h-[46px] text-center ${
+                           className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
                              selectedPlan === plan.name
-                             ? 'bg-secondary text-white border-secondary shadow-md scale-105 z-10'
-                             : 'bg-white text-primary border-outline-variant/30 hover:border-secondary/50'
+                             ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
+                             : 'bg-transparent text-primary hover:bg-secondary/5'
                            }`}
                          >
-                           <span className={`text-[10px] font-black uppercase tracking-widest leading-tight ${selectedPlan === plan.name ? 'text-white' : 'text-primary/60'}`}>{plan.name}</span>
+                           {plan.logo ? (
+                             <img 
+                               src={plan.logo} 
+                               alt={plan.name} 
+                               className="h-10 w-auto object-contain transition-all"
+                             />
+                           ) : (
+                             <div className="w-12 h-10 flex items-center justify-center">
+                               <Verified size={28} className="text-secondary/40" />
+                             </div>
+                           )}
+                           <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === plan.name ? 'text-secondary' : 'text-primary/70'}`}>{plan.name}</span>
                          </button>
                        ))}
                     </div>
@@ -3608,7 +3622,29 @@ function AdminScreen({
                     <Add size={14} /> Novo Convênio
                   </button>
                 </div>
-                <p className="text-on-surface-variant text-sm mb-8">Estes convênios aparecerão para todos os profissionais do corpo clínico.</p>
+                <p className="text-on-surface-variant text-sm mb-4">Estes convênios aparecerão para todos os profissionais do corpo clínico.</p>
+                <div className="bg-secondary/5 p-4 rounded-2xl border border-secondary/10 mb-8 text-center sm:text-left">
+                  <p className="text-[11px] text-primary/70 leading-relaxed">
+                    💡 <strong>Dica para Logos:</strong> Para um visual perfeito, utilize imagens no formato <strong>PNG Transparente</strong> ou <strong>SVG</strong>. 
+                  </p>
+                  <div className="mt-4 flex flex-col sm:flex-row gap-4 sm:items-center justify-between border-t border-secondary/10 pt-4">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-secondary opacity-60">Proporção do Corte</span>
+                      <span className="text-sm font-bold text-primary">3:1 (Horizontal)</span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-secondary opacity-60">Tamanho Recomendado</span>
+                      <span className="text-sm font-bold text-primary">300x100 pixels</span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-secondary opacity-60">Cor de Fundo do Site</span>
+                      <div className="flex items-center gap-2">
+                         <div className="w-4 h-4 rounded-full border border-outline bg-[#f9f9ff]"></div>
+                         <span className="text-sm font-bold text-primary font-mono">#f9f9ff</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                   {(localSettings.insurancePlans || []).map(plan => (
                     <div key={plan.id} className="p-6 border border-outline rounded-3xl bg-surface/30 group relative">
@@ -3619,16 +3655,24 @@ function AdminScreen({
                         <Delete size={14} />
                       </button>
                       <div className="flex flex-col items-center gap-4">
-                        <div className="p-4 rounded-xl border border-outline bg-white flex items-center justify-center relative group/logo">
-                          <img src={plan.logo} className="h-7 w-auto object-contain" />
-                          <label className="absolute inset-0 bg-black/40 opacity-0 group-hover/logo:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity rounded-xl">
-                            <PhotoCamera size={16} />
-                            <span className="text-[8px] font-bold mt-1">Trocar Logo</span>
+                        <div className="p-4 rounded-2xl border border-dashed border-outline bg-secondary/5 flex items-center justify-center relative group/logo w-full min-h-[120px] overflow-hidden">
+                          {plan.logo ? (
+                            <img src={plan.logo} className="h-12 w-auto object-contain transition-all" />
+                          ) : (
+                            <div className="text-secondary/30 flex flex-col items-center gap-2">
+                              <PhotoCamera size={24} />
+                              <span className="text-[10px] uppercase font-black">Sem Logo</span>
+                            </div>
+                          )}
+                          <label className="absolute inset-0 bg-black/60 opacity-0 group-hover/logo:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-all backdrop-blur-sm">
+                            <PhotoCamera size={20} />
+                            <span className="text-[9px] font-black uppercase mt-1.5 tracking-wider">Trocar Logo</span>
+                            <span className="text-[7px] opacity-60">(Formato 3:1)</span>
                             <input type="file" className="hidden" accept="image/*" onChange={(e) => handleInsuranceLogoChange(e, plan.id)} />
                           </label>
                         </div>
                         <input 
-                          className="w-full text-center font-bold text-[10px] uppercase tracking-widest bg-transparent border-b border-outline/50 focus:border-primary outline-none pb-1"
+                          className="w-full text-center font-black text-[10px] uppercase tracking-widest bg-transparent border-b border-outline/50 focus:border-secondary outline-none pb-1.5 text-primary/80"
                           value={plan.name}
                           onChange={(e) => updateInsurance(plan.id, { name: e.target.value })}
                           placeholder="Nome do Plano"
@@ -4111,6 +4155,7 @@ function AdminScreen({
                     zoom={zoom}
                     aspect={
                       croppingType === 'hero' ? 16 / 9 : 
+                      croppingType === 'insurance' ? 3 / 1 :
                       croppingType?.startsWith('sublease') ? 4 / 3 : 
                       1
                     }
