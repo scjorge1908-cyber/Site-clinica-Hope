@@ -52,9 +52,39 @@ interface FirestoreErrorInfo {
   }
 }
 
+const QUOTA_LOCK_KEY = 'firestore_quota_exhausted';
+
+function isQuotaExhausted() {
+  if (typeof window === 'undefined') return false;
+  try {
+    const lock = localStorage.getItem(QUOTA_LOCK_KEY);
+    if (lock) {
+      const lockTime = parseInt(lock);
+      if (Date.now() - lockTime < 12 * 60 * 60 * 1000) { // Bloqueia por 12h
+        return true;
+      }
+      localStorage.removeItem(QUOTA_LOCK_KEY);
+    }
+  } catch (e) {
+    console.warn("Storage access failed:", e);
+  }
+  return false;
+}
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const message = error instanceof Error ? error.message : String(error);
+  
+  if (message.includes('resource-exhausted') || message.includes('Quota exceeded')) {
+    try {
+      localStorage.setItem(QUOTA_LOCK_KEY, Date.now().toString());
+    } catch (e) {
+      console.warn("Failed to set quota lock in storage:", e);
+    }
+    console.error('CRITICAL: Firestore Quota Exceeded. Writes disabled for 12h.');
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: message,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -110,6 +140,7 @@ export async function getHomeSettings() {
 }
 
 export async function saveHomeSettings(settings: any) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
   const path = `${COLLECTIONS.SETTINGS}/${DOCS.HOME_SETTINGS}`;
   try {
     const docRef = doc(db, COLLECTIONS.SETTINGS, DOCS.HOME_SETTINGS);
@@ -130,6 +161,7 @@ export async function getSpecialists() {
 }
 
 export async function saveSpecialists(specialists: any[]) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
   try {
     const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.SPECIALISTS));
     const existingIds = querySnapshot.docs.map(doc => doc.id);
@@ -156,6 +188,7 @@ export async function saveSpecialists(specialists: any[]) {
 }
 
 export async function saveApproaches(approaches: any[]) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
   try {
     const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.APPROACHES));
     const existingIds = querySnapshot.docs.map(doc => doc.id);
@@ -180,6 +213,7 @@ export async function saveApproaches(approaches: any[]) {
 }
 
 export async function updateSpecialistSchedule(specialistId: string, schedule: any) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
   const path = `${COLLECTIONS.SPECIALISTS}/${specialistId}`;
   try {
     const docRef = doc(db, COLLECTIONS.SPECIALISTS, specialistId);
@@ -190,6 +224,7 @@ export async function updateSpecialistSchedule(specialistId: string, schedule: a
 }
 
 export async function saveInsurancePlans(plans: any[]) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
   try {
     const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.INSURANCE));
     const existingIds = querySnapshot.docs.map(doc => doc.id);
@@ -244,6 +279,7 @@ export async function getSubleaseRooms() {
 }
 
 export async function saveSubleaseRooms(rooms: any[]) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
   try {
     const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.SUBLEASE_ROOMS));
     const existingIds = querySnapshot.docs.map(doc => doc.id);
@@ -278,6 +314,7 @@ export async function getSubleaseBookings() {
 }
 
 export async function saveSubleaseBooking(booking: any) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
   const path = `${COLLECTIONS.SUBLEASE_BOOKINGS}/${booking.id}`;
   try {
     await setDoc(doc(db, COLLECTIONS.SUBLEASE_BOOKINGS, booking.id), booking);
@@ -287,6 +324,7 @@ export async function saveSubleaseBooking(booking: any) {
 }
 
 export async function updateSubleaseBookingStatus(bookingId: string, status: string) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
   const path = `${COLLECTIONS.SUBLEASE_BOOKINGS}/${bookingId}`;
   try {
     const docRef = doc(db, COLLECTIONS.SUBLEASE_BOOKINGS, bookingId);

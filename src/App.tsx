@@ -102,15 +102,20 @@ const LS_KEYS = {
 };
 
 const saveToLS = (key: string, data: any) => {
-  localStorage.setItem(key, JSON.stringify(data));
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.warn("Save to LS failed:", e);
+  }
 };
 
 const loadFromLS = (key: string, defaultValue: any) => {
-  const saved = localStorage.getItem(key);
-  if (!saved) return defaultValue;
   try {
+    const saved = localStorage.getItem(key);
+    if (!saved) return defaultValue;
     return JSON.parse(saved);
-  } catch {
+  } catch (e) {
+    console.warn("Load from LS failed:", e);
     return defaultValue;
   }
 };
@@ -315,9 +320,24 @@ export default function App() {
     return () => unsubBookings();
   }, [isAdminUnlocked]);
 
+  const checkQuotaLock = () => {
+    try {
+      const lock = localStorage.getItem('firestore_quota_exhausted');
+      if (lock) {
+        const lockTime = parseInt(lock);
+        if (Date.now() - lockTime < 12 * 60 * 60 * 1000) return true;
+        localStorage.removeItem('firestore_quota_exhausted');
+      }
+    } catch (e) {
+      console.warn("Quota lock check failed:", e);
+    }
+    return false;
+  };
+
   const updateSettings = async (newSettings: HomeSettings) => {
     const { insurancePlans: _, ...cleanSettings } = newSettings;
     setHomeSettings(cleanSettings as HomeSettings);
+    if (checkQuotaLock()) return;
     try {
       await saveHomeSettings(cleanSettings);
     } catch (e) {
@@ -327,6 +347,7 @@ export default function App() {
 
   const updateSpecialists = async (newSpecialists: Specialist[]) => {
     setSpecialists(newSpecialists);
+    if (checkQuotaLock()) return;
     try {
       await saveSpecialists(newSpecialists);
     } catch (e) {
@@ -336,6 +357,7 @@ export default function App() {
 
   const updateApproaches = async (newApproaches: Approach[]) => {
     setApproaches(newApproaches);
+    if (checkQuotaLock()) return;
     try {
       await saveApproaches(newApproaches);
     } catch (e) {
@@ -345,6 +367,7 @@ export default function App() {
 
   const updateInsurancePlans = async (newPlans: InsurancePlan[]) => {
     setInsurancePlans(newPlans);
+    if (checkQuotaLock()) return;
     try {
       await saveInsurancePlans(newPlans);
     } catch (e) {
@@ -570,16 +593,16 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
         <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
           <button 
             onClick={() => { onNavigate(Screen.Home, 'push_back'); setMenuOpen(false); }}
-            className="flex items-center gap-3 group shrink-0"
+            className="flex items-center gap-4 group shrink-0"
           >
-            <div className="group shrink-0">
+            <div className="shrink-0 transition-transform duration-300 group-hover:scale-110">
               {settings?.logoUrl ? (
-                <img src={settings.logoUrl} className="h-10 w-auto object-contain" alt="Logo" />
+                <img src={settings.logoUrl} className="h-16 md:h-20 w-auto object-contain" alt="Logo" />
               ) : (
-                <Spa size={32} className="text-primary" />
+                <Spa size={48} className="text-primary" />
               )}
             </div>
-            <span className="text-xl font-bold tracking-tight text-primary hidden sm:block">
+            <span className="text-2xl font-black tracking-tight text-primary hidden sm:block leading-none">
               {settings?.clinicName || 'Clínica Hope'}
             </span>
           </button>
@@ -678,15 +701,15 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
       <footer className="py-20 bg-surface-container-low border-t border-outline-alt/30">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <div className="flex flex-col gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-primary/10 rounded-lg overflow-hidden flex items-center justify-center text-primary">
+            <div className="flex items-center gap-4">
+              <div className="shrink-0">
                 {settings?.logoUrl ? (
-                  <img src={settings.logoUrl} className="w-full h-full object-cover" alt="Logo" />
+                  <img src={settings.logoUrl} className="h-12 w-auto object-contain" alt="Logo" />
                 ) : (
-                  <Spa size={18} />
+                  <Spa size={32} className="text-primary" />
                 )}
               </div>
-              <span className="font-bold text-primary text-xl tracking-tight">{settings?.clinicName || 'Clínica Hope'}</span>
+              <span className="font-black text-primary text-2xl tracking-tight leading-none">{settings?.clinicName || 'Clínica Hope'}</span>
             </div>
             <div className="flex flex-wrap gap-6 text-on-surface-variant text-sm font-medium">
               {navItems.map(item => (
@@ -1234,6 +1257,59 @@ function sortKeys(obj: any): any {
   }, {});
 }
 
+// Helper to parse Sheet Data
+function parseSheetScheduleData(jsonpData: any): Record<string, { periods: Record<Shift, string[]> }> {
+  if (!jsonpData) return {};
+  const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
+  const newSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
+  
+  if (Array.isArray(appointments) && appointments.length > 0) {
+    appointments.forEach((row: any) => {
+      try {
+        if (row && (row.status === '💚' || row.status === 'Livre')) {
+          const dayRaw = row.dia || row.day || '';
+          const timeRaw = row.horario || row.time || '';
+          
+          if (dayRaw && timeRaw && typeof dayRaw === 'string' && typeof timeRaw === 'string') {
+            const dayMap: Record<string, string> = {
+              'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'terca': 'Terça', 'terca-feira': 'Terça',
+              'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'quinta': 'Quinta', 'quinta-feira': 'Quinta',
+              'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sabado': 'Sábado', 'sábado': 'Sábado'
+            };
+            const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const day = dayMap[dayKey] || (dayRaw.length > 0 ? (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase()) : '');
+            
+            if (day) {
+              if (!newSchedule[day]) newSchedule[day] = { periods: {} as any };
+              const hourMatch = timeRaw.match(/(\d{1,2})/);
+              if (hourMatch) {
+                const hour = parseInt(hourMatch[1]);
+                const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
+                if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
+                const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
+                const processedTime = timeMatch ? timeMatch[1] : timeRaw;
+                if (!newSchedule[day].periods[shift]?.includes(processedTime)) newSchedule[day].periods[shift]?.push(processedTime);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Erro ao processar linha da planilha:", e);
+      }
+    });
+
+    Object.keys(newSchedule).forEach(day => {
+      Object.keys(newSchedule[day].periods).forEach(period => {
+        const p = period as Shift;
+        if (newSchedule[day].periods[p]) {
+          newSchedule[day].periods[p].sort((a, b) => a.localeCompare(b));
+        }
+      });
+    });
+  }
+  return newSchedule;
+}
+
 function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate }: SpecialistCardProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -1250,263 +1326,122 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
       const fetchSheetData = async () => {
         if (isLoadingSheet) return;
         
+        try {
+          const lock = localStorage.getItem('firestore_quota_exhausted');
+          if (lock) {
+            const lockTime = parseInt(lock);
+            if (Date.now() - lockTime < 4 * 60 * 60 * 1000) return; // Silent skip for 4h if quota locked
+          }
+        } catch (e) {
+          // Ignore storage errors here
+        }
+
         setIsLoadingSheet(true);
         setSheetError(null);
         try {
-          const baseUrl = (spec.googleAppsScriptUrl || '').trim();
-          let newSchedule: NonNullable<Specialist['schedule']> = {};
-          let foundAnyData = false;
+          let baseUrl = (spec.googleAppsScriptUrl || '').trim();
+          if (baseUrl && !baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
           
-          if (baseUrl && baseUrl.endsWith('/exec')) {
-            const scriptUrl = baseUrl.includes('?') ? `${baseUrl}&mode=agenda&t=${Date.now()}` : `${baseUrl}?mode=agenda&t=${Date.now()}`;
-            const url = `/api/proxy-sheet?url=${encodeURIComponent(scriptUrl)}&ts=${Date.now()}`;
-            
-            let appointments: any[] = [];
-            try {
-              const response = await fetch(url).catch(() => null);
-              if (response && response.ok) {
-                const result = await response.json();
-                appointments = Array.isArray(result) ? result : (result.data || []);
-              }
+          let newSchedule: NonNullable<Specialist['schedule']> = {};
+          let foundData = false;
+          
+          if (baseUrl && baseUrl.toLowerCase().includes('script.google.com') && baseUrl.includes('/exec')) {
+            const jsonpUrl = baseUrl.includes('?') ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
+            const jsonpData = await new Promise<any>((resolve) => {
+              const callbackName = `bg_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+              const script = document.createElement('script');
               
-              if (appointments.length === 0) {
-                const jsonpUrl = baseUrl.includes('?') ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
-                const jsonpData = await new Promise<any>((resolve) => {
-                  const callbackName = `bg_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-                  const script = document.createElement('script');
-                  script.src = `${jsonpUrl}&callback=${callbackName}`;
-                  (window as any)[callbackName] = (res: any) => {
-                    document.body.removeChild(script);
-                    delete (window as any)[callbackName];
-                    resolve(res);
-                  };
-                  setTimeout(() => {
-                    if ((window as any)[callbackName]) {
-                      document.body.removeChild(script);
-                      delete (window as any)[callbackName];
-                      resolve(null);
-                    }
-                  }, 30000);
-                  document.body.appendChild(script);
-                });
-                if (jsonpData) appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
+              let scriptResolved = false;
+              const cleanup = () => {
+                if (scriptResolved) return;
+                scriptResolved = true;
+                if (script.parentNode) script.parentNode.removeChild(script);
+                (window as any)[callbackName] = () => {}; // Safe no-op instead of delete
+              };
+
+              script.src = `${jsonpUrl}&callback=${callbackName}`;
+              script.onerror = () => {
+                cleanup();
+                resolve(null);
+              };
+
+              (window as any)[callbackName] = (res: any) => {
+                cleanup();
+                resolve(res);
+              };
+
+              setTimeout(() => {
+                cleanup();
+                resolve(null);
+              }, 45000);
+
+              document.body.appendChild(script);
+            });
+            if (jsonpData) {
+              newSchedule = parseSheetScheduleData(jsonpData);
+              if (Object.keys(newSchedule).length > 0) {
+                foundData = true;
+                setSheetSchedule(newSchedule);
               }
-            } catch (e) { console.error("Erro fetch:", e); }
-
-            if (Array.isArray(appointments) && appointments.length > 0) {
-              foundAnyData = true;
-              
-              // 1. Detect if sheet is Shared or Dedicated
-              const sNameNormalized = spec.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-              const sFirstName = sNameNormalized.split(' ')[0].replace(/michel+e/g, 'michele');
-              
-              let specNameFoundInSheet = false;
-              for (const row of appointments) {
-                const rowStr = JSON.stringify(row).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                if (rowStr.includes(sFirstName)) {
-                  specNameFoundInSheet = true;
-                  break;
-                }
-              }
-
-              // 2. Process rows
-              appointments.forEach((row: any) => {
-                if (!row) return;
-                
-                let dayRaw = '';
-                let timeRaw = '';
-                let hasGreenHeart = false;
-                let profMatch = !specNameFoundInSheet; // If name not found in whole sheet, assume dedicated
-
-                const entries = Object.entries(row);
-                for (const [key, valRaw] of entries) {
-                  const val = valRaw ? valRaw.toString().trim() : '';
-                  const lKey = key.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                  const lVal = val.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                  
-                  // Availability check
-                  if (val.includes('💚')) hasGreenHeart = true;
-
-                  // Day identification
-                  if (!dayRaw && (
-                    lVal.includes('segunda') || lVal.includes('terca') || lVal.includes('terça') || 
-                    lVal.includes('quarta') || lVal.includes('quinta') || lVal.includes('sexta') || 
-                    lVal.includes('sabado') || lVal.includes('sábado') || lKey.includes('dia')
-                  )) {
-                    dayRaw = val;
-                  }
-                  
-                  // Time identification
-                  if (!timeRaw && (val.includes(':') || lKey.includes('hor'))) {
-                    timeRaw = val;
-                  }
-
-                  // Professional Filter (only if sheet is shared)
-                  if (specNameFoundInSheet && !profMatch) {
-                    const profKeys = ['profissional', 'psicologo', 'psicologa', 'nome', 'especialista', 'professional', 'specialist'];
-                    if (profKeys.some(pk => lKey.includes(pk)) && val.length > 3 && !val.includes('💚')) {
-                       const pName = lVal.replace('psi ', '').replace('dra. ', '').replace('dr. ', '').trim();
-                       const pBase = pName.split(' ')[0].replace(/michel+e/g, 'michele');
-                       if (sNameNormalized.includes(pName) || pName.includes(sNameNormalized) || sFirstName === pBase) {
-                          profMatch = true;
-                       }
-                    }
-                  }
-                }
-
-                if (hasGreenHeart && profMatch && dayRaw && timeRaw) {
-                  const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
-                  const processedTime = timeMatch ? timeMatch[1] : timeRaw;
-                  
-                  const dayMap: {[key: string]: string} = {
-                    'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'terca': 'Terça', 'terça': 'Terça', 'terça-feira': 'Terça',
-                    'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'quinta': 'Quinta', 'quinta-feira': 'Quinta',
-                    'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sabado': 'Sábado', 'sábado': 'Sábado'
-                  };
-                  const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                  const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
-                  
-                  if (day.length > 3 && processedTime.includes(':')) {
-                    if (!newSchedule[day]) newSchedule[day] = { periods: {} };
-                    const hourMatch = processedTime.match(/(\d{1,2})/);
-                    if (hourMatch) {
-                      const hour = parseInt(hourMatch[1]);
-                      const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
-                      if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
-                      if (!newSchedule[day].periods[shift]?.includes(processedTime)) newSchedule[day].periods[shift]?.push(processedTime);
-                    }
-                  }
-                }
-              });
             }
-          } else if (spec.googleSheetsId) {
+          }
+
+          // CSV Fallback if no script data was found but we have a sheet ID
+          if (!foundData && spec.googleSheetsId) {
             let sheetId = spec.googleSheetsId;
             if (sheetId.includes('/d/')) {
               const parts = sheetId.split('/d/');
               if (parts.length > 1) sheetId = parts[1].split('/')[0];
             }
             const tabName = spec.googleSheetsTab || 'Agenda';
-            const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}`;
-            const response = await fetch(url);
-            if (response.ok) {
-              foundAnyData = true;
+            const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}&t=${Date.now()}`;
+            const response = await fetch(url).catch(() => null);
+            if (response && response.ok) {
               const csvText = await response.text();
-              const sNameNormalized = spec.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-              const sFirstName = sNameNormalized.split(' ')[0].replace(/michel+e/g, 'michele');
-              const specNameFoundInCSV = csvText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(sFirstName);
-
               const rows = csvText.split(/\r?\n/).map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim())).filter(row => row.length >= 3);
-
+              
+              const newCsvSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
               rows.slice(1).forEach(row => {
                 const [dayRaw, timeRaw, statusRaw] = row;
-                if (!dayRaw || !timeRaw || !statusRaw) return;
-
-                let profMatch = !specNameFoundInCSV;
-                if (specNameFoundInCSV && !profMatch) {
-                  const professionalInRow = row.slice(3).find(val => val && val.length > 3 && !val.includes('💚'));
-                  if (professionalInRow) {
-                    const pName = professionalInRow.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace('psi ', '').replace('dra. ', '').replace('dr. ', '').trim();
-                    const pBase = pName.split(' ')[0].replace(/michel+e/g, 'michele');
-                    if (sNameNormalized.includes(pName) || pName.includes(sNameNormalized) || sFirstName === pBase) {
-                      profMatch = true;
-                    }
-                  }
-                }
-
-                if (statusRaw.includes('💚') && profMatch) {
-                  const dayMap: {[key: string]: string} = {
-                    'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'terca': 'Terça', 'terça': 'Terça', 'terça-feira': 'Terça',
+                if (dayRaw && timeRaw && (statusRaw?.includes('💚') || statusRaw?.toLowerCase().includes('livre'))) {
+                   const dayMap: Record<string, string> = {
+                    'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'terca': 'Terça', 'terca-feira': 'Terça',
                     'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'quinta': 'Quinta', 'quinta-feira': 'Quinta',
                     'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sabado': 'Sábado', 'sábado': 'Sábado'
                   };
                   const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                   const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
                   
-                  if (!newSchedule[day]) newSchedule[day] = { periods: {} };
+                  if (!newCsvSchedule[day]) newCsvSchedule[day] = { periods: {} as any };
                   const hourMatch = timeRaw.match(/(\d{1,2})/);
                   if (hourMatch) {
                     const hour = parseInt(hourMatch[1]);
                     const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
-                    if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
+                    if (!newCsvSchedule[day].periods[shift]) newCsvSchedule[day].periods[shift] = [];
                     const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
                     const processedTime = timeMatch ? timeMatch[1] : timeRaw;
-                    if (!newSchedule[day].periods[shift]?.includes(processedTime)) newSchedule[day].periods[shift]?.push(processedTime);
+                    if (!newCsvSchedule[day].periods[shift]?.includes(processedTime)) newCsvSchedule[day].periods[shift]?.push(processedTime);
                   }
                 }
               });
-            }
-          }
 
-          if (foundAnyData) {
-            Object.keys(newSchedule).forEach(day => {
-              Object.keys(newSchedule[day].periods).forEach(period => {
-                newSchedule[day].periods[period as Shift]?.sort((a, b) => a.localeCompare(b));
-              });
-            });
-
-            setSheetSchedule(newSchedule);
-            
-            // Comparação profunda com chaves ordenadas para evitar disparos falsos
-            const currentScheduleSorted = sortKeys(spec.schedule || {});
-            const newScheduleSorted = sortKeys(newSchedule);
-            const currentScheduleStr = JSON.stringify(currentScheduleSorted);
-            const newScheduleStr = JSON.stringify(newScheduleSorted);
-            
-            // Verifica se houve mudança REAL
-            const isDifferent = newScheduleStr !== currentScheduleStr;
-            
-            // Throttle e Regra de Segurança:
-            // 1. Apenas ADMINS podem disparar a atualização do Firestore.
-            // 2. Não sincroniza no modo Carousel (tela inicial) para reduzir carga.
-            // 3. Verifica bloqueio temporário de cota (localStorage).
-            // 4. Throttle de 12 horas para a mesma agenda.
-            const quotaLock = localStorage.getItem('firestore_quota_lock');
-            const isLocked = quotaLock && (Date.now() - parseInt(quotaLock) < 3600000); 
-
-            let shouldSync = isAdminUnlocked && !isCarousel && isDifferent && !isLocked;
-            
-            if (shouldSync && spec.lastSync) {
-              const lastSyncTime = new Date(spec.lastSync).getTime();
-              const now = Date.now();
-              const throttleTime = 12 * 60 * 60 * 1000; // 12 horas
-              if (now - lastSyncTime < throttleTime) {
-                shouldSync = false;
-              }
-            }
-
-            if (shouldSync) {
-              try {
-                await updateSpecialistSchedule(spec.id, newScheduleSorted);
-              } catch (e: any) {
-                const msg = e.message || '';
-                if (msg.includes('resource-exhausted') || msg.includes('Quota exceeded')) {
-                  console.warn('Cota de escrita atingida. Pausando sincronização por 1h.');
-                  localStorage.setItem('firestore_quota_lock', Date.now().toString());
-                } else {
-                  throw e;
-                }
+              if (Object.keys(newCsvSchedule).length > 0) {
+                setSheetSchedule(newCsvSchedule);
               }
             }
           }
-        } catch (error: any) {
-          // Erro de cota ou outros erros técnicos agora são silenciosos para o usuário
-          // para não exibir informações de "limite" ou "quota" no site.
-          if (error.message?.includes('resource-exhausted') || error.message?.includes('Quota exceeded')) {
-             console.warn('Sincronização limitada pela cota do Firestore.');
-          } else {
-             console.error('Erro sincronização:', error);
-          }
+        } catch (e) { 
+          console.error("Erro fetch:", e); 
         } finally {
           setIsLoadingSheet(false);
         }
       };
 
       fetchSheetData();
-      // Intervalo muito maior (10 min) já que temos cache e precisamos economizar cota
       const interval = setInterval(fetchSheetData, 600000);
       return () => clearInterval(interval);
     }
-  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.googleSheetsTab, spec.id, isAdminUnlocked]); // spec.name e spec.schedule removidos para evitar loop
+  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.id]); // spec.name e spec.schedule removidos para evitar loop
 
   // Só mostra a agenda se houver dados e não houver erro de conexão (ou se for admin querendo ver o erro)
   const hasValidData = sheetSchedule && Object.keys(sheetSchedule).length > 0;
@@ -1563,7 +1498,51 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
       <div className="p-8 space-y-6 flex-grow flex flex-col justify-between">
         <div className="space-y-4">
           <div className="flex justify-between items-start">
-            <h4 className="text-2xl font-bold text-primary">{spec.name}</h4>
+            <div className="flex flex-col">
+              <h4 className="text-2xl font-bold text-primary">{spec.name}</h4>
+              <button 
+                onClick={() => {
+                  let scheduleSummary = '';
+                  try {
+                    if (spec.schedule) {
+                      const daysOrder = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                      const dayEntries = daysOrder.map(day => {
+                        const dayData = spec.schedule![day];
+                        if (dayData && dayData.periods) {
+                          const periodsValues = Object.values(dayData.periods);
+                          const times = (periodsValues as any[]).reduce((acc: string[], val) => {
+                            if (Array.isArray(val)) return acc.concat(val);
+                            return acc;
+                          }, []).filter(Boolean);
+                          
+                          if (times && times.length > 0) {
+                            return `${day}: ${times.slice(0, 3).join(', ')}${times.length > 3 ? '...' : ''}`;
+                          }
+                        }
+                        return null;
+                      }).filter(Boolean);
+                      
+                      if (dayEntries.length > 0) {
+                        scheduleSummary = dayEntries.join(' | ');
+                      }
+                    }
+                  } catch (e) {
+                    console.warn("Failed to generate schedule summary:", e);
+                  }
+
+                  const message = `Ola veja a disponibilidade: ${spec.name}. Veja horários disponíveis: ${scheduleSummary || 'sob consulta'}. Caso não encontre um horário ideal voce pode ficar na lista de espera veja o site: www.clinicahopebrasil.com.br`;
+                  
+                  const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+                  
+                  // Abrir diretamente o WhatsApp para evitar bloqueios de popup ou falhas no navigator.share
+                  window.open(whatsappUrl, '_blank');
+                }}
+                className="w-fit mt-1.5 px-2.5 py-1 text-secondary/70 hover:text-secondary rounded-lg font-bold text-[9px] uppercase tracking-widest transition-all active:scale-95 flex items-center gap-1.5 hover:bg-secondary/5 group border border-secondary/10 shadow-sm"
+              >
+                <Share size={12} className="group-hover:rotate-12 transition-transform" />
+                Compartilhar
+              </button>
+            </div>
             <Verified size={20} className="text-secondary" />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1746,37 +1725,29 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
-                        className={`p-4 rounded-xl border text-[10px] font-bold transition-all text-center ${
-                          selectedPlan === 'Particular'
-                          ? 'bg-secondary text-white border-secondary shadow-md'
-                          : 'bg-surface-container-low text-primary border-outline-variant/30 hover:border-secondary/20'
-                        }`}
-                      >
-                        Particular
-                      </button>
-                      {insurancePlans.map(plan => (
-                        <button
-                          key={plan.id}
-                          onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
-                          className={`p-2 rounded-xl transition-all flex items-center justify-center border-2 ${
-                            selectedPlan === plan.name
-                            ? 'bg-secondary/10 border-secondary shadow-sm scale-105'
-                            : 'bg-transparent border-transparent hover:bg-surface-container-low hover:scale-105'
-                          }`}
-                        >
-                          {plan.logo ? (
-                            <img 
-                              src={plan.logo} 
-                              alt={plan.name} 
-                              className={`h-7 w-auto object-contain transition-all ${selectedPlan === plan.name ? '' : 'grayscale-[0.3]'}`} 
-                            />
-                          ) : (
-                            <span className={`text-[10px] font-bold ${selectedPlan === plan.name ? 'text-secondary' : 'text-primary'}`}>{plan.name}</span>
-                          )}
-                        </button>
-                      ))}
+                       <button
+                         onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
+                         className={`px-3 py-2.5 rounded-xl transition-all flex items-center justify-center border min-h-[46px] text-center ${
+                           selectedPlan === 'Particular'
+                           ? 'bg-secondary text-white border-secondary shadow-md scale-105 z-10'
+                           : 'bg-white text-primary border-outline-variant/30 hover:border-secondary/50'
+                         }`}
+                       >
+                         <span className={`text-[10px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-white' : 'text-primary/60'}`}>Particular</span>
+                       </button>
+                       {insurancePlans.filter(p => p.name.toLowerCase() !== 'particular').map(plan => (
+                         <button
+                           key={plan.id}
+                           onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
+                           className={`px-3 py-2.5 rounded-xl transition-all flex items-center justify-center border min-h-[46px] text-center ${
+                             selectedPlan === plan.name
+                             ? 'bg-secondary text-white border-secondary shadow-md scale-105 z-10'
+                             : 'bg-white text-primary border-outline-variant/30 hover:border-secondary/50'
+                           }`}
+                         >
+                           <span className={`text-[10px] font-black uppercase tracking-widest leading-tight ${selectedPlan === plan.name ? 'text-white' : 'text-primary/60'}`}>{plan.name}</span>
+                         </button>
+                       ))}
                     </div>
                   </div>
                 </div>
@@ -2712,6 +2683,19 @@ function AdminScreen({
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [isQuotaLocked, setIsQuotaLocked] = useState(false);
+
+  useEffect(() => {
+    const lock = localStorage.getItem('firestore_quota_exhausted');
+    if (lock) {
+      const lockTime = parseInt(lock);
+      if (Date.now() - lockTime < 12 * 60 * 60 * 1000) {
+        setIsQuotaLocked(true);
+      } else {
+        localStorage.removeItem('firestore_quota_exhausted');
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (isDataLoaded && !hasInitialized) {
@@ -2998,6 +2982,15 @@ function AdminScreen({
             <h1 className="text-4xl font-display font-bold text-primary tracking-tighter">Painel de Administração</h1>
           </div>
           <div className="flex gap-4">
+            {isQuotaLocked && (
+              <div className="flex items-center gap-3 px-4 py-2 bg-accent/10 text-accent rounded-2xl border border-accent/20 animate-pulse">
+                <AlertTriangle size={18} />
+                <span className="text-[10px] font-black uppercase tracking-widest text-left leading-tight">
+                  Banco de Dados em Modo Leitura<br/>
+                  <span className="opacity-70">Limite Diário Atingido</span>
+                </span>
+              </div>
+            )}
             <div className="flex bg-white rounded-2xl p-1 modern-shadow border border-outline">
               {(['home', 'corpo', 'abordagens'] as const).map(tab => (
                 <button
@@ -3534,14 +3527,14 @@ function AdminScreen({
               <div className="pb-8 border-b border-outline">
                 <h2 className="text-2xl font-display font-black text-primary mb-6">Identidade Visual</h2>
                 <div className="flex items-center gap-8">
-                  <div className="p-4 bg-white border border-outline rounded-xl flex items-center justify-center text-primary relative group">
+                  <div className="p-6 bg-white border border-outline rounded-2xl flex items-center justify-center text-primary relative group min-w-[120px]">
                     {localSettings.logoUrl ? (
-                      <img src={localSettings.logoUrl} className="h-7 w-auto object-contain" alt="Logo Preview" />
+                      <img src={localSettings.logoUrl} className="h-14 w-auto object-contain" alt="Logo Preview" />
                     ) : (
-                      <Spa size={24} />
+                      <Spa size={40} />
                     )}
-                    <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity rounded-xl">
-                      <PhotoCamera size={16} />
+                    <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity rounded-2xl">
+                      <PhotoCamera size={24} />
                       <span className="text-[10px] font-bold mt-1 uppercase">Trocar Logo</span>
                       <input type="file" className="hidden" accept="image/*" onChange={handleLogoChange} />
                     </label>
@@ -3648,11 +3641,18 @@ function AdminScreen({
 
               <div className="pt-12 border-t border-outline flex justify-center">
                 <button
+                  disabled={isQuotaLocked}
                   onClick={handleSaveSettings}
-                  className={`flex items-center gap-2 px-12 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] transition-all shadow-xl active:scale-95 ${saveStatus['settings'] ? 'bg-green-500 text-white shadow-green-500/20' : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'}`}
+                  className={`flex items-center gap-2 px-12 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] transition-all shadow-xl active:scale-95 ${
+                    isQuotaLocked 
+                    ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
+                    : saveStatus['settings'] 
+                      ? 'bg-green-500 text-white shadow-green-500/20' 
+                      : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'
+                  }`}
                 >
-                  {saveStatus['settings'] ? <CheckCircle size={16} /> : <Settings size={16} />}
-                  {saveStatus['settings'] ? 'Site Atualizado!' : 'Salvar Alterações do Site'}
+                  {isQuotaLocked ? <AlertTriangle size={16} /> : saveStatus['settings'] ? <CheckCircle size={16} /> : <Settings size={16} />}
+                  {isQuotaLocked ? 'Banco de Dados Esgotado' : saveStatus['settings'] ? 'Site Atualizado!' : 'Salvar Alterações do Site'}
                 </button>
               </div>
             </div>
@@ -3738,52 +3738,86 @@ function AdminScreen({
                               </div>
                             </div>
                             <button 
+                              disabled={isQuotaLocked}
                               onClick={async () => {
+                                if (isQuotaLocked) {
+                                  alert('❌ ERRO DE COTA: O banco de dados está temporariamente em modo leitura. Tente novamente amanhã.');
+                                  return;
+                                }
                                 if (!s.googleAppsScriptUrl) {
                                   alert('Insira a URL antes de vincular.');
                                   return;
                                 }
-                                if (!s.googleAppsScriptUrl.trim().endsWith('/exec')) {
+                                if (!s.googleAppsScriptUrl.trim().includes('/exec')) {
                                   alert('❌ ATENÇÃO: Sua URL não termina em /exec. Você provavelmente colou o link do rascunho ou da edição. No Google Scripts, vá em Implantar > Nova Implantação e copie a URL correta.');
                                 }
                                 try {
-                                  const jsonpCallbackName = `google_script_cb_${Date.now()}`;
-                                  const scriptUrlJsonp = s.googleAppsScriptUrl.trim().includes('?') 
-                                    ? `${s.googleAppsScriptUrl.trim()}&action=getDadosDaAgenda&callback=${jsonpCallbackName}` 
-                                    : `${s.googleAppsScriptUrl.trim()}?action=getDadosDaAgenda&callback=${jsonpCallbackName}`;
+                                  const { updateSpecialistSchedule } = await import('./lib/firebase');
+                                  let scriptUrlRaw = s.googleAppsScriptUrl.trim();
+                                  if (!scriptUrlRaw.startsWith('http')) scriptUrlRaw = `https://${scriptUrlRaw}`;
+                                  
+                                  const jsonpCallbackName = `google_script_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+                                  const scriptUrlJsonp = scriptUrlRaw.includes('?') 
+                                    ? `${scriptUrlRaw}&action=getDadosDaAgenda&callback=${jsonpCallbackName}` 
+                                    : `${scriptUrlRaw}?action=getDadosDaAgenda&callback=${jsonpCallbackName}`;
                                   
                                   const script = document.createElement('script');
+                                  
+                                  let scriptHandled = false;
+                                  const cleanup = () => {
+                                    if (scriptHandled) return;
+                                    scriptHandled = true;
+                                    if (script.parentNode) script.parentNode.removeChild(script);
+                                    (window as any)[jsonpCallbackName] = () => {}; // Safe no-op instead of delete
+                                  };
+
                                   script.src = scriptUrlJsonp;
+                                  script.onerror = () => {
+                                    cleanup();
+                                    alert('❌ ERRO DE CONEXÃO: O Google não respondeu corretamente. Verifique se o Script foi publicado como "Qualquer pessoa" e se a URL termina em /exec.');
+                                  };
                                   
                                   const timeout = setTimeout(() => {
-                                    alert('❌ TIME-OUT: O Google Script demorou mais de 45 segundos para responder.\n\nISSO GERALMENTE ACONTECE POR:\n1. Link errado.\n2. Não foi publicado para "Qualquer pessoa".\n3. Planilha lenta.');
-                                    document.body.removeChild(script);
-                                    delete (window as any)[jsonpCallbackName];
+                                    alert('❌ TIME-OUT: O Google Script demorou muito para responder (45s). Verifique sua URL ou conexão.');
+                                    cleanup();
                                   }, 45000);
 
                                   (window as any)[jsonpCallbackName] = async (jsonpData: any) => {
                                     clearTimeout(timeout);
-                                    document.body.removeChild(script);
-                                    delete (window as any)[jsonpCallbackName];
+                                    cleanup();
                                     
+                                    const parsedSchedule = parseSheetScheduleData(jsonpData);
                                     const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
                                     const count = appointments.filter((r: any) => r && r.paciente && r.paciente !== '💚').length;
                                     
-                                    alert(`✅ CONECTADO!\nEncontramos ${count} agendamentos.\n\nAgora clique em "Salvar Informações" no final para confirmar.`);
+                                    alert(`✅ AGENDA SINCRONIZADA!\nEncontramos ${count} agendamentos ocupados.\n\nA agenda foi atualizada localmente e no banco de dados. Clique em "Salvar Informações" para garantir.`);
+                                    
+                                    // Atualiza Firestore IMEDIATAMENTE e localmente
+                                    await updateSpecialistSchedule(s.id, parsedSchedule);
                                     updateSpecialist(s.id, { 
                                       googleAppsScriptUrl: s.googleAppsScriptUrl.trim(),
-                                      schedule: {} 
+                                      schedule: parsedSchedule,
+                                      lastSync: new Date().toISOString()
                                     });
                                   };
 
                                   document.body.appendChild(script);
-                                } catch (e) {
-                                  alert('❌ ERRO CRÍTICO: Falha na conexão.');
+                                } catch (e: any) {
+                                  const msg = e.message || '';
+                                  if (msg.includes('resource-exhausted') || msg.includes('Quota exceeded')) {
+                                    alert('❌ ERRO DE COTA: O limite diário do banco de dados foi atingido. Tente novamente amanhã ou reduza as sincronizações.');
+                                  } else {
+                                    alert('❌ ERRO CRÍTICO: Falha na conexão.');
+                                  }
                                 }
                               }}
-                              className="px-8 bg-secondary text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:shadow-lg transition-all active:scale-95 whitespace-nowrap h-[46px]"
+                              className={`px-8 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 whitespace-nowrap h-[46px] ${
+                                isQuotaLocked 
+                                ? 'bg-outline-variant text-primary/30 cursor-not-allowed border border-outline' 
+                                : 'bg-secondary text-white hover:shadow-lg'
+                              }`}
                             >
-                              Vincular Agenda
+                              Sincronizar Agenda Firestore
                             </button>
                          </div>
 
@@ -3976,11 +4010,18 @@ function AdminScreen({
 
                         <div className="pt-6 flex justify-between items-center">
                           <button 
+                            disabled={isQuotaLocked}
                             onClick={() => handleSave(s.id)}
-                            className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${saveStatus[s.id] ? 'bg-green-500 text-white shadow-green-500/20' : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'}`}
+                            className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
+                              isQuotaLocked 
+                              ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
+                              : saveStatus[s.id] 
+                                ? 'bg-green-500 text-white shadow-green-500/20' 
+                                : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'
+                            }`}
                           >
-                            {saveStatus[s.id] ? <CheckCircle size={14} /> : <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin hidden group-active:block" />}
-                            {saveStatus[s.id] ? 'Salvo!' : 'Salvar Informações'}
+                            {isQuotaLocked ? <AlertTriangle size={14} /> : saveStatus[s.id] ? <CheckCircle size={14} /> : <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin hidden group-active:block" />}
+                            {isQuotaLocked ? 'Bloqueado' : saveStatus[s.id] ? 'Salvo!' : 'Salvar Informações'}
                           </button>
                           <button onClick={() => removeSpecialist(s.id)} className="p-4 text-accent hover:bg-accent/10 rounded-full transition-colors opacity-0 group-hover:opacity-100">
                             <Delete size={20} />
@@ -4014,11 +4055,18 @@ function AdminScreen({
                       </div>
                       <div className="pt-4 flex justify-between items-center">
                         <button 
+                          disabled={isQuotaLocked}
                           onClick={() => handleSaveApproach(a.id)}
-                          className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${saveStatus[`approach-${a.id}`] ? 'bg-green-500 text-white shadow-green-500/20' : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'}`}
+                          className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
+                            isQuotaLocked 
+                            ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
+                            : saveStatus[`approach-${a.id}`] 
+                              ? 'bg-green-500 text-white shadow-green-500/20' 
+                              : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'
+                          }`}
                         >
-                          {saveStatus[`approach-${a.id}`] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
-                          {saveStatus[`approach-${a.id}`] ? 'Salvo!' : 'Salvar Abordagem'}
+                          {isQuotaLocked ? <AlertTriangle size={14} /> : saveStatus[`approach-${a.id}`] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
+                          {isQuotaLocked ? 'Bloqueado' : saveStatus[`approach-${a.id}`] ? 'Salvo!' : 'Salvar Abordagem'}
                         </button>
                         <button onClick={() => removeApproach(a.id)} className="p-4 text-accent hover:bg-accent/10 rounded-full transition-colors opacity-0 group-hover:opacity-100">
                           <Delete size={20} />
