@@ -3956,45 +3956,69 @@ function AdminScreen({
                             </button>
                          </div>
 
-                         <div className="bg-secondary/5 p-5 rounded-2xl space-y-4">
-                           <div className="flex items-center gap-2 mb-2">
-                              <div className="w-6 h-6 bg-secondary text-white rounded-lg flex items-center justify-center">
-                                 <Info size={14} />
-                              </div>
-                              <p className="text-[10px] font-black uppercase text-secondary tracking-widest">
-                                 Instruções Rápidas de Integração
-                              </p>
+                         <div className="bg-gradient-to-br from-green-50 to-white p-8 rounded-[3rem] space-y-6 border-2 border-green-500/20 shadow-xl shadow-green-100/30 relative overflow-hidden">
+                           <div className="absolute top-0 right-0 p-4">
+                             <span className="bg-green-600 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">Configuração Obrigatória</span>
                            </div>
                            
-                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[11px] text-primary/80">
-                             <div className="space-y-2 p-4 bg-white/50 rounded-xl border border-outline/30">
-                               <p className="font-bold text-primary flex items-center gap-2">
-                                 <span className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-[8px]">1</span>
-                                 No Google Scripts:
+                           <div className="flex items-center gap-4 mb-2">
+                              <div className="w-10 h-10 bg-green-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-green-200 animate-pulse">
+                                 <Info size={20} />
+                              </div>
+                              <div>
+                                <p className="text-[12px] font-black uppercase text-green-800 tracking-[0.2em]">
+                                   Guia de Integração Instantânea
+                                </p>
+                                <p className="text-[10px] text-green-600/70 font-bold uppercase tracking-widest">Siga estes passos para sincronizar sua planilha</p>
+                              </div>
+                           </div>
+                           
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-[11px] text-green-900/80">
+                             <div className="space-y-3 p-6 bg-white rounded-[2rem] border-2 border-green-100 shadow-sm hover:border-green-300 transition-colors group">
+                               <p className="font-black text-green-700 flex items-center gap-2 uppercase text-[10px] tracking-widest">
+                                 <span className="w-8 h-8 bg-green-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">1</span>
+                                 No Google Scripts
                                </p>
-                               <p>Salve o código `.gs` e vá em <strong>Implantar &gt; Nova Implantação</strong>.</p>
-                             </div>
-                             <div className="space-y-2 p-4 bg-white/50 rounded-xl border border-outline/30">
-                               <p className="font-bold text-primary flex items-center gap-2">
-                                 <span className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-[8px]">2</span>
-                                 Configuração de Acesso:
+                               <p className="font-medium text-green-900/80 leading-relaxed">
+                                 Abra seu script, cole o código, salve e vá em: <br/>
+                                 <strong className="text-green-700">Implantar &gt; Nova Implantação</strong>.
                                </p>
-                               <p>Tipo <strong>"App da Web"</strong> e mudar para <strong>"Qualquer pessoa"</strong>.</p>
                              </div>
-                             <div className="sm:col-span-2 p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-4">
-                                <div className="text-amber-600 shrink-0">
-                                   <Info size={20} />
+                             
+                             <div className="space-y-3 p-6 bg-white rounded-[2rem] border-2 border-green-100 shadow-sm hover:border-green-300 transition-colors group">
+                               <p className="font-black text-green-700 flex items-center gap-2 uppercase text-[10px] tracking-widest">
+                                 <span className="w-8 h-8 bg-green-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">2</span>
+                                 Configuração de Acesso
+                               </p>
+                               <p className="font-medium text-green-900/80 leading-relaxed">
+                                 Selecione o tipo <strong>"App da Web"</strong> e mude quem pode acessar para <strong>"Qualquer pessoa"</strong>.
+                               </p>
+                             </div>
+
+                             <div className="sm:col-span-2 p-6 bg-amber-50 rounded-[2rem] border-2 border-amber-200/50 flex gap-5 shadow-inner">
+                                <div className="w-12 h-12 bg-amber-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-200">
+                                   <Info size={24} />
                                 </div>
-                                <div className="space-y-1">
-                                   <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">Dica de Ouro</p>
-                                   <p className="text-[11px] text-amber-700 leading-relaxed">
-                                     O link correto deve terminar em <strong>/exec</strong>.
+                                <div className="space-y-1.5 py-1">
+                                   <p className="text-[11px] font-black uppercase tracking-widest text-amber-800">Cuidado com o Link (URL)</p>
+                                   <p className="text-[12px] text-amber-700 font-bold leading-relaxed">
+                                     O link gerado na implantação <span className="underline decoration-2 underline-offset-4 decoration-amber-400">PRECISA</span> terminar exatamente com <span className="bg-amber-500 text-white px-2 py-0.5 rounded-lg text-[10px] font-black">/exec</span>.
                                    </p>
                                 </div>
                              </div>
                            </div>
-                           <div className="p-3 bg-secondary/10 rounded-xl border border-secondary/20 italic text-[10px] text-secondary font-bold">
-                             💡 Dica: O sistema buscará automaticamente as linhas que contêm o status "💚" (Livre).
+                           <div className="p-6 bg-green-700 rounded-[2rem] border-b-4 border-green-900 flex items-start gap-4 shadow-xl shadow-green-200/50">
+                             <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm text-white flex items-center justify-center shrink-0 border border-white/20">
+                               <Info size={24} />
+                             </div>
+                             <div className="space-y-1.5">
+                               <p className="text-[12px] font-black uppercase text-white tracking-[0.2em]">Padrão de Sincronização</p>
+                               <p className="text-[12px] text-green-50 font-bold leading-relaxed">
+                                 O sistema mapeia automaticamente horários marcados com <span className="bg-white/20 px-2 py-1 rounded-lg text-white font-black">💚</span> ou <span className="bg-white/20 px-2 py-1 rounded-lg text-white font-black">LIVRE</span>.
+                                 <br />
+                                 <span className="text-[10px] opacity-80 uppercase font-black text-white/90">Este é o único padrão aceito para visibilidade imediata.</span>
+                               </p>
+                             </div>
                            </div>
                          </div>
 
