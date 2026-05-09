@@ -1269,16 +1269,20 @@ function parseSheetScheduleData(jsonpData: any): Record<string, { periods: Recor
   if (Array.isArray(appointments) && appointments.length > 0) {
     appointments.forEach((row: any) => {
       try {
-        const status = (row.status || '').toString();
-        if (row && (status === '💚' || status.toLowerCase().includes('livre'))) {
+        const statusValue = (row.status || row.paciente || '').toString().toLowerCase();
+        const isAvailable = statusValue.includes('💚') || statusValue.includes('livre');
+        if (row && isAvailable) {
           const dayRaw = row.dia || row.day || '';
           const timeRaw = row.horario || row.time || '';
           
           if (dayRaw && timeRaw && typeof dayRaw === 'string' && typeof timeRaw === 'string') {
             const dayMap: Record<string, string> = {
-              'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'terca': 'Terça', 'terca-feira': 'Terça',
-              'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'quinta': 'Quinta', 'quinta-feira': 'Quinta',
-              'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sabado': 'Sábado', 'sábado': 'Sábado'
+              'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'seg': 'Segunda',
+              'terca': 'Terça', 'terca-feira': 'Terça', 'ter': 'Terça',
+              'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'qua': 'Quarta',
+              'quinta': 'Quinta', 'quinta-feira': 'Quinta', 'qui': 'Quinta',
+              'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sex': 'Sexta',
+              'sabado': 'Sábado', 'sábado': 'Sábado', 'sab': 'Sábado'
             };
             const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             const day = dayMap[dayKey] || (dayRaw.length > 0 ? (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase()) : '');
@@ -1420,9 +1424,12 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
                 if (dayRaw && timeRaw && isAvailable) {
                    const dayMap: Record<string, string> = {
-                    'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'terca': 'Terça', 'terca-feira': 'Terça',
-                    'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'quinta': 'Quinta', 'quinta-feira': 'Quinta',
-                    'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sabado': 'Sábado', 'sábado': 'Sábado'
+                    'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'seg': 'Segunda',
+                    'terca': 'Terça', 'terca-feira': 'Terça', 'ter': 'Terça',
+                    'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'qua': 'Quarta',
+                    'quinta': 'Quinta', 'quinta-feira': 'Quinta', 'qui': 'Quinta',
+                    'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sex': 'Sexta',
+                    'sabado': 'Sábado', 'sábado': 'Sábado', 'sab': 'Sábado'
                   };
                   const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                   const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
@@ -1565,10 +1572,10 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                   const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
                   window.open(whatsappUrl, '_blank');
                 }}
-                className="group flex items-center gap-2 text-secondary/40 hover:text-secondary transition-all text-[9px] font-black uppercase tracking-[0.1em] mt-1.5 w-fit"
+                className="group flex items-center gap-2 text-green-700 hover:text-green-800 transition-all text-[9px] font-black uppercase tracking-[0.1em] mt-1.5 w-fit"
               >
-                <div className="w-5 h-5 rounded-full bg-secondary/5 flex items-center justify-center group-hover:bg-secondary/10 transition-colors">
-                  <Share size={10} />
+                <div className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                  <Share size={10} className="text-green-700" />
                 </div>
                 Compartilhar
               </button>
@@ -3086,8 +3093,8 @@ function AdminScreen({
                   isQuotaLocked 
                   ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
                   : saveStatus['global'] 
-                    ? 'bg-green-500 text-white shadow-green-500/20' 
-                    : 'bg-primary text-white shadow-primary/20 hover:scale-105'
+                    ? 'bg-green-600 text-white shadow-green-600/20' 
+                    : 'bg-green-700 text-white shadow-green-700/20 hover:bg-green-800 hover:scale-105'
                 }`}
                 title="Publicar todas as alterações no site"
               >
@@ -3809,23 +3816,23 @@ function AdminScreen({
                     </div>
                     <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
                       <div className="space-y-1">
-                        <label className="text-[9px] font-black uppercase text-primary/40 ml-1">Nome Completo</label>
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Nome Completo</label>
                         <input className="w-full font-bold p-2 border-b border-outline focus:border-primary outline-none" value={s.name} onChange={e => updateSpecialist(s.id, { name: e.target.value })} placeholder="Nome" />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] font-black uppercase text-primary/40 ml-1">Especialidade Principal</label>
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Especialidade Principal</label>
                         <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={s.spec} onChange={e => updateSpecialist(s.id, { spec: e.target.value })} placeholder="Especialidade" />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] font-black uppercase text-primary/40 ml-1">Registro (CRP)</label>
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Registro (CRP)</label>
                         <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={s.crp} onChange={e => updateSpecialist(s.id, { crp: e.target.value })} placeholder="CRP" />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] font-black uppercase text-primary/40 ml-1">Tags (separadas por vírgula)</label>
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Tags (separadas por vírgula)</label>
                         <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={s.tags.join(', ')} onChange={e => updateSpecialist(s.id, { tags: e.target.value.split(',').map(t => t.trim()) })} placeholder="Tags" />
                       </div>
                       <div className="md:col-span-2 space-y-1">
-                        <label className="text-[9px] font-black uppercase text-primary/40 ml-1">Minibiografia</label>
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Minibiografia</label>
                         <textarea className="w-full p-2 border border-outline rounded-xl focus:border-primary outline-none" rows={2} value={s.desc} onChange={e => updateSpecialist(s.id, { desc: e.target.value })} placeholder="Descrição" />
                       </div>
                       
@@ -3939,10 +3946,10 @@ function AdminScreen({
                                   }
                                 }
                               }}
-                              className={`px-8 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 whitespace-nowrap h-[46px] ${
+                              className={`px-8 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 whitespace-nowrap h-[46px] border ${
                                 isQuotaLocked 
-                                ? 'bg-outline-variant text-primary/30 cursor-not-allowed border border-outline' 
-                                : 'bg-secondary text-white hover:shadow-lg'
+                                ? 'bg-outline-variant text-primary/30 cursor-not-allowed border-outline' 
+                                : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 hover:shadow-sm'
                               }`}
                             >
                               Sincronizar Agenda Firestore
@@ -3986,7 +3993,7 @@ function AdminScreen({
                                 </div>
                              </div>
                            </div>
-                           <div className="p-3 bg-white/50 rounded-xl border border-outline/10 italic text-[10px] text-primary/60">
+                           <div className="p-3 bg-secondary/10 rounded-xl border border-secondary/20 italic text-[10px] text-secondary font-bold">
                              💡 Dica: O sistema buscará automaticamente as linhas que contêm o status "💚" (Livre).
                            </div>
                          </div>
