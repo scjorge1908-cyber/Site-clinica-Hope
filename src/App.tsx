@@ -154,6 +154,47 @@ const getCroppedImg = async (
   return canvas.toDataURL('image/jpeg', 0.8);
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CORREÇÃO: Deriva os turnos reais de um especialista a partir da agenda salva.
+// Isso resolve o bug em que especialistas com agenda via Google Sheets não
+// apareciam no filtro de turno, pois o campo `shifts` (manual) não era
+// atualizado automaticamente quando a planilha era sincronizada.
+// ─────────────────────────────────────────────────────────────────────────────
+function getActiveShifts(spec: Specialist): Shift[] {
+  const schedule = spec.schedule;
+
+  // Sem agenda real → usa o campo manual como fallback
+  if (!schedule || Object.keys(schedule).length === 0) {
+    return spec.shifts || [];
+  }
+
+  const shiftSet = new Set<Shift>();
+
+  Object.values(schedule).forEach((dayData: any) => {
+    const periods = dayData?.periods;
+    if (!periods) return;
+
+    if (Array.isArray(periods)) {
+      // Formato SubleaseRoom: array de objetos com { id: 'manha' | 'tarde' | 'noite' }
+      periods.forEach((p: any) => {
+        if (p.id === 'manha') shiftSet.add(Shift.Morning);
+        else if (p.id === 'tarde') shiftSet.add(Shift.Afternoon);
+        else if (p.id === 'noite') shiftSet.add(Shift.Night);
+      });
+    } else {
+      // Formato Specialist: { [Shift.Morning]: ['08:00', ...], ... }
+      Object.entries(periods).forEach(([shift, times]: [string, any]) => {
+        if (Array.isArray(times) && times.length > 0) {
+          shiftSet.add(shift as Shift);
+        }
+      });
+    }
+  });
+
+  // Se a agenda existe mas nenhum turno foi identificado, cai no campo manual
+  return shiftSet.size > 0 ? Array.from(shiftSet) : (spec.shifts || []);
+}
+
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.Home);
   const [direction, setDirection] = useState<number>(0);
@@ -210,7 +251,6 @@ export default function App() {
         console.warn("Loading timeout reached. Showing available data.");
         setIsDataInitialized(true);
         setIsLoading(false);
-        // Ensure some data is set if still null
         setHomeSettings(prev => prev || DEFAULT_HOME_SETTINGS);
         setSpecialists(prev => prev || []);
         setApproaches(prev => prev || []);
@@ -279,7 +319,6 @@ export default function App() {
       roomsLoaded = true;
       checkAllLoaded();
     }, (error) => {
-      // Log only if it's not a permission error or if we're debugging
       if (error.message.toLowerCase().includes('permission')) {
         console.warn("Acesso restrito a salas (comum para não-admins):", error.message);
       } else {
@@ -290,7 +329,6 @@ export default function App() {
       checkAllLoaded();
     });
 
-    // Mark as loaded but actual listen is in separate effect
     bookingsLoaded = true;
     checkAllLoaded();
 
@@ -783,7 +821,6 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
       return;
     }
     
-    // Garantir que o índice está dentro dos limites se a lista mudar
     setIndex(prev => (prev >= specialists.length ? 0 : prev));
 
     const timer = setInterval(() => {
@@ -791,7 +828,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
         if (specialists.length === 0) return 0;
         return (prev + 1) % specialists.length;
       });
-    }, 10000); // 10 segundos conforme solicitado
+    }, 10000);
     return () => clearInterval(timer);
   }, [specialists.length]);
 
@@ -1324,7 +1361,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(spec.schedule || null);
   
-  // Sincroniza a agenda se o fallback manual for alterado no Admin
   useEffect(() => {
     if (!spec.googleAppsScriptUrl && !spec.googleSheetsId) {
       setSheetSchedule(spec.schedule || null);
@@ -1346,7 +1382,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
           const lock = localStorage.getItem('firestore_quota_exhausted');
           if (lock) {
             const lockTime = parseInt(lock);
-            if (Date.now() - lockTime < 4 * 60 * 60 * 1000) return; // Silent skip for 4h if quota locked
+            if (Date.now() - lockTime < 4 * 60 * 60 * 1000) return;
           }
         } catch (e) {
           // Ignore storage errors here
@@ -1372,7 +1408,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                 if (scriptResolved) return;
                 scriptResolved = true;
                 if (script.parentNode) script.parentNode.removeChild(script);
-                (window as any)[callbackName] = () => {}; // Safe no-op instead of delete
+                (window as any)[callbackName] = () => {};
               };
 
               script.src = `${jsonpUrl}&callback=${callbackName}`;
@@ -1402,7 +1438,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
             }
           }
 
-          // CSV Fallback if no script data was found but we have a sheet ID
+          // CSV Fallback
           if (!foundData && spec.googleSheetsId) {
             let sheetId = spec.googleSheetsId;
             if (sheetId.includes('/d/')) {
@@ -1460,7 +1496,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
       };
 
       fetchSheetData();
-      const interval = setInterval(fetchSheetData, 120000); // 2 minutos para um feeling de tempo real melhor
+      const interval = setInterval(fetchSheetData, 120000);
       
       const handleForceSync = (e: any) => {
         if (e.detail?.specId === spec.id) {
@@ -1474,26 +1510,17 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
         window.removeEventListener('force-sheet-sync', handleForceSync);
       };
     }
-  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.id]); // spec.name e spec.schedule removidos para evitar loop
+  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.id]);
 
-  // Memoize the active schedule to use (prefer sheet if found data, otherwise manual)
   const activeSchedule = useMemo(() => {
     if (sheetSchedule && Object.keys(sheetSchedule).length > 0) return sheetSchedule;
     return spec.schedule || null;
   }, [sheetSchedule, spec.schedule]);
 
   const hasAnySchedule = activeSchedule && Object.keys(activeSchedule).length > 0;
-  
-  // Sincronização concluída (mesmo que tenha falhado silenciosamente)
   const isSyncComplete = !isLoadingSheet;
-  
-  // Agenda está "cheia" quando tentamos buscar e não encontramos nada (e não há agenda manual)
   const isAgendaFull = isSyncComplete && !hasAnySchedule && (spec.googleAppsScriptUrl || spec.googleSheetsId);
-  
-  // Caso haja erro crítico (não cota), mostramos algo genérico. Se for cota, ignoramos o erro visual.
   const showAgendaSection = hasAnySchedule || isAgendaFull;
-  
-  // No modo Admin, mostramos a seção para depuração
   const displayAgenda = isAdminUnlocked ? (isSyncComplete || !!sheetError) : showAgendaSection;
 
   const canBook = selectedDay && selectedTime && selectedPlan;
@@ -1568,7 +1595,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                   }
 
                   const message = `Ola veja a disponibilidade: ${spec.name}. Veja horários disponíveis: ${scheduleSummary || 'sob consulta'}. Caso não encontre um horário ideal voce pode ficar na lista de espera veja o site: www.clinicahopebrasil.com.br`;
-                  
                   const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
                   window.open(whatsappUrl, '_blank');
                 }}
@@ -1876,12 +1902,8 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
           const offset = 100;
           const elementPosition = element.getBoundingClientRect().top;
           const offsetPosition = (elementPosition || 0) + window.pageYOffset - offset;
-          
-          window.scrollTo({
-            top: offsetPosition,
-            behavior: 'smooth'
-          });
-        }, 300); // Wait for transition
+          window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
+        }, 300);
       }
     } else {
       window.scrollTo(0, 0);
@@ -1893,20 +1915,33 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [step, setStep] = useState<number>(1);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CORREÇÃO APLICADA: usa getActiveShifts() em vez de s.shifts diretamente.
+  // Isso garante que especialistas com agenda via Google Sheets sejam
+  // incluídos corretamente ao filtrar por turno (manhã, tarde ou noite).
+  // ─────────────────────────────────────────────────────────────────────────
   const { exactMatches, alternativeMatches } = useMemo(() => {
     const perfect = specialists.filter(s => {
       const matchAgeGroup = !selectedAge || s.ageGroups.includes(selectedAge);
-      const matchSpecificAge = selectedSpecificAges.length === 0 || 
+      const matchSpecificAge = selectedSpecificAges.length === 0 ||
         (s.attendedAges && selectedSpecificAges.some(age => s.attendedAges?.includes(age)));
-      const matchShift = selectedShifts.length === 0 || selectedShifts.some(shift => s.shifts.includes(shift));
+
+      const activeShifts = getActiveShifts(s);
+      const matchShift = selectedShifts.length === 0 ||
+        selectedShifts.some(shift => activeShifts.includes(shift));
+
       return matchAgeGroup && matchSpecificAge && matchShift;
     });
 
     const alternatives = perfect.length === 0 ? specialists.filter(s => {
       const matchAgeGroup = !selectedAge || s.ageGroups.includes(selectedAge);
-      const matchSpecificAge = selectedSpecificAges.length === 0 || 
+      const matchSpecificAge = selectedSpecificAges.length === 0 ||
         (s.attendedAges && selectedSpecificAges.some(age => s.attendedAges?.includes(age)));
-      const hasDifferentShift = selectedShifts.length > 0 && !selectedShifts.some(shift => s.shifts.includes(shift));
+
+      const activeShifts = getActiveShifts(s);
+      const hasDifferentShift = selectedShifts.length > 0 &&
+        !selectedShifts.some(shift => activeShifts.includes(shift));
+
       return matchAgeGroup && matchSpecificAge && hasDifferentShift;
     }) : [];
 
@@ -2377,29 +2412,21 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
     setSelectedDay(null);
   };
 
-  // Se uma sala estiver selecionada, mostramos a visão de tela cheia
   if (selectedRoom) {
     return (
       <Layout activeScreen={Screen.Sublocacao} onNavigate={onNavigate} settings={settings}>
         <div className="min-h-screen bg-background animate-fade-in pb-20 pt-28">
-          {/* Barra de Navegação Superior Fixa Interna */}
           <div className="sticky top-20 z-40 bg-white/95 backdrop-blur-xl border-b border-outline/10 px-6 py-4 flex justify-between items-center shadow-md -mt-4 mb-8">
             <button 
-              onClick={() => {
-                setSelectedRoom(null);
-                setCart([]);
-                setSelectedDay(null);
-              }}
+              onClick={() => { setSelectedRoom(null); setCart([]); setSelectedDay(null); }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container text-primary font-black uppercase text-[10px] tracking-widest hover:bg-primary hover:text-white transition-all group"
             >
               <ArrowBack size={14} className="group-hover:-translate-x-1 transition-transform" />
               Ver Todas as Salas
             </button>
-            
             <div className="hidden lg:flex items-center gap-4">
                <h2 className="text-lg font-black text-primary italic font-serif tracking-tighter truncate max-w-xs">{selectedRoom.name}</h2>
             </div>
-            
             <div className="flex items-center gap-4">
               <div className="hidden md:flex flex-col items-end">
                 <span className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">Total:</span>
@@ -2417,21 +2444,15 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
 
           <div className="max-w-[1600px] mx-auto px-6 md:px-8">
             <div className="flex flex-col lg:flex-row gap-8">
-              
-              {/* Esquerda: Fotos e Características */}
               <div className="lg:w-1/4 space-y-6">
                 <div className="space-y-4">
                   <div className="aspect-[4/3] rounded-[2rem] overflow-hidden border border-outline/10 modern-shadow">
                     <img src={selectedRoom.photos[0]} className="w-full h-full object-cover" />
                   </div>
-                  
                   <div className="space-y-2">
                     <span className="text-[9px] font-black text-secondary uppercase tracking-[0.2em] leading-none">Ambiente Clínico</span>
-                    <p className="text-on-surface-variant font-medium leading-normal italic text-sm opacity-80">
-                      "{selectedRoom.description}"
-                    </p>
+                    <p className="text-on-surface-variant font-medium leading-normal italic text-sm opacity-80">"{selectedRoom.description}"</p>
                   </div>
-
                   <div className="flex flex-wrap gap-1.5">
                     {selectedRoom.amenities.map(amenity => (
                       <span key={amenity} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 text-primary text-[9px] font-black uppercase tracking-widest rounded-lg border border-primary/5 transition-colors hover:bg-primary/10">
@@ -2447,7 +2468,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                     ))}
                   </div>
                 </div>
-
                 <div className="bg-surface-container/40 border border-outline/5 p-6 rounded-[2rem] space-y-4">
                   <div className="flex items-center gap-2 text-primary opacity-60">
                     <Info size={16} />
@@ -2470,7 +2490,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                 </div>
               </div>
 
-              {/* Direita: Seleção de Datas e Horários */}
               <div className="lg:w-3/4 space-y-6">
                 <div className="bg-white rounded-[3rem] border border-outline-alt/20 modern-shadow p-6 md:p-10 space-y-8">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
@@ -2483,7 +2502,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                         <p className="text-[9px] font-bold text-on-surface-variant/40 uppercase tracking-widest mt-1">Selecione o dia da semana</p>
                       </div>
                     </div>
-
                     <div className="flex flex-wrap gap-2">
                       {Object.keys(selectedRoom.schedule).map(day => (
                         <button
@@ -2525,23 +2543,15 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                                  </div>
                                </div>
                              </div>
-
                              <div className="grid grid-cols-4 gap-2">
                                {period.slots.map(slot => {
                                  const isSelected = cart.find(i => i.type === 'hour' && i.periodId === period.id && i.slotId === slot.id);
                                  const isBlockSelected = cart.find(i => i.type === 'block' && i.periodId === period.id);
-                                 
                                  return (
                                    <button
                                      key={slot.id}
                                      disabled={!slot.available || !!isBlockSelected}
-                                     onClick={() => toggleItem({
-                                       type: 'hour',
-                                       periodId: period.id,
-                                       slotId: slot.id,
-                                       label: `${slot.start}`,
-                                       price: period.priceHour
-                                     })}
+                                     onClick={() => toggleItem({ type: 'hour', periodId: period.id, slotId: slot.id, label: `${slot.start}`, price: period.priceHour })}
                                      className={`relative flex flex-col items-center justify-center py-2.5 rounded-lg border transition-all duration-300 ${
                                        isBlockSelected 
                                          ? 'bg-secondary/5 border-secondary/10 text-secondary/30 grayscale opacity-40 scale-95 cursor-default' 
@@ -2557,14 +2567,8 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                                })}
                              </div>
                            </div>
-
                            <button
-                             onClick={() => toggleItem({
-                               type: 'block',
-                               periodId: period.id,
-                               label: `Bloco ${period.id === 'manha' ? 'Manhã' : period.id === 'tarde' ? 'Tarde' : 'Noite'}`,
-                               price: period.priceBlock
-                             })}
+                             onClick={() => toggleItem({ type: 'block', periodId: period.id, label: `Bloco ${period.id === 'manha' ? 'Manhã' : period.id === 'tarde' ? 'Tarde' : 'Noite'}`, price: period.priceBlock })}
                              className={`w-full py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
                                cart.find(i => i.type === 'block' && i.periodId === period.id)
                                 ? 'bg-secondary text-white border-secondary shadow-md'
@@ -2584,38 +2588,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                       <p className="text-[11px] font-medium text-on-surface-variant/50 uppercase tracking-widest italic">Selecione um dia acima</p>
                     </div>
                   )}
-                </div>
-
-                {/* Tabela de Valores - Conforme solicitado */}
-                <div className="bg-white/50 backdrop-blur rounded-[2.5rem] border border-outline-alt/10 p-6 flex flex-col md:flex-row gap-6 items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center shrink-0">
-                      <LocalOffer size={18} className="text-primary" />
-                    </div>
-                    <div>
-                      <h5 className="text-sm font-black text-primary italic font-serif leading-none mb-1">Investimento</h5>
-                      <p className="text-[8px] font-bold text-on-surface-variant/40 uppercase tracking-widest">Valores fixos</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-4 items-center">
-                    <div className="space-y-0.5">
-                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Hora Avulsa</p>
-                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 31,90</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Bloco Manhã</p>
-                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 550,00</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Bloco Tarde</p>
-                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 550,00</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Bloco Noite</p>
-                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 420,00</p>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -2673,13 +2645,11 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                       Disponível para Reserva
                     </div>
                   </div>
-
                   <div className="p-10 flex-grow space-y-8">
                     <div className="space-y-4">
                       <h3 className="text-3xl font-bold text-primary tracking-tight leading-none italic font-serif">{room.name}</h3>
                       <p className="text-sm text-on-surface-variant/70 font-medium line-clamp-3 italic leading-relaxed">"{room.description}"</p>
                     </div>
-
                     <div className="flex flex-wrap gap-2">
                       {room.amenities.slice(0, 4).map(amenity => (
                         <span key={amenity} className="inline-flex items-center gap-2 px-4 py-2 bg-surface-container text-primary text-[10px] font-black uppercase tracking-widest rounded-xl border border-outline/10">
@@ -2689,7 +2659,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                         </span>
                       ))}
                     </div>
-
                     <div className="space-y-4 pt-8 border-t border-outline/10">
                       <div className="flex items-center gap-3 text-secondary">
                         <CalendarMonth size={18} />
@@ -2703,7 +2672,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                         ))}
                       </div>
                     </div>
-
                     <button 
                       onClick={() => setSelectedRoom(room)}
                       className="w-full py-6 bg-primary text-white rounded-[2rem] font-black text-sm hover:shadow-2xl hover:shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-4 group"
@@ -2788,12 +2756,7 @@ function AdminScreen({
       schedule[day] = {
         periods: [
           {
-            id: 'manha',
-            start: '07:00',
-            end: '12:00',
-            available: true,
-            priceBlock: 550,
-            priceHour: 31.9,
+            id: 'manha', start: '07:00', end: '12:00', available: true, priceBlock: 550, priceHour: 31.9,
             slots: [
               { id: 'h7', start: '07:00', end: '08:00', available: true },
               { id: 'h8', start: '08:00', end: '09:00', available: true },
@@ -2803,12 +2766,7 @@ function AdminScreen({
             ]
           },
           {
-            id: 'tarde',
-            start: '13:00',
-            end: '17:00',
-            available: true,
-            priceBlock: 550,
-            priceHour: 31.9,
+            id: 'tarde', start: '13:00', end: '17:00', available: true, priceBlock: 550, priceHour: 31.9,
             slots: [
               { id: 'h13', start: '13:00', end: '14:00', available: true },
               { id: 'h14', start: '14:00', end: '15:00', available: true },
@@ -2817,12 +2775,7 @@ function AdminScreen({
             ]
           },
           {
-            id: 'noite',
-            start: '18:00',
-            end: '21:00',
-            available: true,
-            priceBlock: 420,
-            priceHour: 31.9,
+            id: 'noite', start: '18:00', end: '21:00', available: true, priceBlock: 420, priceHour: 31.9,
             slots: [
               { id: 'h18', start: '18:00', end: '19:00', available: true },
               { id: 'h19', start: '19:00', end: '20:00', available: true },
@@ -3130,440 +3083,6 @@ function AdminScreen({
         </div>
 
         <div className="bg-white rounded-[2.5rem] modern-shadow border border-outline p-10">
-          {/* Sublocação ocultada temporariamente conforme pedido */}
-          {false && activeTab === 'reservas_sublocacao' && (
-            <div className="space-y-8">
-              <div className="bg-primary/5 p-8 rounded-3xl border border-primary/10">
-                <h2 className="text-3xl font-black text-primary tracking-tight">Reservas de Sublocação</h2>
-                <p className="text-on-surface-variant font-medium">Visualize e confirme as solicitações de reserva de salas.</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4">
-                {subleaseBookings.length === 0 ? (
-                  <div className="text-center py-20 bg-surface-container rounded-3xl border border-dashed border-outline">
-                    <Calendar size={48} className="mx-auto text-on-surface-variant/20 mb-4" />
-                    <p className="text-on-surface-variant font-medium">Nenhuma reserva encontrada.</p>
-                  </div>
-                ) : (
-                  subleaseBookings.sort((a, b) => b.createdAt - a.createdAt).map(booking => (
-                    <div key={booking.id} className="bg-surface-container rounded-2xl border border-outline p-6 flex flex-col md:flex-row justify-between items-center gap-6">
-                      <div className="space-y-1 text-center md:text-left">
-                        <div className="flex items-center gap-2 justify-center md:justify-start">
-                          <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${
-                            booking.status === 'confirmed' ? 'bg-secondary/10 text-secondary' : 
-                            booking.status === 'cancelled' ? 'bg-accent/10 text-accent' : 
-                            'bg-primary/10 text-primary'
-                          }`}>
-                            {booking.status}
-                          </span>
-                          <p className="text-xs font-bold text-primary">{booking.userName}</p>
-                        </div>
-                        <p className="text-[10px] text-on-surface-variant">{booking.userEmail}</p>
-                        <p className="text-sm font-bold text-secondary">
-                          {subleaseRooms.find(r => r.id === booking.roomId)?.name || 'Sala Desconhecida'} - {booking.day} ({booking.periodLabel})
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2">
-                        {booking.status === 'pending' && (
-                          <>
-                            <button 
-                              onClick={() => onUpdateSubleaseBookingStatus(booking.id, 'confirmed')}
-                              className="p-3 bg-secondary text-white rounded-xl hover:scale-105 transition-all shadow-md"
-                            >
-                              <CheckCircle size={20} />
-                            </button>
-                            <button 
-                              onClick={() => onUpdateSubleaseBookingStatus(booking.id, 'cancelled')}
-                              className="p-3 bg-accent/10 text-accent rounded-xl hover:scale-105 transition-all"
-                            >
-                              <Close size={20} />
-                            </button>
-                          </>
-                        )}
-                        {booking.status !== 'pending' && (
-                          <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40">
-                            Processado
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Sublocação ocultada temporariamente conforme pedido */}
-          {false && activeTab === 'sublocacao' && (
-            <div className="space-y-12">
-              <div className="flex flex-col md:flex-row justify-between items-center gap-6 bg-primary/5 p-10 rounded-3xl border border-primary/10 shadow-sm">
-                <div>
-                  <h2 className="text-4xl font-black text-primary tracking-tight">Gerenciar Sublocação</h2>
-                  <p className="text-on-surface-variant font-medium mt-2">Personalize suas salas, defina comodidades e controle os horários de reserva.</p>
-                </div>
-                <button 
-                  onClick={addRoom}
-                  className="px-10 py-5 bg-primary text-white rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-xl active:scale-95 shrink-0"
-                >
-                  <Add size={24} />
-                  Adicionar Nova Sala
-                </button>
-              </div>
-
-              <div className="space-y-12">
-                {localSubleaseRooms.map(room => (
-                  <div key={room.id} className="bg-white rounded-[3rem] border border-outline-alt/50 p-8 md:p-12 modern-shadow flex flex-col lg:flex-row gap-12 group">
-                    {/* Visual Editor Section */}
-                    <div className="lg:w-2/3 space-y-10">
-                      <div className="flex justify-between items-center border-b border-outline/30 pb-6">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-black uppercase text-primary/40 tracking-[0.2em]">Configurações da Unidade</span>
-                          <input 
-                            className="text-3xl font-black text-primary bg-transparent outline-none border-none placeholder:text-outline focus:ring-0 w-full" 
-                            value={room.name} 
-                            onChange={e => updateRoom(room.id, { name: e.target.value })} 
-                            placeholder="Ex: Consultório Premium 302" 
-                          />
-                        </div>
-                        <div className="flex gap-3">
-                          <button 
-                            onClick={async () => {
-                              setSaveStatus({ ...saveStatus, [`room-${room.id}`]: true });
-                              await onUpdateSubleaseRooms(localSubleaseRooms);
-                              setTimeout(() => setSaveStatus(prev => ({ ...prev, [`room-${room.id}`]: false })), 2000);
-                            }}
-                            className={`px-6 py-3 rounded-2xl font-bold text-sm shadow-lg transition-all flex items-center gap-2 ${saveStatus[`room-${room.id}`] ? 'bg-secondary text-white' : 'bg-primary text-white hover:shadow-primary/20'}`}
-                          >
-                            {saveStatus[`room-${room.id}`] ? <CheckCircle size={18} /> : <AssignmentTurnedIn size={18} />}
-                            {saveStatus[`room-${room.id}`] ? 'Salvo!' : 'Salvar Alterações'}
-                          </button>
-                          <button onClick={() => removeRoom(room.id)} className="p-4 bg-accent/5 text-accent rounded-2xl hover:bg-accent hover:text-white transition-all">
-                            <Delete size={20} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                        <div className="space-y-6">
-                          <div className="space-y-4">
-                            <label className="text-[10px] font-black uppercase text-primary/60 tracking-widest block">Comodidades (Estilo Digital Dynamic)</label>
-                            <div className="grid grid-cols-2 gap-3">
-                              {[
-                                { label: 'WiFi', icon: <Wifi size={14} className="animate-pulse" /> },
-                                { label: 'Café', icon: <ConciergeBell size={14} /> },
-                                { label: 'Sala de espera', icon: <Users size={14} /> },
-                                { label: 'Ar-condicionado', icon: <Snowflake size={14} className="animate-spin-slow" /> },
-                                { label: 'Banheiro', icon: <Accessibility size={14} /> },
-                                { label: 'Rádio', icon: <Volume2 size={14} /> },
-                                { label: 'Portaria 24h', icon: <ShieldCheck size={14} /> },
-                              ].map(option => {
-                                const isActive = room.amenities.includes(option.label);
-                                return (
-                                  <button
-                                    key={option.label}
-                                    onClick={() => {
-                                      const newAmenities = isActive 
-                                        ? room.amenities.filter(a => a !== option.label)
-                                        : [...room.amenities, option.label];
-                                      updateRoom(room.id, { amenities: newAmenities });
-                                    }}
-                                    className={`relative flex items-center justify-center gap-3 px-4 py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-widest transition-all border overflow-hidden group ${
-                                      isActive 
-                                        ? 'bg-primary text-white border-primary shadow-xl shadow-primary/20 scale-105' 
-                                        : 'bg-surface-container text-on-surface-variant border-outline/20 hover:border-primary/40'
-                                    }`}
-                                  >
-                                    <div className={`shrink-0 ${isActive ? 'scale-125 transition-transform' : ''}`}>
-                                      {option.icon}
-                                    </div>
-                                    {option.label}
-                                    {isActive && (
-                                       <div className="absolute top-0 right-0 p-1">
-                                          <div className="w-1.5 h-1.5 bg-secondary rounded-full animate-ping" />
-                                       </div>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <p className="text-[9px] font-bold text-on-surface-variant/40 italic mt-2">
-                               * Ícones com animações suaves simulam o efeito dinâmico solicitado.
-                            </p>
-                          </div>
-
-                          <div className="space-y-4">
-                            <label className="text-[10px] font-black uppercase text-primary/60 tracking-widest block">Descrição do Ambiente</label>
-                            <textarea 
-                              className="w-full p-5 bg-surface-container rounded-3xl border border-outline/20 focus:border-primary outline-none text-sm leading-relaxed" 
-                              rows={4} 
-                              value={room.description} 
-                              onChange={e => updateRoom(room.id, { description: e.target.value })} 
-                              placeholder="Fale sobre a decoração, iluminação e o público ideal..." 
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-8">
-                          <label className="text-[10px] font-black uppercase text-primary/60 tracking-widest block">Galeria de Fotos (Destaque & Detalhes)</label>
-                          <div className="bg-primary/5 p-6 rounded-[2rem] border border-primary/10 mb-6">
-                            <p className="text-[10px] font-black text-primary uppercase tracking-widest leading-loose">
-                              <span className="text-secondary shrink-0">Tip:</span> Para melhores resultados use fotos horizontais 4:3 (ex: 1200x900px). O editor permite ajustar o enquadramento ideal.
-                            </p>
-                          </div>
-                          {[0, 1].map(index => (
-                            <div key={index} className="flex gap-6 items-center bg-white p-6 rounded-3xl border border-outline-alt/30 soft-shadow">
-                              <div className="w-32 h-24 rounded-2xl bg-surface-container border border-outline/20 overflow-hidden shrink-0 shadow-inner group-hover:scale-105 transition-transform">
-                                <img src={room.photos[index]} className="w-full h-full object-cover" />
-                              </div>
-                              <div className="flex-grow space-y-3">
-                                <div className="flex justify-between items-center">
-                                  <p className="text-[10px] font-black text-primary uppercase tracking-widest">
-                                    {index === 0 ? 'Foto Principal (Banner)' : 'Foto Secundária (Interior)'}
-                                  </p>
-                                  <span className="text-[9px] font-bold text-on-surface-variant/40 italic">Tam. quadro: 400x300 recomendados</span>
-                                </div>
-                                <div className="flex gap-2">
-                                  <label className="cursor-pointer flex-grow text-center px-4 py-3 bg-primary/5 border border-primary/10 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary hover:text-white transition-all shadow-sm">
-                                    AJUSTAR ZOOM E CORTE
-                                    <input 
-                                      type="file" 
-                                      className="hidden" 
-                                      accept="image/*"
-                                      onChange={(e) => {
-                                        if (e.target.files?.[0]) {
-                                          const reader = new FileReader();
-                                          reader.onload = () => {
-                                            setCropImage(reader.result as string);
-                                            setCroppingItemId(room.id);
-                                            setCroppingType(index === 0 ? 'sublease_1' : 'sublease_2');
-                                          };
-                                          reader.readAsDataURL(e.target.files[0]);
-                                        }
-                                      }} 
-                                    />
-                                  </label>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Schedule Editor Section */}
-                      <div className="space-y-6 pt-6 border-t border-outline/30">
-                        <div className="flex items-center gap-3">
-                          <CalendarMonth size={24} className="text-secondary" />
-                          <h4 className="text-lg font-black text-primary uppercase tracking-tighter italic font-serif">Disponibilidade Clínica</h4>
-                        </div>
-                        <div className="bg-surface-container rounded-3xl p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                          {['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(day => {
-                            const dayData = room.schedule[day] || { periods: [] };
-                            return (
-                              <div key={day} className="space-y-4 bg-white p-5 rounded-2xl border border-outline/10 shadow-sm">
-                                <div className="flex justify-between items-center">
-                                  <span className="text-xs font-black text-primary uppercase">{day}</span>
-                                  <div className="h-1 w-8 bg-secondary/20 rounded-full" />
-                                </div>
-                                <div className="space-y-2">
-                                  {dayData.periods.map(period => (
-                                    <div key={period.id} className="space-y-4 p-4 bg-primary/5 rounded-2xl border border-primary/10">
-                                      <div className="flex justify-between items-center">
-                                        <div className="flex flex-col">
-                                          <span className="text-[10px] font-black uppercase text-primary leading-tight">
-                                            {period.id === 'manha' ? 'Período Manhã' : period.id === 'tarde' ? 'Período Tarde' : 'Período Noite'}
-                                          </span>
-                                          <span className="text-[8px] font-medium text-on-surface-variant italic">
-                                            {period.start} - {period.end}
-                                          </span>
-                                        </div>
-                                        <button 
-                                          onClick={() => {
-                                            const newSchedule = { ...room.schedule };
-                                            const dayObj = { ...dayData };
-                                            dayObj.periods = dayObj.periods.map(p => 
-                                              p.id === period.id ? { ...p, available: !p.available } : p
-                                            );
-                                            newSchedule[day] = dayObj;
-                                            updateRoom(room.id, { schedule: newSchedule });
-                                          }}
-                                          className={`px-3 py-1 rounded-full text-[8px] font-black uppercase transition-all ${
-                                            period.available ? 'bg-secondary text-white' : 'bg-outline-alt text-white opacity-40'
-                                          }`}
-                                        >
-                                          {period.available ? 'Ativo' : 'Inativo'}
-                                        </button>
-                                      </div>
-                                      
-                                      <div className="flex flex-wrap gap-1.5 pt-2">
-                                        {period.slots.map(slot => (
-                                          <button
-                                            key={slot.id}
-                                            onClick={() => {
-                                              const newSchedule = { ...room.schedule };
-                                              const dayObj = { ...dayData };
-                                              dayObj.periods = dayObj.periods.map(p => {
-                                                if (p.id === period.id) {
-                                                  const newSlots = p.slots.map(s => 
-                                                    s.id === slot.id ? { ...s, available: !s.available } : s
-                                                  );
-                                                  return { ...p, slots: newSlots };
-                                                }
-                                                return p;
-                                              });
-                                              newSchedule[day] = dayObj;
-                                              updateRoom(room.id, { schedule: newSchedule });
-                                            }}
-                                            className={`px-2 py-1 rounded-lg text-[8px] font-bold border transition-all ${
-                                              slot.available 
-                                                ? 'border-primary/20 bg-white text-primary' 
-                                                : 'border-outline/10 bg-surface-container-highest text-on-surface-variant/30 opacity-40'
-                                            }`}
-                                          >
-                                            {slot.start}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ))}
-                                  {dayData.periods.length === 0 && (
-                                    <button 
-                                      onClick={() => {
-                                        const newSchedule = { ...room.schedule };
-                                        newSchedule[day] = {
-                                          periods: [
-                                            {
-                                              id: 'manha',
-                                              start: '07:00',
-                                              end: '12:00',
-                                              available: true,
-                                              priceBlock: 550,
-                                              priceHour: 31.9,
-                                              slots: [
-                                                { id: 'h7', start: '07:00', end: '08:00', available: true },
-                                                { id: 'h8', start: '08:00', end: '09:00', available: true },
-                                                { id: 'h9', start: '09:00', end: '10:00', available: true },
-                                                { id: 'h10', start: '10:00', end: '11:00', available: true },
-                                                { id: 'h11', start: '11:00', end: '12:00', available: true },
-                                              ]
-                                            },
-                                            {
-                                              id: 'tarde',
-                                              start: '13:00',
-                                              end: '17:00',
-                                              available: true,
-                                              priceBlock: 550,
-                                              priceHour: 31.9,
-                                              slots: [
-                                                { id: 'h13', start: '13:00', end: '14:00', available: true },
-                                                { id: 'h14', start: '14:00', end: '15:00', available: true },
-                                                { id: 'h15', start: '15:00', end: '16:00', available: true },
-                                                { id: 'h16', start: '16:00', end: '17:00', available: true },
-                                              ]
-                                            },
-                                            {
-                                              id: 'noite',
-                                              start: '18:00',
-                                              end: '21:00',
-                                              available: true,
-                                              priceBlock: 420,
-                                              priceHour: 31.9,
-                                              slots: [
-                                                { id: 'h18', start: '18:00', end: '19:00', available: true },
-                                                { id: 'h19', start: '19:00', end: '20:00', available: true },
-                                                { id: 'h20', start: '18:00', end: '21:00', available: true }, // Adjusted to match user's night range if needed
-                                              ]
-                                            }
-                                          ]
-                                        };
-                                        updateRoom(room.id, { schedule: newSchedule });
-                                      }}
-                                      className="w-full py-2 border border-dashed border-outline/50 rounded-xl text-[9px] font-black text-primary/40 hover:text-primary hover:border-primary transition-all uppercase"
-                                    >
-                                      Habilitar Dia
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Preview Section - What users will see */}
-                    <div className="lg:w-1/3">
-                      <div className="sticky top-12 space-y-6">
-                        <div className="flex items-center gap-2">
-                          <Public size={20} className="text-secondary" />
-                          <span className="text-[10px] font-black uppercase text-secondary/60 tracking-widest">Visualização em Tempo Real</span>
-                        </div>
-                        
-                        <div className="bg-background rounded-[2.5rem] overflow-hidden modern-shadow border border-outline-alt/30 scale-95 origin-top lg:scale-100">
-                          <div className="h-48 relative overflow-hidden">
-                            <img src={room.photos[0]} className="w-full h-full object-cover" />
-                            <div className="absolute top-4 left-4 bg-white/95 backdrop-blur px-3 py-1 rounded-full text-[9px] font-bold text-primary border border-white">
-                              DISPONÍVEL AGORA
-                            </div>
-                          </div>
-                          <div className="p-6 space-y-4 bg-white">
-                            <div>
-                              <h3 className="text-xl font-bold text-primary">{room.name || 'Nova Sala de Atendimento'}</h3>
-                              <p className="text-xs text-on-surface-variant font-medium mt-1 line-clamp-2 italic opacity-80">
-                                "{room.description || 'Breve descrição da sala...'}"
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 border-y border-outline/10 py-3">
-                              {room.amenities.map(amenity => (
-                                <span key={amenity} className="inline-flex items-center gap-1 px-2 py-1 bg-primary/5 text-primary text-[8px] font-black uppercase tracking-tighter rounded-lg border border-primary/10">
-                                  {amenity === 'WiFi' && <Wifi size={10} />}
-                                  {amenity === 'Café' && <ConciergeBell size={10} />}
-                                  {amenity === 'Ar-condicionado' && <Snowflake size={10} />}
-                                  {amenity === 'Sala de espera' && <Users size={10} />}
-                                  {amenity === 'Banheiro' && <Accessibility size={10} />}
-                                  {amenity === 'Rádio' && <Volume2 size={10} />}
-                                  {amenity === 'Portaria 24h' && <ShieldCheck size={10} />}
-                                  {amenity}
-                                </span>
-                              ))}
-                            </div>
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-1.5 text-secondary">
-                                <CalendarMonth size={12} />
-                                <span className="text-[8px] font-black uppercase tracking-widest">Atendimento</span>
-                              </div>
-                              <div className="flex flex-wrap gap-1">
-                                {Object.keys(room.schedule).map(day => (
-                                  <span key={day} className="px-1.5 py-0.5 bg-secondary/5 text-secondary text-[7px] font-black rounded-sm border border-secondary/5">
-                                    {day}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                            <button className="w-full py-3 bg-primary text-white rounded-xl font-bold text-xs shadow-lg flex items-center justify-center gap-2 mt-2">
-                              <AssignmentTurnedIn size={14} />
-                              Ver Horários e Reservar
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="bg-secondary/5 border border-secondary/10 p-6 rounded-[2.5rem]">
-                          <div className="flex items-center gap-3 mb-3 text-secondary">
-                            <Info size={18} />
-                            <h5 className="text-[10px] font-black uppercase tracking-widest">Dica de Gestão</h5>
-                          </div>
-                          <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed italic">
-                            "Mantenha a descrição focada nos benefícios (como silêncio ou conforto térmico). Uma sala bem apresentada atrai 40% mais reservas."
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {activeTab === 'home' && (
             <div className="space-y-8">
                <div className="pb-8 border-b border-outline">
@@ -3898,7 +3417,7 @@ function AdminScreen({
                                     if (scriptHandled) return;
                                     scriptHandled = true;
                                     if (script.parentNode) script.parentNode.removeChild(script);
-                                    (window as any)[jsonpCallbackName] = () => {}; // Safe no-op instead of delete
+                                    (window as any)[jsonpCallbackName] = () => {};
                                   };
 
                                   script.src = scriptUrlJsonp;
@@ -3919,7 +3438,6 @@ function AdminScreen({
                                     const parsedSchedule = parseSheetScheduleData(jsonpData);
                                     const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
                                     
-                                    // Conta horários disponíveis reais (com 💚 ou Livre)
                                     const availableCount = appointments.filter((r: any) => {
                                       const status = (r.status || r.paciente || '').toString().toLowerCase();
                                       return status.includes('💚') || status.includes('livre');
@@ -3927,7 +3445,6 @@ function AdminScreen({
                                     
                                     alert(`✅ AGENDA SINCRONIZADA!\nEncontramos ${availableCount} horários disponíveis (💚).\n\nA agenda foi atualizada localmente e no banco de dados. Clique em "Salvar Informações" para garantir.`);
                                     
-                                    // Atualiza Firestore IMEDIATAMENTE e localmente
                                     await updateSpecialistSchedule(s.id, parsedSchedule);
                                     updateSpecialist(s.id, { 
                                       googleAppsScriptUrl: s.googleAppsScriptUrl.trim(),
@@ -3960,19 +3477,15 @@ function AdminScreen({
                            <div className="absolute top-0 right-0 p-4">
                              <span className="bg-green-600 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">Configuração Obrigatória</span>
                            </div>
-                           
                            <div className="flex items-center gap-4 mb-2">
                               <div className="w-10 h-10 bg-green-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-green-200 animate-pulse">
                                  <Info size={20} />
                               </div>
                               <div>
-                                <p className="text-[12px] font-black uppercase text-green-800 tracking-[0.2em]">
-                                   Guia de Integração Instantânea
-                                </p>
+                                <p className="text-[12px] font-black uppercase text-green-800 tracking-[0.2em]">Guia de Integração Instantânea</p>
                                 <p className="text-[10px] text-green-600/70 font-bold uppercase tracking-widest">Siga estes passos para sincronizar sua planilha</p>
                               </div>
                            </div>
-                           
                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-[11px] text-green-900/80">
                              <div className="space-y-3 p-6 bg-white rounded-[2rem] border-2 border-green-100 shadow-sm hover:border-green-300 transition-colors group">
                                <p className="font-black text-green-700 flex items-center gap-2 uppercase text-[10px] tracking-widest">
@@ -3984,7 +3497,6 @@ function AdminScreen({
                                  <strong className="text-green-700">Implantar &gt; Nova Implantação</strong>.
                                </p>
                              </div>
-                             
                              <div className="space-y-3 p-6 bg-white rounded-[2rem] border-2 border-green-100 shadow-sm hover:border-green-300 transition-colors group">
                                <p className="font-black text-green-700 flex items-center gap-2 uppercase text-[10px] tracking-widest">
                                  <span className="w-8 h-8 bg-green-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">2</span>
@@ -3994,7 +3506,6 @@ function AdminScreen({
                                  Selecione o tipo <strong>"App da Web"</strong> e mude quem pode acessar para <strong>"Qualquer pessoa"</strong>.
                                </p>
                              </div>
-
                              <div className="sm:col-span-2 p-6 bg-amber-50 rounded-[2rem] border-2 border-amber-200/50 flex gap-5 shadow-inner">
                                 <div className="w-12 h-12 bg-amber-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-200">
                                    <Info size={24} />
@@ -4322,4 +3833,3 @@ function AdminScreen({
     </div>
   );
 }
-
