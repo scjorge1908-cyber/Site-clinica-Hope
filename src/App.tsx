@@ -1714,17 +1714,39 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                       Lista de Espera
                     </a>
 
-                    {isAdminUnlocked && (
-                      <button 
-                        onClick={() => {
-                          const event = new CustomEvent('force-sheet-sync', { detail: { specId: spec.id } });
-                          window.dispatchEvent(event);
-                        }}
-                        className="text-[9px] font-bold uppercase tracking-widest text-primary/40 hover:text-primary transition-colors mt-2 underline"
-                      >
-                        Recarregar Planilha (Admin)
-                      </button>
+                                 ) : isAgendaFull ? (
+                <div className="pt-2 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                  <div className="flex flex-col items-center text-center space-y-4 py-8 px-6 bg-secondary/5 rounded-3xl border border-secondary/10 relative group/agenda">
+                    {isLoadingSheet && (
+                      <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center rounded-3xl z-10 animate-in fade-in">
+                        <div className="flex flex-col items-center gap-2">
+                          <RefreshCw size={24} className="text-primary animate-spin" />
+                          <p className="text-[10px] font-black uppercase tracking-widest text-primary">Sincronizando...</p>
+                        </div>
+                      </div>
                     )}
+                    
+                    <div className="w-14 h-14 bg-secondary/10 flex items-center justify-center rounded-full text-secondary">
+                        <CalendarMonth size={28} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-black text-secondary text-xs uppercase tracking-widest">Agenda Completa</p>
+                      <p className="text-[11px] font-medium text-primary/70 leading-relaxed max-w-[200px]">No momento, esta especialista não possui horários disponíveis para agendamento imediato.</p>
+                    </div>
+                    
+                    <a 
+                      href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
+                    >
+                      <Chat size={20} />
+                      Lista de Espera
+                    </a>
+
+                    {/* Botão "Recarregar Planilha (Admin)" removido a pedido do cliente.
+                         A funcionalidade de sincronização automática continua funcionando
+                         a cada 2 minutos e via evento 'force-sheet-sync'. */}
                   </div>
                 </div>
               ) : (
