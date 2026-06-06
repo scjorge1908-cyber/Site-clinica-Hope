@@ -1384,9 +1384,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
             const lockTime = parseInt(lock);
             if (Date.now() - lockTime < 4 * 60 * 60 * 1000) return;
           }
-        } catch (e) {
-          // Ignore storage errors here
-        }
+        } catch (e) {}
 
         setIsLoadingSheet(true);
         setSheetError(null);
@@ -1438,7 +1436,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
             }
           }
 
-          // CSV Fallback
           if (!foundData && spec.googleSheetsId) {
             let sheetId = spec.googleSheetsId;
             if (sheetId.includes('/d/')) {
@@ -1659,262 +1656,225 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
           ) : (
             displayAgenda && (
               <div className="pt-6 border-t border-outline-alt/30 space-y-4">
-              {spec.attendedAges && spec.attendedAges.length > 0 && (
-                <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-                  <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
-                    <VerifiedUser size={12} className="text-white" />
+                {spec.attendedAges && spec.attendedAges.length > 0 && (
+                  <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                    <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
+                      <VerifiedUser size={12} className="text-white" />
+                    </div>
+                    <p className="text-[11px] font-bold text-primary/90">
+                      Atendimento especializado a partir de <span className="text-secondary font-black underline underline-offset-4 decoration-secondary/30">{Math.min(...spec.attendedAges)}</span> anos
+                    </p>
                   </div>
-                  <p className="text-[11px] font-bold text-primary/90">
-                    Atendimento especializado a partir de <span className="text-secondary font-black underline underline-offset-4 decoration-secondary/30">{Math.min(...spec.attendedAges)}</span> anos
-                  </p>
-                </div>
-              )}
-              {isAdminUnlocked && (spec.googleSheetsId || spec.googleAppsScriptUrl) && (
-                <div className="flex items-center gap-2 mb-2 px-2">
-                  <div className={`w-1.5 h-1.5 rounded-full ${isLoadingSheet ? 'bg-amber-500 animate-pulse' : (sheetError ? 'bg-red-500' : 'bg-green-500')}`} />
-                  <p className={`text-[9px] font-bold uppercase tracking-widest ${sheetError ? 'text-red-500/80' : 'text-on-surface-variant/60'}`}>
-                    {isLoadingSheet ? 'Sincronizando Agenda...' : (sheetError ? `Aviso Admin: ${sheetError}` : (spec.googleAppsScriptUrl ? 'Agenda Conectada (Web App)' : 'Planilha Conectada'))}
-                  </p>
-                </div>
-              )}
-
-              {sheetError && isAdminUnlocked ? (
-                <div className="p-4 bg-red-50 rounded-2xl border border-red-100 animate-in fade-in duration-500">
-                  <p className="text-[10px] text-red-600 font-bold uppercase mb-1">Erro Admin Sincronização:</p>
-                  <p className="text-xs text-red-500 leading-tight mb-2">{sheetError}</p>
-                  <p className="text-[9px] text-red-400 italic">Este aviso não aparece para o público. O público não vê a agenda se houver erro.</p>
-                </div>
-              ) : isAgendaFull ? (
-                <div className="pt-2 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                  <div className="flex flex-col items-center text-center space-y-4 py-8 px-6 bg-secondary/5 rounded-3xl border border-secondary/10 relative group/agenda">
-                    {isLoadingSheet && (
-                      <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center rounded-3xl z-10 animate-in fade-in">
-                        <div className="flex flex-col items-center gap-2">
-                          <RefreshCw size={24} className="text-primary animate-spin" />
-                          <p className="text-[10px] font-black uppercase tracking-widest text-primary">Sincronizando...</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="w-14 h-14 bg-secondary/10 flex items-center justify-center rounded-full text-secondary">
-                        <CalendarMonth size={28} />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="font-black text-secondary text-xs uppercase tracking-widest">Agenda Completa</p>
-                      <p className="text-[11px] font-medium text-primary/70 leading-relaxed max-w-[200px]">No momento, esta especialista não possui horários disponíveis para agendamento imediato.</p>
-                    </div>
-                    
-                    <a 
-                      href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
-                    >
-                      <Chat size={20} />
-                      Lista de Espera
-                    </a>
-
-                                 ) : isAgendaFull ? (
-                <div className="pt-2 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                  <div className="flex flex-col items-center text-center space-y-4 py-8 px-6 bg-secondary/5 rounded-3xl border border-secondary/10 relative group/agenda">
-                    {isLoadingSheet && (
-                      <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center rounded-3xl z-10 animate-in fade-in">
-                        <div className="flex flex-col items-center gap-2">
-                          <RefreshCw size={24} className="text-primary animate-spin" />
-                          <p className="text-[10px] font-black uppercase tracking-widest text-primary">Sincronizando...</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="w-14 h-14 bg-secondary/10 flex items-center justify-center rounded-full text-secondary">
-                        <CalendarMonth size={28} />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="font-black text-secondary text-xs uppercase tracking-widest">Agenda Completa</p>
-                      <p className="text-[11px] font-medium text-primary/70 leading-relaxed max-w-[200px]">No momento, esta especialista não possui horários disponíveis para agendamento imediato.</p>
-                    </div>
-                    
-                    <a 
-                      href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
-                    >
-                      <Chat size={20} />
-                      Lista de Espera
-                    </a>
-
-                    {/* Botão "Recarregar Planilha (Admin)" removido a pedido do cliente.
-                         A funcionalidade de sincronização automática continua funcionando
-                         a cada 2 minutos e via evento 'force-sheet-sync'. */}
+                )}
+                {isAdminUnlocked && (spec.googleSheetsId || spec.googleAppsScriptUrl) && (
+                  <div className="flex items-center gap-2 mb-2 px-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${isLoadingSheet ? 'bg-amber-500 animate-pulse' : (sheetError ? 'bg-red-500' : 'bg-green-500')}`} />
+                    <p className={`text-[9px] font-bold uppercase tracking-widest ${sheetError ? 'text-red-500/80' : 'text-on-surface-variant/60'}`}>
+                      {isLoadingSheet ? 'Sincronizando Agenda...' : (sheetError ? `Aviso Admin: ${sheetError}` : (spec.googleAppsScriptUrl ? 'Agenda Conectada (Web App)' : 'Planilha Conectada'))}
+                    </p>
                   </div>
-                </div>
-              ) : (
-                <>
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Agendar Horário</p>
-                  
-                  <div className="space-y-4 pt-4">
-                    {/* Day Selection */}
-                    <div className="flex flex-wrap gap-2">
-                      {Object.keys(activeSchedule || {})
-                        .sort((a, b) => {
-                          const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-                          return days.indexOf(a) - days.indexOf(b);
-                        })
-                        .map(day => (
-                          <button
-                            key={day}
-                            onClick={() => {
-                              setSelectedDay(day === selectedDay ? null : day);
-                              setSelectedTime(null);
-                            }}
-                            className={`px-4 py-2.5 rounded-xl text-[10px] font-bold transition-all border ${
-                              selectedDay === day 
-                              ? 'bg-primary text-white border-primary shadow-md' 
-                              : 'bg-surface-container text-primary border-outline-variant/30 hover:border-primary/50'
-                            }`}
-                          >
-                            {day}
-                          </button>
-                        ))}
-                    </div>
+                )}
 
-                    {/* Time Selection */}
-                    {selectedDay && activeSchedule?.[selectedDay] && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 10 }} 
-                        animate={{ opacity: 1, y: 0 }}
-                        className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-alt/20 space-y-3"
-                      >
-                        {selectedDay && !selectedTime && (
-                          <div className="flex items-center gap-2 mb-2 animate-pulse">
-                            <ArrowForward size={14} className="text-amber-500 animate-bounce" />
-                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Selecione o horário</p>
+                {sheetError && isAdminUnlocked ? (
+                  <div className="p-4 bg-red-50 rounded-2xl border border-red-100 animate-in fade-in duration-500">
+                    <p className="text-[10px] text-red-600 font-bold uppercase mb-1">Erro Admin Sincronização:</p>
+                    <p className="text-xs text-red-500 leading-tight mb-2">{sheetError}</p>
+                    <p className="text-[9px] text-red-400 italic">Este aviso não aparece para o público. O público não vê a agenda se houver erro.</p>
+                  </div>
+                ) : isAgendaFull ? (
+                  <div className="pt-2 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <div className="flex flex-col items-center text-center space-y-4 py-8 px-6 bg-secondary/5 rounded-3xl border border-secondary/10 relative group/agenda">
+                      {isLoadingSheet && (
+                        <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center rounded-3xl z-10 animate-in fade-in">
+                          <div className="flex flex-col items-center gap-2">
+                            <RefreshCw size={24} className="text-primary animate-spin" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-primary">Sincronizando...</p>
                           </div>
-                        )}
-                        {(Object.entries(activeSchedule![selectedDay].periods) as [Shift, string[]][])
-                          .sort(([a], [b]) => {
-                            const periods = [Shift.Morning as string, Shift.Afternoon as string, Shift.Night as string];
-                            return periods.indexOf(a) - periods.indexOf(b);
-                          })
-                          .map(([period, times]) => times && times.length > 0 && (
-                            <div key={period} className="space-y-1.5">
-                              <p className="text-[8px] font-black uppercase text-on-surface-variant/60">{period}</p>
-                              <div className="flex flex-wrap gap-2">
-                                {times.map(time => (
-                                  <button
-                                    key={time}
-                                    onClick={() => setSelectedTime(time === selectedTime ? null : time)}
-                                    className={`px-3 py-2 rounded-lg text-[10px] font-medium transition-all ${
-                                      selectedTime === time
-                                      ? 'bg-secondary text-white shadow-sm'
-                                      : 'bg-white text-primary border border-outline-variant/10 hover:border-secondary/30'
-                                    }`}
-                                  >
-                                    {time}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                      </motion.div>
-                    )}
-
-                {/* Plan Selection */}
-                <div className="space-y-4">
-                  <div className={`space-y-2 p-3 rounded-3xl transition-all duration-500 ${selectedTime && !selectedPlan ? 'bg-amber-400/10 ring-4 ring-amber-400/20 animate-pulse' : ''}`}>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Selecione seu Convênio</p>
-                      {selectedTime && !selectedPlan && (
-                        <p className="text-[9px] font-black uppercase text-amber-500 animate-pulse">Selecione o convênio</p>
+                        </div>
                       )}
-                    </div>
+                      
+                      <div className="w-14 h-14 bg-secondary/10 flex items-center justify-center rounded-full text-secondary">
+                        <CalendarMonth size={28} />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-black text-secondary text-xs uppercase tracking-widest">Agenda Completa</p>
+                        <p className="text-[11px] font-medium text-primary/70 leading-relaxed max-w-[200px]">No momento, esta especialista não possui horários disponíveis para agendamento imediato.</p>
+                      </div>
+                      
+                      <a 
+                        href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
+                      >
+                        <Chat size={20} />
+                        Lista de Espera
+                      </a>
 
-                      <div className="grid grid-cols-2 gap-4">
-                       <button
-                         onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
-                         className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
-                           selectedPlan === 'Particular'
-                           ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
-                           : 'bg-transparent text-primary hover:bg-secondary/5'
-                         }`}
-                       >
-                         <div className="w-12 h-10 flex items-center justify-center">
-                           <CreditCard size={28} className="text-secondary" />
-                         </div>
-                         <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
-                       </button>
-                       {insurancePlans.filter(p => p.name.toLowerCase() !== 'particular').map(plan => (
-                         <button
-                           key={plan.id}
-                           onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
-                           className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
-                             selectedPlan === plan.name
-                             ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
-                             : 'bg-transparent text-primary hover:bg-secondary/5'
-                           }`}
-                         >
-                           {plan.logo ? (
-                             <img 
-                               src={plan.logo} 
-                               alt={plan.name} 
-                               className="h-10 w-auto object-contain transition-all"
-                             />
-                           ) : (
-                             <div className="w-12 h-10 flex items-center justify-center">
-                               <Verified size={28} className="text-secondary/40" />
-                             </div>
-                           )}
-                           <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === plan.name ? 'text-secondary' : 'text-primary/70'}`}>{plan.name}</span>
-                         </button>
-                       ))}
+                      {/* Botão "Recarregar Planilha (Admin)" removido */}
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Agendar Horário</p>
+                    
+                    <div className="space-y-4 pt-4">
+                      <div className="flex flex-wrap gap-2">
+                        {Object.keys(activeSchedule || {})
+                          .sort((a, b) => {
+                            const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                            return days.indexOf(a) - days.indexOf(b);
+                          })
+                          .map(day => (
+                            <button
+                              key={day}
+                              onClick={() => {
+                                setSelectedDay(day === selectedDay ? null : day);
+                                setSelectedTime(null);
+                              }}
+                              className={`px-4 py-2.5 rounded-xl text-[10px] font-bold transition-all border ${
+                                selectedDay === day 
+                                ? 'bg-primary text-white border-primary shadow-md' 
+                                : 'bg-surface-container text-primary border-outline-variant/30 hover:border-primary/50'
+                              }`}
+                            >
+                              {day}
+                            </button>
+                          ))}
+                      </div>
+
+                      {selectedDay && activeSchedule?.[selectedDay] && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }} 
+                          animate={{ opacity: 1, y: 0 }}
+                          className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-alt/20 space-y-3"
+                        >
+                          {selectedDay && !selectedTime && (
+                            <div className="flex items-center gap-2 mb-2 animate-pulse">
+                              <ArrowForward size={14} className="text-amber-500 animate-bounce" />
+                              <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Selecione o horário</p>
+                            </div>
+                          )}
+                          {(Object.entries(activeSchedule![selectedDay].periods) as [Shift, string[]][])
+                            .sort(([a], [b]) => {
+                              const periods = [Shift.Morning as string, Shift.Afternoon as string, Shift.Night as string];
+                              return periods.indexOf(a) - periods.indexOf(b);
+                            })
+                            .map(([period, times]) => times && times.length > 0 && (
+                              <div key={period} className="space-y-1.5">
+                                <p className="text-[8px] font-black uppercase text-on-surface-variant/60">{period}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {times.map(time => (
+                                    <button
+                                      key={time}
+                                      onClick={() => setSelectedTime(time === selectedTime ? null : time)}
+                                      className={`px-3 py-2 rounded-lg text-[10px] font-medium transition-all ${
+                                        selectedTime === time
+                                        ? 'bg-secondary text-white shadow-sm'
+                                        : 'bg-white text-primary border border-outline-variant/10 hover:border-secondary/30'
+                                      }`}
+                                    >
+                                      {time}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                        </motion.div>
+                      )}
+
+                      <div className="space-y-4">
+                        <div className={`space-y-2 p-3 rounded-3xl transition-all duration-500 ${selectedTime && !selectedPlan ? 'bg-amber-400/10 ring-4 ring-amber-400/20 animate-pulse' : ''}`}>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Selecione seu Convênio</p>
+                            {selectedTime && !selectedPlan && (
+                              <p className="text-[9px] font-black uppercase text-amber-500 animate-pulse">Selecione o convênio</p>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <button
+                              onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
+                              className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
+                                selectedPlan === 'Particular'
+                                ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
+                                : 'bg-transparent text-primary hover:bg-secondary/5'
+                              }`}
+                            >
+                              <div className="w-12 h-10 flex items-center justify-center">
+                                <CreditCard size={28} className="text-secondary" />
+                              </div>
+                              <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
+                            </button>
+                            {insurancePlans.filter(p => p.name.toLowerCase() !== 'particular').map(plan => (
+                              <button
+                                key={plan.id}
+                                onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
+                                className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
+                                  selectedPlan === plan.name
+                                  ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
+                                  : 'bg-transparent text-primary hover:bg-secondary/5'
+                                }`}
+                              >
+                                {plan.logo ? (
+                                  <img 
+                                    src={plan.logo} 
+                                    alt={plan.name} 
+                                    className="h-10 w-auto object-contain transition-all"
+                                  />
+                                ) : (
+                                  <div className="w-12 h-10 flex items-center justify-center">
+                                    <Verified size={28} className="text-secondary/40" />
+                                  </div>
+                                )}
+                                <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === plan.name ? 'text-secondary' : 'text-primary/70'}`}>{plan.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
-            </>
+            )
           )}
         </div>
-      )
-    )}
-  </div>
 
-          {!isAgendaFull && !isCarousel && (
-            <button 
-              disabled={!canBook}
-              onClick={handleWhatsAppClick}
-              className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
-                !canBook 
-                ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
-                : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2 shadow-2xl ring-4 ring-primary/20 animate-pulse'
-              }`}
-            >
-              <Chat size={18} />
-              {canBook ? 'Enviar sua solicitação' : 'Selecione dia, hora e plano'}
-            </button>
-          )}
+        {!isAgendaFull && !isCarousel && (
+          <button 
+            disabled={!canBook}
+            onClick={handleWhatsAppClick}
+            className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
+              !canBook 
+              ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
+              : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2 shadow-2xl ring-4 ring-primary/20 animate-pulse'
+            }`}
+          >
+            <Chat size={18} />
+            {canBook ? 'Enviar sua solicitação' : 'Selecione dia, hora e plano'}
+          </button>
+        )}
 
-          {/* Footer Disclaimer */}
-          {!isCarousel && (
-            <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
-              <div className="space-y-3">
-                <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
-                   <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
-                </p>
-                <p className="text-[10px] text-primary/70 leading-relaxed font-medium">
-                  Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
-                </p>
-                <div className="text-[9px] bg-white/40 p-3 rounded-xl border border-secondary/5 text-primary/60 leading-normal">
-  💡 <span className="font-bold">Dica:</span> Faça uma consulta online (telemedicina) com qualquer médico, a qualquer hora, e peça o encaminhamento com CID. Rápido, 24h e resolve para você agendar pelo plano.
-</div>
+        {!isCarousel && (
+          <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
+            <div className="space-y-3">
+              <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
+                <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
+              </p>
+              <p className="text-[10px] text-primary/70 leading-relaxed font-medium">
+                Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
+              </p>
+              <div className="text-[9px] bg-white/40 p-3 rounded-xl border border-secondary/5 text-primary/60 leading-normal">
+                💡 <span className="font-bold">Dica:</span> Faça uma consulta online (telemedicina) com qualquer médico, a qualquer hora, e peça o encaminhamento com CID. Rápido, 24h e resolve para você agendar pelo plano.
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 }
-
 function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isAdminUnlocked, shouldScrollToList }: CorpoClinicoProps) {
   useEffect(() => {
     if (shouldScrollToList) {
