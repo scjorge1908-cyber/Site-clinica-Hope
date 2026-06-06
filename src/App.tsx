@@ -1905,8 +1905,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                   Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
                 </p>
                 <div className="text-[9px] bg-white/40 p-3 rounded-xl border border-secondary/5 text-primary/60 leading-normal">
-                  💡 <span className="font-bold">Dica:</span> Se você não tiver o encaminhamento, verifique no aplicativo do seu plano se existe a opção de <span className="font-bold underline">teleatendimento</span>. É um processo rápido que pode auxiliar você neste momento de decisão.
-                </div>
+  💡 <span className="font-bold">Dica:</span> Faça uma consulta online (telemedicina) com qualquer médico, a qualquer hora, e peça o encaminhamento com CID. Rápido, 24h e resolve para você agendar pelo plano.
+</div>
               </div>
             </div>
           )}
