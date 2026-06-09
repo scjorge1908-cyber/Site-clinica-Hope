@@ -30,3 +30,4 @@ const FloatingWhatsApp = () => {
 };
 
 export default FloatingWhatsApp;
+
