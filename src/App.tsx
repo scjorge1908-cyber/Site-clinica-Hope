@@ -954,7 +954,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
               onClick={() => onNavigate(Screen.CorpoClinico)}
               className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center md:self-end"
             >
-              Agendar agora com Psicólogo
+              Agendar Terapia 
               <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
