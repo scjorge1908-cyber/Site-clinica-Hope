@@ -6,7 +6,8 @@ export enum Screen {
   Admin = 'Admin',
   Abordagens = 'Abordagens',
   Login = 'Login',
-  Sublocacao = 'Sublocacao'
+  Sublocacao = 'Sublocacao',
+  Psicoeducacao = 'Psicoeducacao'
 }
 
 export interface SubleaseRoom {
@@ -121,4 +122,5 @@ export interface HomeSettings {
   seoText?: string;
   address?: string;
   footerRights?: string;
+  psicoeducacaoText?: string;
 }
