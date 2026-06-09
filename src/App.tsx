@@ -96,7 +96,7 @@ import {
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { onSnapshot, collection, doc } from 'firebase/firestore';
-
+import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit } from './analytics';
 // Helper for Local Storage
 const LS_KEYS = {
   SETTINGS: 'clinica_hope_settings',
@@ -1704,6 +1704,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
   const handleWhatsAppClick = () => {
     if (!canBook) return;
+    trackWhatsAppClick('specialist_card');
+    trackScheduleClick(spec.name);
     const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
     window.open(`https://wa.me/5548999549041?text=${encodeURIComponent(message)}`, '_blank');
   };
@@ -2301,6 +2303,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                     href="https://wa.me/5548999549041" 
                     target="_blank" 
                     rel="noopener noreferrer"
+                    onClick={() => trackWhatsAppClick('contato_section')}
                     className="inline-flex items-center gap-4 bg-white text-primary px-10 py-5 rounded-2xl font-bold text-lg hover:shadow-2xl transition-all active:scale-95"
                   >
                     <Chat size={24} /> Conversar Agora
@@ -2340,7 +2343,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                       <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">Mensagem (Opcional)</label>
                       <textarea rows={4} className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary shadow-sm resize-none" placeholder="Conte-nos brevemente como podemos ajudar..."></textarea>
                    </div>
-                   <button className="w-full py-5 bg-secondary text-on-secondary font-bold text-lg rounded-2xl hover:shadow-xl transition-all active:scale-95">
+                   <button className="w-full py-5 bg-secondary text-on-secondary font-bold text-lg rounded-2xl hover:shadow-xl transition-all active:scale-95" onClick={() => trackFormSubmit('contato')}>
                       Enviar Solicitação
                    </button>
                 </form>
