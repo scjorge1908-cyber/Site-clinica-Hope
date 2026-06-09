@@ -6,7 +6,6 @@ service cloud.firestore {
     function isAdmin() { 
       return isSignedIn() && request.auth.token.email == 'scjorge1908@gmail.com';
     }
-
     // Allow public read on all collections
     match /specialists/{docId} {
       allow read: if true;
@@ -31,16 +30,18 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+    match /psicoeducacao_articles/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
     match /sublease_bookings/{docId} {
       allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow create: if isSignedIn();
       allow update, delete: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
     }
-
     // Default deny for everything else
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
-
