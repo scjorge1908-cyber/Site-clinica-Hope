@@ -10,6 +10,15 @@ export enum Screen {
   Psicoeducacao = 'Psicoeducacao'
 }
 
+export interface PsicoeducacaoArticle {
+  id: string;
+  title: string;
+  subtitle?: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface SubleaseRoom {
   id: string;
   name: string;
