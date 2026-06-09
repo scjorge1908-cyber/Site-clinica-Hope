@@ -67,7 +67,7 @@ import {
 } from 'lucide-react';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Cropper from 'react-easy-crop';
-import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan, SubleaseRoom, SubleaseBooking } from './types';
+import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan, SubleaseRoom, SubleaseBooking, PsicoeducacaoArticle } from './types';
 import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL, DEFAULT_SUBLEASE_ROOMS } from './constants';
 import { 
   getHomeSettings, 
@@ -90,7 +90,9 @@ import {
   auth,
   COLLECTIONS,
   DOCS,
-  db
+  db,
+  getPsicoeducacaoArticles,
+  savePsicoeducacaoArticles
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { onSnapshot, collection, doc } from 'firebase/firestore';
@@ -208,6 +210,7 @@ export default function App() {
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[] | null>(null);
   const [subleaseRooms, setSubleaseRooms] = useState<SubleaseRoom[] | null>(null);
   const [subleaseBookings, setSubleaseBookings] = useState<SubleaseBooking[] | null>(null);
+  const [psicoeducacaoArticles, setPsicoeducacaoArticles] = useState<PsicoeducacaoArticle[]>([]);
   const [isDataInitialized, setIsDataInitialized] = useState(false);
   const [user, setUser] = useState<any>(null);
   
@@ -329,6 +332,15 @@ export default function App() {
       checkAllLoaded();
     });
 
+    // Psicoeducação Articles — não bloqueia o loading
+    const unsubArticles = onSnapshot(collection(db, COLLECTIONS.PSICOEDUCACAO_ARTICLES), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PsicoeducacaoArticle[];
+      setPsicoeducacaoArticles(data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+    }, (error) => {
+      console.warn("Erro no listener de artigos:", error);
+      setPsicoeducacaoArticles([]);
+    });
+
     bookingsLoaded = true;
     checkAllLoaded();
 
@@ -340,6 +352,7 @@ export default function App() {
       unsubApproaches();
       unsubInsurance();
       unsubRooms();
+      unsubArticles();
     };
   }, []);
 
@@ -422,6 +435,16 @@ export default function App() {
       await saveSubleaseRooms(newRooms);
     } catch (e) {
       console.error("Erro ao salvar salas de sublocação:", e);
+    }
+  };
+
+  const updatePsicoeducacaoArticles = async (newArticles: PsicoeducacaoArticle[]) => {
+    setPsicoeducacaoArticles(newArticles);
+    if (checkQuotaLock()) return;
+    try {
+      await savePsicoeducacaoArticles(newArticles);
+    } catch (e) {
+      console.error("Erro ao salvar artigos de psicoeducação:", e);
     }
   };
 
@@ -530,7 +553,7 @@ export default function App() {
           )}
           {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} settings={homeSettings} />}
           {currentScreen === Screen.Abordagens && <AbordagensScreen onNavigate={navigateTo} approaches={approaches} settings={homeSettings} />}
-          {currentScreen === Screen.Psicoeducacao && <PsicoeducacaoScreen onNavigate={navigateTo} settings={homeSettings} />}
+          {currentScreen === Screen.Psicoeducacao && <PsicoeducacaoScreen onNavigate={navigateTo} settings={homeSettings} articles={psicoeducacaoArticles} />}
           {/* Sublocação ocultada temporariamente */}
           {false && currentScreen === Screen.Sublocacao && (
             <SublocacaoScreen 
@@ -591,6 +614,8 @@ export default function App() {
                   alert('Erro ao atualizar status da reserva.');
                 }
               }}
+              psicoeducacaoArticles={psicoeducacaoArticles}
+              onUpdatePsicoeducacaoArticles={updatePsicoeducacaoArticles}
               isDataLoaded={isDataInitialized}
             />
           )}
@@ -1166,22 +1191,13 @@ function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (s
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PSICOEDUCAÇÃO SCREEN — Renderiza o texto rico salvo pelo Admin
+// PSICOEDUCAÇÃO SCREEN — Lista de artigos + visualização individual
 // ─────────────────────────────────────────────────────────────────────────────
-function PsicoeducacaoScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSettings }) {
-  const rawText = settings.psicoeducacaoText || '';
+function PsicoeducacaoScreen({ onNavigate, settings, articles }: ScreenProps & { settings: HomeSettings; articles: PsicoeducacaoArticle[] }) {
+  const [openArticle, setOpenArticle] = useState<PsicoeducacaoArticle | null>(null);
 
-  // Converte markdown simples em JSX:
-  // ## Título → <h2>, ### → <h3>, **negrito**, - bullet
-  const renderContent = () => {
-    if (!rawText.trim()) {
-      return (
-        <p className="text-on-surface-variant italic text-lg leading-relaxed">
-          Nenhum conteúdo disponível ainda. Configure o texto no painel de administração.
-        </p>
-      );
-    }
-
+  const renderContent = (rawText: string) => {
+    if (!rawText.trim()) return null;
     const lines = rawText.split('\n');
     const elements: React.ReactNode[] = [];
     let bulletBuffer: string[] = [];
@@ -1204,28 +1220,18 @@ function PsicoeducacaoScreen({ onNavigate, settings }: ScreenProps & { settings:
       const trimmed = line.trim();
       if (trimmed.startsWith('### ')) {
         flushBullets(String(i));
-        elements.push(
-          <h3 key={i} className="text-xl md:text-2xl font-bold text-primary mt-8 mb-3 tracking-tight">
-            {trimmed.slice(4)}
-          </h3>
-        );
+        elements.push(<h3 key={i} className="text-xl md:text-2xl font-bold text-primary mt-8 mb-3 tracking-tight">{trimmed.slice(4)}</h3>);
       } else if (trimmed.startsWith('## ')) {
         flushBullets(String(i));
-        elements.push(
-          <h2 key={i} className="text-2xl md:text-3xl font-extrabold text-primary mt-10 mb-4 tracking-tight border-l-4 border-secondary pl-4">
-            {trimmed.slice(3)}
-          </h2>
-        );
+        elements.push(<h2 key={i} className="text-2xl md:text-3xl font-extrabold text-primary mt-10 mb-4 tracking-tight border-l-4 border-secondary pl-4">{trimmed.slice(3)}</h2>);
       } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
         bulletBuffer.push(trimmed.slice(2));
       } else if (trimmed === '') {
         flushBullets(String(i));
       } else {
         flushBullets(String(i));
-        elements.push(
-          <p key={i} className="text-on-surface-variant leading-loose text-base md:text-lg mb-4"
-            dangerouslySetInnerHTML={{ __html: trimmed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />
-        );
+        elements.push(<p key={i} className="text-on-surface-variant leading-loose text-base md:text-lg mb-4"
+          dangerouslySetInnerHTML={{ __html: trimmed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />);
       }
     });
     flushBullets('end');
@@ -1251,22 +1257,75 @@ function PsicoeducacaoScreen({ onNavigate, settings }: ScreenProps & { settings:
       </header>
 
       <section className="px-6 pb-24">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="max-w-4xl mx-auto bg-white rounded-[3rem] shadow-xl border border-outline-alt/30 p-8 md:p-16 text-left"
-        >
-          {renderContent()}
-        </motion.div>
+        <div className="max-w-4xl mx-auto space-y-6">
 
-        <div className="max-w-4xl mx-auto mt-12 text-center">
-          <button
-            onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
-            className="btn-primary shadow-xl"
-          >
-            Agendar Consulta
-          </button>
+          {/* Lista de artigos */}
+          {!openArticle && (
+            <>
+              {articles.length === 0 ? (
+                <div className="text-center py-20 bg-surface-container-low rounded-[3rem] border-2 border-dashed border-outline-alt/40">
+                  <Brain size={48} className="mx-auto text-primary/20 mb-4" />
+                  <p className="text-on-surface-variant font-medium italic">Nenhum artigo publicado ainda.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {articles.map((article, idx) => (
+                    <motion.button
+                      key={article.id}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.07 }}
+                      onClick={() => setOpenArticle(article)}
+                      className="group text-left bg-white rounded-[2.5rem] border border-outline-alt/30 p-8 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col gap-4"
+                    >
+                      <div className="w-12 h-12 bg-secondary-container/50 rounded-2xl flex items-center justify-center text-secondary group-hover:bg-secondary group-hover:text-white transition-colors">
+                        <Brain size={22} />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-xl font-extrabold text-primary tracking-tight group-hover:text-secondary transition-colors">
+                          {article.title}
+                        </h3>
+                        {article.subtitle && (
+                          <p className="text-sm text-on-surface-variant/70 mt-1 font-medium italic line-clamp-2">{article.subtitle}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-secondary font-bold text-xs uppercase tracking-widest">
+                        Ler artigo <ArrowForward size={14} className="group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Artigo aberto */}
+          {openArticle && (
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+              <button
+                onClick={() => setOpenArticle(null)}
+                className="flex items-center gap-2 text-primary font-bold text-sm mb-8 hover:underline group"
+              >
+                <ArrowForward size={16} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
+                Voltar para Psicoeducação
+              </button>
+              <div className="bg-white rounded-[3rem] shadow-xl border border-outline-alt/30 p-8 md:p-16 text-left">
+                <h2 className="text-3xl md:text-5xl font-extrabold text-primary tracking-tight mb-2">{openArticle.title}</h2>
+                {openArticle.subtitle && (
+                  <p className="text-lg text-secondary italic font-medium mb-8 border-l-4 border-secondary/30 pl-4">{openArticle.subtitle}</p>
+                )}
+                <div className="mt-8">{renderContent(openArticle.content)}</div>
+              </div>
+            </motion.div>
+          )}
+
+          {!openArticle && (
+            <div className="max-w-4xl mx-auto mt-12 text-center">
+              <button onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)} className="btn-primary shadow-xl">
+                Agendar Consulta
+              </button>
+            </div>
+          )}
         </div>
       </section>
     </Layout>
@@ -2441,6 +2500,8 @@ interface AdminScreenProps {
   onUpdateSubleaseRooms: (rooms: SubleaseRoom[]) => void;
   subleaseBookings: SubleaseBooking[];
   onUpdateSubleaseBookingStatus: (id: string, status: 'confirmed' | 'cancelled') => void;
+  psicoeducacaoArticles: PsicoeducacaoArticle[];
+  onUpdatePsicoeducacaoArticles: (articles: PsicoeducacaoArticle[]) => void;
   isDataLoaded: boolean;
 }
 
@@ -2797,6 +2858,8 @@ function AdminScreen({
   onUpdateSubleaseRooms,
   subleaseBookings,
   onUpdateSubleaseBookingStatus,
+  psicoeducacaoArticles,
+  onUpdatePsicoeducacaoArticles,
   isDataLoaded
 }: AdminScreenProps) {
   const [localSettings, setLocalSettings] = useState<HomeSettings>(settings);
@@ -2804,6 +2867,8 @@ function AdminScreen({
   const [localApproaches, setLocalApproaches] = useState<Approach[]>(approaches);
   const [localInsurancePlans, setLocalInsurancePlans] = useState<InsurancePlan[]>(insurancePlans);
   const [localSubleaseRooms, setLocalSubleaseRooms] = useState<SubleaseRoom[]>(subleaseRooms);
+  const [localArticles, setLocalArticles] = useState<PsicoeducacaoArticle[]>(psicoeducacaoArticles);
+  const [editingArticle, setEditingArticle] = useState<PsicoeducacaoArticle | null>(null);
 
   const [hasInitialized, setHasInitialized] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens' | 'psicoeducacao' | 'sublocacao' | 'reservas_sublocacao'>('home');
@@ -2836,9 +2901,17 @@ function AdminScreen({
       setLocalApproaches(approaches);
       setLocalInsurancePlans(insurancePlans);
       setLocalSubleaseRooms(subleaseRooms);
+      setLocalArticles(psicoeducacaoArticles);
       setHasInitialized(true);
     }
-  }, [isDataLoaded, specialists, settings, approaches, insurancePlans, subleaseRooms, hasInitialized]);
+  }, [isDataLoaded, specialists, settings, approaches, insurancePlans, subleaseRooms, psicoeducacaoArticles, hasInitialized]);
+
+  // Keep articles in sync with realtime updates
+  useEffect(() => {
+    if (hasInitialized) {
+      setLocalArticles(psicoeducacaoArticles);
+    }
+  }, [psicoeducacaoArticles, hasInitialized]);
 
   const addRoom = () => {
     const id = Date.now().toString();
@@ -3847,75 +3920,168 @@ function AdminScreen({
 
           {activeTab === 'psicoeducacao' && (
             <div className="space-y-8">
-              {/* Dica para o administrador */}
-              <div className="bg-secondary-container/30 border border-secondary/20 rounded-[2rem] p-8 space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="shrink-0 w-10 h-10 rounded-2xl bg-secondary/20 flex items-center justify-center text-secondary">
-                    <Info size={20} />
-                  </div>
-                  <div className="space-y-3">
-                    <h3 className="text-base font-black text-primary tracking-tight">Dicas para um texto eficaz</h3>
-                    <ul className="space-y-2 text-sm text-on-surface-variant leading-relaxed list-disc list-inside">
-                      <li><strong>Tamanho ideal:</strong> Entre 4.000 e 8.000 caracteres com espaços (aprox. 600 a 1.200 palavras).</li>
-                      <li><strong>Alinhamento:</strong> O texto é sempre exibido à esquerda. Evite justificado — cria espaços estranhos no celular.</li>
-                      <li><strong>Subtítulos:</strong> Use <code className="bg-primary/10 px-1 rounded">## Título</code> (H2) e <code className="bg-primary/10 px-1 rounded">### Subtítulo</code> (H3) a cada 2–3 parágrafos para facilitar a leitura.</li>
-                      <li><strong>Negrito:</strong> Envolva palavras-chave com <code className="bg-primary/10 px-1 rounded">**palavra**</code> para destaque visual.</li>
-                      <li><strong>Listas:</strong> Inicie linhas com <code className="bg-primary/10 px-1 rounded">- item</code> para criar bullet points e quebrar a densidade do texto.</li>
-                      <li><strong>Exemplo de estrutura:</strong> Início geral → H2 "O que é X" → parágrafo → H3 "Sintomas comuns" → bullets → H2 "Como a terapia ajuda" → etc.</li>
-                    </ul>
-                  </div>
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-on-surface-variant text-sm">Gerencie os artigos de Psicoeducação exibidos no site.</p>
+                  <p className="text-[10px] text-on-surface-variant/50 mt-1">Use <strong>## Título</strong>, <strong>### Subtítulo</strong>, <strong>**negrito**</strong> e <strong>- item</strong> para formatar o conteúdo.</p>
                 </div>
-              </div>
-
-              {/* Contador de caracteres e editor */}
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <label className="text-[10px] uppercase font-bold tracking-widest text-primary">
-                    Texto da Página Psicoeducação
-                  </label>
-                  <span className={`text-xs font-mono font-bold px-3 py-1 rounded-full ${
-                    (localSettings.psicoeducacaoText || '').length < 4000
-                      ? 'bg-accent/10 text-accent'
-                      : (localSettings.psicoeducacaoText || '').length > 8000
-                        ? 'bg-accent/10 text-accent'
-                        : 'bg-green-100 text-green-700'
-                  }`}>
-                    {(localSettings.psicoeducacaoText || '').length} / 8.000 caracteres
-                    {(localSettings.psicoeducacaoText || '').length >= 4000 && (localSettings.psicoeducacaoText || '').length <= 8000 && ' ✓'}
-                  </span>
-                </div>
-                <textarea
-                  className="w-full p-6 border-2 border-outline rounded-[1.5rem] focus:border-primary outline-none text-sm leading-relaxed font-mono resize-y min-h-[400px] transition-colors"
-                  value={localSettings.psicoeducacaoText || ''}
-                  onChange={e => setLocalSettings({ ...localSettings, psicoeducacaoText: e.target.value })}
-                  placeholder={`## O que é Psicoeducação?\n\nA **psicoeducação** é uma abordagem que combina conhecimento científico com autoconhecimento...\n\n### Por que é importante?\n\n- Reduz o estigma sobre saúde mental\n- **Empodera** o paciente no seu processo\n- Facilita a adesão ao tratamento`}
-                  spellCheck={false}
-                />
-                <p className="text-xs text-on-surface-variant/60 leading-relaxed">
-                  Use <strong>## Título</strong> para H2, <strong>### Subtítulo</strong> para H3, <strong>**palavra**</strong> para negrito e <strong>- item</strong> para bullet points.
-                </p>
-              </div>
-
-              <div className="flex justify-between items-center pt-4">
                 <button
-                  disabled={isQuotaLocked}
-                  onClick={async () => {
-                    setSaveStatus({ ...saveStatus, psicoeducacao: true });
-                    await onUpdateSettings(localSettings);
-                    setTimeout(() => setSaveStatus(prev => ({ ...prev, psicoeducacao: false })), 2000);
+                  onClick={() => {
+                    const now = Date.now();
+                    const newArticle: PsicoeducacaoArticle = {
+                      id: now.toString(),
+                      title: 'Novo Artigo',
+                      subtitle: '',
+                      content: '## Introdução\n\nEscreva aqui o conteúdo do artigo...\n\n### Subtópico\n\n- Ponto importante\n- **Palavra em destaque**',
+                      createdAt: now,
+                      updatedAt: now
+                    };
+                    setLocalArticles([newArticle, ...localArticles]);
+                    setEditingArticle(newArticle);
                   }}
-                  className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
-                    isQuotaLocked
-                      ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none'
-                      : saveStatus['psicoeducacao']
-                        ? 'bg-green-500 text-white shadow-green-500/20'
-                        : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'
-                  }`}
+                  className="flex items-center gap-2 bg-primary/10 text-primary px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all"
                 >
-                  {isQuotaLocked ? <AlertTriangle size={14} /> : saveStatus['psicoeducacao'] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
-                  {isQuotaLocked ? 'Bloqueado' : saveStatus['psicoeducacao'] ? 'Salvo!' : 'Publicar Psicoeducação'}
+                  <Add size={16} /> Novo Artigo
                 </button>
               </div>
+
+              {/* Lista de artigos ou editor */}
+              {editingArticle ? (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                  <div className="flex items-center gap-4 pb-4 border-b border-outline">
+                    <button
+                      onClick={() => setEditingArticle(null)}
+                      className="flex items-center gap-2 text-primary font-bold text-sm hover:underline group"
+                    >
+                      <ArrowForward size={16} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
+                      Voltar à lista
+                    </button>
+                    <h2 className="text-xl font-bold text-primary">
+                      {localArticles.find(a => a.id === editingArticle.id)?.title || 'Artigo'}
+                    </h2>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Título do Artigo *</label>
+                      <input
+                        className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                        value={editingArticle.title}
+                        onChange={e => setEditingArticle({ ...editingArticle, title: e.target.value })}
+                        placeholder="Ex: Ansiedade, TDAH, Depressão..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Subtítulo / Descrição curta</label>
+                      <input
+                        className="w-full border-b-2 border-outline focus:border-primary outline-none py-2 text-on-surface-variant"
+                        value={editingArticle.subtitle || ''}
+                        onChange={e => setEditingArticle({ ...editingArticle, subtitle: e.target.value })}
+                        placeholder="Ex: O que é, sintomas e como tratar"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Conteúdo do Artigo</label>
+                      <span className={`text-xs font-mono font-bold px-3 py-1 rounded-full ${
+                        editingArticle.content.length < 4000 ? 'bg-accent/10 text-accent'
+                        : editingArticle.content.length > 8000 ? 'bg-accent/10 text-accent'
+                        : 'bg-green-100 text-green-700'
+                      }`}>
+                        {editingArticle.content.length} caracteres
+                        {editingArticle.content.length >= 4000 && editingArticle.content.length <= 8000 && ' ✓'}
+                      </span>
+                    </div>
+                    <textarea
+                      className="w-full p-6 border-2 border-outline rounded-[1.5rem] focus:border-primary outline-none text-sm leading-relaxed font-mono resize-y min-h-[400px] transition-colors"
+                      value={editingArticle.content}
+                      onChange={e => setEditingArticle({ ...editingArticle, content: e.target.value })}
+                      placeholder="## O que é Ansiedade?&#10;&#10;A **ansiedade** é uma resposta natural do organismo...&#10;&#10;### Sintomas Comuns&#10;&#10;- Coração acelerado&#10;- **Dificuldade de concentração**&#10;- Tensão muscular"
+                      spellCheck={false}
+                    />
+                    <p className="text-xs text-on-surface-variant/50">
+                      <strong>## Título H2</strong> · <strong>### Subtítulo H3</strong> · <strong>**negrito**</strong> · <strong>- bullet</strong>
+                    </p>
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <button
+                      disabled={isQuotaLocked}
+                      onClick={async () => {
+                        const updated = localArticles.map(a =>
+                          a.id === editingArticle.id
+                            ? { ...editingArticle, updatedAt: Date.now() }
+                            : a
+                        );
+                        setLocalArticles(updated);
+                        setSaveStatus({ ...saveStatus, [`article-${editingArticle.id}`]: true });
+                        await onUpdatePsicoeducacaoArticles(updated);
+                        setTimeout(() => setSaveStatus(prev => ({ ...prev, [`article-${editingArticle.id}`]: false })), 2000);
+                        setEditingArticle(null);
+                      }}
+                      className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
+                        isQuotaLocked
+                          ? 'bg-outline-variant text-primary/30 cursor-not-allowed'
+                          : saveStatus[`article-${editingArticle.id}`]
+                            ? 'bg-green-500 text-white'
+                            : 'bg-primary text-white hover:bg-primary-light'
+                      }`}
+                    >
+                      {saveStatus[`article-${editingArticle.id}`] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
+                      {saveStatus[`article-${editingArticle.id}`] ? 'Salvo!' : 'Salvar Artigo'}
+                    </button>
+                    <button
+                      onClick={() => setEditingArticle(null)}
+                      className="px-6 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest border border-outline text-on-surface-variant hover:bg-surface transition-all"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </motion.div>
+              ) : (
+                <div className="space-y-4">
+                  {localArticles.length === 0 && (
+                    <div className="text-center py-16 bg-surface-container-low rounded-[2.5rem] border-2 border-dashed border-outline-alt/40">
+                      <Brain size={40} className="mx-auto text-primary/20 mb-3" />
+                      <p className="text-on-surface-variant font-medium">Nenhum artigo criado ainda.</p>
+                      <p className="text-xs text-on-surface-variant/50 mt-1">Clique em "Novo Artigo" para começar.</p>
+                    </div>
+                  )}
+                  {localArticles.map(article => (
+                    <div key={article.id} className="group flex items-center justify-between p-6 bg-surface-container/40 rounded-[1.5rem] border border-outline/30 hover:border-primary/30 transition-all">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-primary text-base truncate">{article.title}</h4>
+                        {article.subtitle && <p className="text-xs text-on-surface-variant/60 italic truncate mt-0.5">{article.subtitle}</p>}
+                        <p className="text-[10px] text-on-surface-variant/40 mt-1">{article.content.length} caracteres · atualizado {new Date(article.updatedAt).toLocaleDateString('pt-BR')}</p>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4 shrink-0">
+                        <button
+                          onClick={() => setEditingArticle(article)}
+                          className="p-2.5 bg-primary/5 text-primary rounded-xl hover:bg-primary hover:text-white transition-all"
+                          title="Editar"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Deseja excluir o artigo "${article.title}"?`)) {
+                              const updated = localArticles.filter(a => a.id !== article.id);
+                              setLocalArticles(updated);
+                              await onUpdatePsicoeducacaoArticles(updated);
+                            }
+                          }}
+                          className="p-2.5 bg-accent/5 text-accent rounded-xl hover:bg-accent hover:text-white transition-all opacity-0 group-hover:opacity-100"
+                          title="Excluir"
+                        >
+                          <Delete size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
