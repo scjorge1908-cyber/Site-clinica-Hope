@@ -6,7 +6,17 @@ export enum Screen {
   Admin = 'Admin',
   Abordagens = 'Abordagens',
   Login = 'Login',
-  Sublocacao = 'Sublocacao'
+  Sublocacao = 'Sublocacao',
+  Psicoeducacao = 'Psicoeducacao'
+}
+
+export interface PsicoeducacaoArticle {
+  id: string;
+  title: string;
+  subtitle?: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface SubleaseRoom {
@@ -124,4 +134,5 @@ export interface HomeSettings {
   seoText?: string;
   address?: string;
   footerRights?: string;
+  psicoeducacaoText?: string;
 }

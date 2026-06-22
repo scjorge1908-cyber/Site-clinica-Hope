@@ -67,7 +67,7 @@ import {
 } from 'lucide-react';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Cropper from 'react-easy-crop';
-import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan, SubleaseRoom, SubleaseBooking } from './types';
+import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan, SubleaseRoom, SubleaseBooking, PsicoeducacaoArticle } from './types';
 import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL, DEFAULT_SUBLEASE_ROOMS } from './constants';
 import { 
   getHomeSettings, 
@@ -91,11 +91,13 @@ import {
   auth,
   COLLECTIONS,
   DOCS,
-  db
+  db,
+  getPsicoeducacaoArticles,
+  savePsicoeducacaoArticles
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { onSnapshot, collection, doc } from 'firebase/firestore';
-
+import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit } from './analytics';
 // Helper for Local Storage
 const LS_KEYS = {
   SETTINGS: 'clinica_hope_settings',
@@ -155,6 +157,47 @@ const getCroppedImg = async (
   return canvas.toDataURL('image/jpeg', 0.8);
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CORREÇÃO: Deriva os turnos reais de um especialista a partir da agenda salva.
+// Isso resolve o bug em que especialistas com agenda via Google Sheets não
+// apareciam no filtro de turno, pois o campo `shifts` (manual) não era
+// atualizado automaticamente quando a planilha era sincronizada.
+// ─────────────────────────────────────────────────────────────────────────────
+function getActiveShifts(spec: Specialist): Shift[] {
+  const schedule = spec.schedule;
+
+  // Sem agenda real → usa o campo manual como fallback
+  if (!schedule || Object.keys(schedule).length === 0) {
+    return spec.shifts || [];
+  }
+
+  const shiftSet = new Set<Shift>();
+
+  Object.values(schedule).forEach((dayData: any) => {
+    const periods = dayData?.periods;
+    if (!periods) return;
+
+    if (Array.isArray(periods)) {
+      // Formato SubleaseRoom: array de objetos com { id: 'manha' | 'tarde' | 'noite' }
+      periods.forEach((p: any) => {
+        if (p.id === 'manha') shiftSet.add(Shift.Morning);
+        else if (p.id === 'tarde') shiftSet.add(Shift.Afternoon);
+        else if (p.id === 'noite') shiftSet.add(Shift.Night);
+      });
+    } else {
+      // Formato Specialist: { [Shift.Morning]: ['08:00', ...], ... }
+      Object.entries(periods).forEach(([shift, times]: [string, any]) => {
+        if (Array.isArray(times) && times.length > 0) {
+          shiftSet.add(shift as Shift);
+        }
+      });
+    }
+  });
+
+  // Se a agenda existe mas nenhum turno foi identificado, cai no campo manual
+  return shiftSet.size > 0 ? Array.from(shiftSet) : (spec.shifts || []);
+}
+
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.Home);
   const [direction, setDirection] = useState<number>(0);
@@ -168,6 +211,7 @@ export default function App() {
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[] | null>(null);
   const [subleaseRooms, setSubleaseRooms] = useState<SubleaseRoom[] | null>(null);
   const [subleaseBookings, setSubleaseBookings] = useState<SubleaseBooking[] | null>(null);
+  const [psicoeducacaoArticles, setPsicoeducacaoArticles] = useState<PsicoeducacaoArticle[]>([]);
   const [isDataInitialized, setIsDataInitialized] = useState(false);
   const [user, setUser] = useState<any>(null);
   
@@ -211,7 +255,6 @@ export default function App() {
         console.warn("Loading timeout reached. Showing available data.");
         setIsDataInitialized(true);
         setIsLoading(false);
-        // Ensure some data is set if still null
         setHomeSettings(prev => prev || DEFAULT_HOME_SETTINGS);
         setSpecialists(prev => prev || []);
         setApproaches(prev => prev || []);
@@ -280,7 +323,6 @@ export default function App() {
       roomsLoaded = true;
       checkAllLoaded();
     }, (error) => {
-      // Log only if it's not a permission error or if we're debugging
       if (error.message.toLowerCase().includes('permission')) {
         console.warn("Acesso restrito a salas (comum para não-admins):", error.message);
       } else {
@@ -291,7 +333,15 @@ export default function App() {
       checkAllLoaded();
     });
 
-    // Mark as loaded but actual listen is in separate effect
+    // Psicoeducação Articles — não bloqueia o loading
+    const unsubArticles = onSnapshot(collection(db, COLLECTIONS.PSICOEDUCACAO_ARTICLES), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PsicoeducacaoArticle[];
+      setPsicoeducacaoArticles(data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+    }, (error) => {
+      console.warn("Erro no listener de artigos:", error);
+      setPsicoeducacaoArticles([]);
+    });
+
     bookingsLoaded = true;
     checkAllLoaded();
 
@@ -303,6 +353,7 @@ export default function App() {
       unsubApproaches();
       unsubInsurance();
       unsubRooms();
+      unsubArticles();
     };
   }, []);
 
@@ -385,6 +436,16 @@ export default function App() {
       await saveSubleaseRooms(newRooms);
     } catch (e) {
       console.error("Erro ao salvar salas de sublocação:", e);
+    }
+  };
+
+  const updatePsicoeducacaoArticles = async (newArticles: PsicoeducacaoArticle[]) => {
+    setPsicoeducacaoArticles(newArticles);
+    if (checkQuotaLock()) return;
+    try {
+      await savePsicoeducacaoArticles(newArticles);
+    } catch (e) {
+      console.error("Erro ao salvar artigos de psicoeducação:", e);
     }
   };
 
@@ -493,6 +554,7 @@ export default function App() {
           )}
           {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} settings={homeSettings} />}
           {currentScreen === Screen.Abordagens && <AbordagensScreen onNavigate={navigateTo} approaches={approaches} settings={homeSettings} />}
+          {currentScreen === Screen.Psicoeducacao && <PsicoeducacaoScreen onNavigate={navigateTo} settings={homeSettings} articles={psicoeducacaoArticles} />}
           {/* Sublocação ocultada temporariamente */}
           {false && currentScreen === Screen.Sublocacao && (
             <SublocacaoScreen 
@@ -553,6 +615,8 @@ export default function App() {
                   alert('Erro ao atualizar status da reserva.');
                 }
               }}
+              psicoeducacaoArticles={psicoeducacaoArticles}
+              onUpdatePsicoeducacaoArticles={updatePsicoeducacaoArticles}
               isDataLoaded={isDataInitialized}
             />
           )}
@@ -587,6 +651,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
     { id: Screen.SEO, label: 'A Clínica' },
     { id: Screen.Abordagens, label: 'Abordagens' },
     { id: Screen.CorpoClinico, label: 'Especialistas' },
+    { id: Screen.Psicoeducacao, label: 'Psicoeducação' },
     // { id: Screen.Sublocacao, label: 'Sublocação' },
   ];
 
@@ -784,7 +849,6 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
       return;
     }
     
-    // Garantir que o índice está dentro dos limites se a lista mudar
     setIndex(prev => (prev >= specialists.length ? 0 : prev));
 
     const timer = setInterval(() => {
@@ -792,7 +856,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
         if (specialists.length === 0) return 0;
         return (prev + 1) % specialists.length;
       });
-    }, 10000); // 10 segundos conforme solicitado
+    }, 10000);
     return () => clearInterval(timer);
   }, [specialists.length]);
 
@@ -918,7 +982,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
               onClick={() => onNavigate(Screen.CorpoClinico)}
               className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center md:self-end"
             >
-              Agendar agora com Psicólogo
+              Agendar Terapia 
               <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
@@ -1127,6 +1191,148 @@ function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (s
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PSICOEDUCAÇÃO SCREEN — Lista de artigos + visualização individual
+// ─────────────────────────────────────────────────────────────────────────────
+function PsicoeducacaoScreen({ onNavigate, settings, articles }: ScreenProps & { settings: HomeSettings; articles: PsicoeducacaoArticle[] }) {
+  const [openArticle, setOpenArticle] = useState<PsicoeducacaoArticle | null>(null);
+
+  const renderContent = (rawText: string) => {
+    if (!rawText.trim()) return null;
+    const lines = rawText.split('\n');
+    const elements: React.ReactNode[] = [];
+    let bulletBuffer: string[] = [];
+
+    const flushBullets = (key: string) => {
+      if (bulletBuffer.length > 0) {
+        elements.push(
+          <ul key={`ul-${key}`} className="list-disc list-inside space-y-2 pl-2 my-4">
+            {bulletBuffer.map((b, i) => (
+              <li key={i} className="text-on-surface-variant leading-relaxed text-base md:text-lg"
+                dangerouslySetInnerHTML={{ __html: b.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />
+            ))}
+          </ul>
+        );
+        bulletBuffer = [];
+      }
+    };
+
+    lines.forEach((line, i) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('### ')) {
+        flushBullets(String(i));
+        elements.push(<h3 key={i} className="text-xl md:text-2xl font-bold text-primary mt-8 mb-3 tracking-tight">{trimmed.slice(4)}</h3>);
+      } else if (trimmed.startsWith('## ')) {
+        flushBullets(String(i));
+        elements.push(<h2 key={i} className="text-2xl md:text-3xl font-extrabold text-primary mt-10 mb-4 tracking-tight border-l-4 border-secondary pl-4">{trimmed.slice(3)}</h2>);
+      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        bulletBuffer.push(trimmed.slice(2));
+      } else if (trimmed === '') {
+        flushBullets(String(i));
+      } else {
+        flushBullets(String(i));
+        elements.push(<p key={i} className="text-on-surface-variant leading-loose text-base md:text-lg mb-4"
+          dangerouslySetInnerHTML={{ __html: trimmed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />);
+      }
+    });
+    flushBullets('end');
+    return elements;
+  };
+
+  return (
+    <Layout activeScreen={Screen.Psicoeducacao} onNavigate={onNavigate} settings={settings}>
+      <header className="section-padding bg-background pt-32 pb-12">
+        <div className="max-w-4xl mx-auto px-6 space-y-6">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <span className="inline-block px-4 py-1.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-widest shadow-sm">
+              Educação em Saúde Mental
+            </span>
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold text-primary tracking-tight mt-8">
+              Psicoeducação
+            </h1>
+            <p className="text-base md:text-lg text-on-surface-variant font-medium max-w-2xl mt-6 leading-relaxed">
+              Conteúdo educativo para ampliar seu autoconhecimento e apoiar sua jornada terapêutica.
+            </p>
+          </motion.div>
+        </div>
+      </header>
+
+      <section className="px-6 pb-24">
+        <div className="max-w-4xl mx-auto space-y-6">
+
+          {/* Lista de artigos */}
+          {!openArticle && (
+            <>
+              {articles.length === 0 ? (
+                <div className="text-center py-20 bg-surface-container-low rounded-[3rem] border-2 border-dashed border-outline-alt/40">
+                  <Brain size={48} className="mx-auto text-primary/20 mb-4" />
+                  <p className="text-on-surface-variant font-medium italic">Nenhum artigo publicado ainda.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {articles.map((article, idx) => (
+                    <motion.button
+                      key={article.id}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.07 }}
+                      onClick={() => setOpenArticle(article)}
+                      className="group text-left bg-white rounded-[2.5rem] border border-outline-alt/30 p-8 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col gap-4"
+                    >
+                      <div className="w-12 h-12 bg-secondary-container/50 rounded-2xl flex items-center justify-center text-secondary group-hover:bg-secondary group-hover:text-white transition-colors">
+                        <Brain size={22} />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-xl font-extrabold text-primary tracking-tight group-hover:text-secondary transition-colors">
+                          {article.title}
+                        </h3>
+                        {article.subtitle && (
+                          <p className="text-sm text-on-surface-variant/70 mt-1 font-medium italic line-clamp-2">{article.subtitle}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-secondary font-bold text-xs uppercase tracking-widest">
+                        Ler artigo <ArrowForward size={14} className="group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Artigo aberto */}
+          {openArticle && (
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+              <button
+                onClick={() => setOpenArticle(null)}
+                className="flex items-center gap-2 text-primary font-bold text-sm mb-8 hover:underline group"
+              >
+                <ArrowForward size={16} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
+                Voltar para Psicoeducação
+              </button>
+              <div className="bg-white rounded-[3rem] shadow-xl border border-outline-alt/30 p-8 md:p-16 text-left">
+                <h2 className="text-3xl md:text-5xl font-extrabold text-primary tracking-tight mb-2">{openArticle.title}</h2>
+                {openArticle.subtitle && (
+                  <p className="text-lg text-secondary italic font-medium mb-8 border-l-4 border-secondary/30 pl-4">{openArticle.subtitle}</p>
+                )}
+                <div className="mt-8">{renderContent(openArticle.content)}</div>
+              </div>
+            </motion.div>
+          )}
+
+          {!openArticle && (
+            <div className="max-w-4xl mx-auto mt-12 text-center">
+              <button onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)} className="btn-primary shadow-xl">
+                Agendar Consulta
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+    </Layout>
+  );
+}
+
 function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSettings }) {
   return (
     <Layout activeScreen={Screen.SEO} onNavigate={onNavigate} settings={settings}>
@@ -1325,7 +1531,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(spec.schedule || null);
   
-  // Sincroniza a agenda se o fallback manual for alterado no Admin
   useEffect(() => {
     if (!spec.googleAppsScriptUrl && !spec.googleSheetsId) {
       setSheetSchedule(spec.schedule || null);
@@ -1347,11 +1552,9 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
           const lock = localStorage.getItem('firestore_quota_exhausted');
           if (lock) {
             const lockTime = parseInt(lock);
-            if (Date.now() - lockTime < 4 * 60 * 60 * 1000) return; // Silent skip for 4h if quota locked
+            if (Date.now() - lockTime < 4 * 60 * 60 * 1000) return;
           }
-        } catch (e) {
-          // Ignore storage errors here
-        }
+        } catch (e) {}
 
         setIsLoadingSheet(true);
         setSheetError(null);
@@ -1373,7 +1576,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                 if (scriptResolved) return;
                 scriptResolved = true;
                 if (script.parentNode) script.parentNode.removeChild(script);
-                (window as any)[callbackName] = () => {}; // Safe no-op instead of delete
+                (window as any)[callbackName] = () => {};
               };
 
               script.src = `${jsonpUrl}&callback=${callbackName}`;
@@ -1403,7 +1606,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
             }
           }
 
-          // CSV Fallback if no script data was found but we have a sheet ID
           if (!foundData && spec.googleSheetsId) {
             let sheetId = spec.googleSheetsId;
             if (sheetId.includes('/d/')) {
@@ -1461,7 +1663,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
       };
 
       fetchSheetData();
-      const interval = setInterval(fetchSheetData, 120000); // 2 minutos para um feeling de tempo real melhor
+      const interval = setInterval(fetchSheetData, 120000);
       
       const handleForceSync = (e: any) => {
         if (e.detail?.specId === spec.id) {
@@ -1475,26 +1677,17 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
         window.removeEventListener('force-sheet-sync', handleForceSync);
       };
     }
-  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.id]); // spec.name e spec.schedule removidos para evitar loop
+  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.id]);
 
-  // Memoize the active schedule to use (prefer sheet if found data, otherwise manual)
   const activeSchedule = useMemo(() => {
     if (sheetSchedule && Object.keys(sheetSchedule).length > 0) return sheetSchedule;
     return spec.schedule || null;
   }, [sheetSchedule, spec.schedule]);
 
   const hasAnySchedule = activeSchedule && Object.keys(activeSchedule).length > 0;
-  
-  // Sincronização concluída (mesmo que tenha falhado silenciosamente)
   const isSyncComplete = !isLoadingSheet;
-  
-  // Agenda está "cheia" quando tentamos buscar e não encontramos nada (e não há agenda manual)
   const isAgendaFull = isSyncComplete && !hasAnySchedule && (spec.googleAppsScriptUrl || spec.googleSheetsId);
-  
-  // Caso haja erro crítico (não cota), mostramos algo genérico. Se for cota, ignoramos o erro visual.
   const showAgendaSection = hasAnySchedule || isAgendaFull;
-  
-  // No modo Admin, mostramos a seção para depuração
   const displayAgenda = isAdminUnlocked ? (isSyncComplete || !!sheetError) : showAgendaSection;
 
   const canBook = selectedDay && selectedTime && selectedPlan;
@@ -1512,6 +1705,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
   const handleWhatsAppClick = () => {
     if (!canBook) return;
+    trackWhatsAppClick('specialist_card');
+    trackScheduleClick(spec.name);
     const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
     window.open(`https://wa.me/5548999549041?text=${encodeURIComponent(message)}`, '_blank');
   };
@@ -1569,7 +1764,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                   }
 
                   const message = `Ola veja a disponibilidade: ${spec.name}. Veja horários disponíveis: ${scheduleSummary || 'sob consulta'}. Caso não encontre um horário ideal voce pode ficar na lista de espera veja o site: www.clinicahopebrasil.com.br`;
-                  
                   const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
                   window.open(whatsappUrl, '_blank');
                 }}
@@ -1634,240 +1828,225 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
           ) : (
             displayAgenda && (
               <div className="pt-6 border-t border-outline-alt/30 space-y-4">
-              {spec.attendedAges && spec.attendedAges.length > 0 && (
-                <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-                  <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
-                    <VerifiedUser size={12} className="text-white" />
+                {spec.attendedAges && spec.attendedAges.length > 0 && (
+                  <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                    <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
+                      <VerifiedUser size={12} className="text-white" />
+                    </div>
+                    <p className="text-[11px] font-bold text-primary/90">
+                      Atendimento especializado a partir de <span className="text-secondary font-black underline underline-offset-4 decoration-secondary/30">{Math.min(...spec.attendedAges)}</span> anos
+                    </p>
                   </div>
-                  <p className="text-[11px] font-bold text-primary/90">
-                    Atendimento especializado a partir de <span className="text-secondary font-black underline underline-offset-4 decoration-secondary/30">{Math.min(...spec.attendedAges)}</span> anos
-                  </p>
-                </div>
-              )}
-              {isAdminUnlocked && (spec.googleSheetsId || spec.googleAppsScriptUrl) && (
-                <div className="flex items-center gap-2 mb-2 px-2">
-                  <div className={`w-1.5 h-1.5 rounded-full ${isLoadingSheet ? 'bg-amber-500 animate-pulse' : (sheetError ? 'bg-red-500' : 'bg-green-500')}`} />
-                  <p className={`text-[9px] font-bold uppercase tracking-widest ${sheetError ? 'text-red-500/80' : 'text-on-surface-variant/60'}`}>
-                    {isLoadingSheet ? 'Sincronizando Agenda...' : (sheetError ? `Aviso Admin: ${sheetError}` : (spec.googleAppsScriptUrl ? 'Agenda Conectada (Web App)' : 'Planilha Conectada'))}
-                  </p>
-                </div>
-              )}
+                )}
+                {isAdminUnlocked && (spec.googleSheetsId || spec.googleAppsScriptUrl) && (
+                  <div className="flex items-center gap-2 mb-2 px-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${isLoadingSheet ? 'bg-amber-500 animate-pulse' : (sheetError ? 'bg-red-500' : 'bg-green-500')}`} />
+                    <p className={`text-[9px] font-bold uppercase tracking-widest ${sheetError ? 'text-red-500/80' : 'text-on-surface-variant/60'}`}>
+                      {isLoadingSheet ? 'Sincronizando Agenda...' : (sheetError ? `Aviso Admin: ${sheetError}` : (spec.googleAppsScriptUrl ? 'Agenda Conectada (Web App)' : 'Planilha Conectada'))}
+                    </p>
+                  </div>
+                )}
 
-              {sheetError && isAdminUnlocked ? (
-                <div className="p-4 bg-red-50 rounded-2xl border border-red-100 animate-in fade-in duration-500">
-                  <p className="text-[10px] text-red-600 font-bold uppercase mb-1">Erro Admin Sincronização:</p>
-                  <p className="text-xs text-red-500 leading-tight mb-2">{sheetError}</p>
-                  <p className="text-[9px] text-red-400 italic">Este aviso não aparece para o público. O público não vê a agenda se houver erro.</p>
-                </div>
-              ) : isAgendaFull ? (
-                <div className="pt-2 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                  <div className="flex flex-col items-center text-center space-y-4 py-8 px-6 bg-secondary/5 rounded-3xl border border-secondary/10 relative group/agenda">
-                    {isLoadingSheet && (
-                      <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center rounded-3xl z-10 animate-in fade-in">
-                        <div className="flex flex-col items-center gap-2">
-                          <RefreshCw size={24} className="text-primary animate-spin" />
-                          <p className="text-[10px] font-black uppercase tracking-widest text-primary">Sincronizando...</p>
+                {sheetError && isAdminUnlocked ? (
+                  <div className="p-4 bg-red-50 rounded-2xl border border-red-100 animate-in fade-in duration-500">
+                    <p className="text-[10px] text-red-600 font-bold uppercase mb-1">Erro Admin Sincronização:</p>
+                    <p className="text-xs text-red-500 leading-tight mb-2">{sheetError}</p>
+                    <p className="text-[9px] text-red-400 italic">Este aviso não aparece para o público. O público não vê a agenda se houver erro.</p>
+                  </div>
+                ) : isAgendaFull ? (
+                  <div className="pt-2 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <div className="flex flex-col items-center text-center space-y-4 py-8 px-6 bg-secondary/5 rounded-3xl border border-secondary/10 relative group/agenda">
+                      {isLoadingSheet && (
+                        <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center rounded-3xl z-10 animate-in fade-in">
+                          <div className="flex flex-col items-center gap-2">
+                            <RefreshCw size={24} className="text-primary animate-spin" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-primary">Sincronizando...</p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="w-14 h-14 bg-secondary/10 flex items-center justify-center rounded-full text-secondary">
+                        <CalendarMonth size={28} />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-black text-secondary text-xs uppercase tracking-widest">Agenda Completa</p>
+                        <p className="text-[11px] font-medium text-primary/70 leading-relaxed max-w-[200px]">No momento, esta especialista não possui horários disponíveis para agendamento imediato.</p>
+                      </div>
+                      
+                      <a 
+                        href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
+                      >
+                        <Chat size={20} />
+                        Lista de Espera
+                      </a>
+
+                      {/* Botão "Recarregar Planilha (Admin)" removido */}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Agendar Horário</p>
+                    
+                    <div className="space-y-4 pt-4">
+                      <div className="flex flex-wrap gap-2">
+                        {Object.keys(activeSchedule || {})
+                          .sort((a, b) => {
+                            const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                            return days.indexOf(a) - days.indexOf(b);
+                          })
+                          .map(day => (
+                            <button
+                              key={day}
+                              onClick={() => {
+                                setSelectedDay(day === selectedDay ? null : day);
+                                setSelectedTime(null);
+                              }}
+                              className={`px-4 py-2.5 rounded-xl text-[10px] font-bold transition-all border ${
+                                selectedDay === day 
+                                ? 'bg-primary text-white border-primary shadow-md' 
+                                : 'bg-surface-container text-primary border-outline-variant/30 hover:border-primary/50'
+                              }`}
+                            >
+                              {day}
+                            </button>
+                          ))}
+                      </div>
+
+                      {selectedDay && activeSchedule?.[selectedDay] && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }} 
+                          animate={{ opacity: 1, y: 0 }}
+                          className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-alt/20 space-y-3"
+                        >
+                          {selectedDay && !selectedTime && (
+                            <div className="flex items-center gap-2 mb-2 animate-pulse">
+                              <ArrowForward size={14} className="text-amber-500 animate-bounce" />
+                              <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Selecione o horário</p>
+                            </div>
+                          )}
+                          {(Object.entries(activeSchedule![selectedDay].periods) as [Shift, string[]][])
+                            .sort(([a], [b]) => {
+                              const periods = [Shift.Morning as string, Shift.Afternoon as string, Shift.Night as string];
+                              return periods.indexOf(a) - periods.indexOf(b);
+                            })
+                            .map(([period, times]) => times && times.length > 0 && (
+                              <div key={period} className="space-y-1.5">
+                                <p className="text-[8px] font-black uppercase text-on-surface-variant/60">{period}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {times.map(time => (
+                                    <button
+                                      key={time}
+                                      onClick={() => setSelectedTime(time === selectedTime ? null : time)}
+                                      className={`px-3 py-2 rounded-lg text-[10px] font-medium transition-all ${
+                                        selectedTime === time
+                                        ? 'bg-secondary text-white shadow-sm'
+                                        : 'bg-white text-primary border border-outline-variant/10 hover:border-secondary/30'
+                                      }`}
+                                    >
+                                      {time}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                        </motion.div>
+                      )}
+
+                      <div className="space-y-4">
+                        <div className={`space-y-2 p-3 rounded-3xl transition-all duration-500 ${selectedTime && !selectedPlan ? 'bg-amber-400/10 ring-4 ring-amber-400/20 animate-pulse' : ''}`}>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Selecione seu Convênio</p>
+                            {selectedTime && !selectedPlan && (
+                              <p className="text-[9px] font-black uppercase text-amber-500 animate-pulse">Selecione o convênio</p>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <button
+                              onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
+                              className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
+                                selectedPlan === 'Particular'
+                                ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
+                                : 'bg-transparent text-primary hover:bg-secondary/5'
+                              }`}
+                            >
+                              <div className="w-12 h-10 flex items-center justify-center">
+                                <CreditCard size={28} className="text-secondary" />
+                              </div>
+                              <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
+                            </button>
+                            {insurancePlans.filter(p => p.name.toLowerCase() !== 'particular').map(plan => (
+                              <button
+                                key={plan.id}
+                                onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
+                                className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
+                                  selectedPlan === plan.name
+                                  ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
+                                  : 'bg-transparent text-primary hover:bg-secondary/5'
+                                }`}
+                              >
+                                {plan.logo ? (
+                                  <img 
+                                    src={plan.logo} 
+                                    alt={plan.name} 
+                                    className="h-10 w-auto object-contain transition-all"
+                                  />
+                                ) : (
+                                  <div className="w-12 h-10 flex items-center justify-center">
+                                    <Verified size={28} className="text-secondary/40" />
+                                  </div>
+                                )}
+                                <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === plan.name ? 'text-secondary' : 'text-primary/70'}`}>{plan.name}</span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                    )}
-                    
-                    <div className="w-14 h-14 bg-secondary/10 flex items-center justify-center rounded-full text-secondary">
-                        <CalendarMonth size={28} />
                     </div>
-                    <div className="space-y-1">
-                      <p className="font-black text-secondary text-xs uppercase tracking-widest">Agenda Completa</p>
-                      <p className="text-[11px] font-medium text-primary/70 leading-relaxed max-w-[200px]">No momento, esta especialista não possui horários disponíveis para agendamento imediato.</p>
-                    </div>
-                    
-                    <a 
-                      href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
-                    >
-                      <Chat size={20} />
-                      Lista de Espera
-                    </a>
-
-                    {isAdminUnlocked && (
-                      <button 
-                        onClick={() => {
-                          const event = new CustomEvent('force-sheet-sync', { detail: { specId: spec.id } });
-                          window.dispatchEvent(event);
-                        }}
-                        className="text-[9px] font-bold uppercase tracking-widest text-primary/40 hover:text-primary transition-colors mt-2 underline"
-                      >
-                        Recarregar Planilha (Admin)
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Agendar Horário</p>
-                  
-                  <div className="space-y-4 pt-4">
-                    {/* Day Selection */}
-                    <div className="flex flex-wrap gap-2">
-                      {Object.keys(activeSchedule || {})
-                        .sort((a, b) => {
-                          const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-                          return days.indexOf(a) - days.indexOf(b);
-                        })
-                        .map(day => (
-                          <button
-                            key={day}
-                            onClick={() => {
-                              setSelectedDay(day === selectedDay ? null : day);
-                              setSelectedTime(null);
-                            }}
-                            className={`px-4 py-2.5 rounded-xl text-[10px] font-bold transition-all border ${
-                              selectedDay === day 
-                              ? 'bg-primary text-white border-primary shadow-md' 
-                              : 'bg-surface-container text-primary border-outline-variant/30 hover:border-primary/50'
-                            }`}
-                          >
-                            {day}
-                          </button>
-                        ))}
-                    </div>
-
-                    {/* Time Selection */}
-                    {selectedDay && activeSchedule?.[selectedDay] && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 10 }} 
-                        animate={{ opacity: 1, y: 0 }}
-                        className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-alt/20 space-y-3"
-                      >
-                        {selectedDay && !selectedTime && (
-                          <div className="flex items-center gap-2 mb-2 animate-pulse">
-                            <ArrowForward size={14} className="text-amber-500 animate-bounce" />
-                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Selecione o horário</p>
-                          </div>
-                        )}
-                        {(Object.entries(activeSchedule![selectedDay].periods) as [Shift, string[]][])
-                          .sort(([a], [b]) => {
-                            const periods = [Shift.Morning as string, Shift.Afternoon as string, Shift.Night as string];
-                            return periods.indexOf(a) - periods.indexOf(b);
-                          })
-                          .map(([period, times]) => times && times.length > 0 && (
-                            <div key={period} className="space-y-1.5">
-                              <p className="text-[8px] font-black uppercase text-on-surface-variant/60">{period}</p>
-                              <div className="flex flex-wrap gap-2">
-                                {times.map(time => (
-                                  <button
-                                    key={time}
-                                    onClick={() => setSelectedTime(time === selectedTime ? null : time)}
-                                    className={`px-3 py-2 rounded-lg text-[10px] font-medium transition-all ${
-                                      selectedTime === time
-                                      ? 'bg-secondary text-white shadow-sm'
-                                      : 'bg-white text-primary border border-outline-variant/10 hover:border-secondary/30'
-                                    }`}
-                                  >
-                                    {time}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                      </motion.div>
-                    )}
-
-                {/* Plan Selection */}
-                <div className="space-y-4">
-                  <div className={`space-y-2 p-3 rounded-3xl transition-all duration-500 ${selectedTime && !selectedPlan ? 'bg-amber-400/10 ring-4 ring-amber-400/20 animate-pulse' : ''}`}>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Selecione seu Convênio</p>
-                      {selectedTime && !selectedPlan && (
-                        <p className="text-[9px] font-black uppercase text-amber-500 animate-pulse">Selecione o convênio</p>
-                      )}
-                    </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                       <button
-                         onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
-                         className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
-                           selectedPlan === 'Particular'
-                           ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
-                           : 'bg-transparent text-primary hover:bg-secondary/5'
-                         }`}
-                       >
-                         <div className="w-12 h-10 flex items-center justify-center">
-                           <CreditCard size={28} className="text-secondary" />
-                         </div>
-                         <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
-                       </button>
-                       {insurancePlans.filter(p => p.name.toLowerCase() !== 'particular').map(plan => (
-                         <button
-                           key={plan.id}
-                           onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
-                           className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
-                             selectedPlan === plan.name
-                             ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
-                             : 'bg-transparent text-primary hover:bg-secondary/5'
-                           }`}
-                         >
-                           {plan.logo ? (
-                             <img 
-                               src={plan.logo} 
-                               alt={plan.name} 
-                               className="h-10 w-auto object-contain transition-all"
-                             />
-                           ) : (
-                             <div className="w-12 h-10 flex items-center justify-center">
-                               <Verified size={28} className="text-secondary/40" />
-                             </div>
-                           )}
-                           <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === plan.name ? 'text-secondary' : 'text-primary/70'}`}>{plan.name}</span>
-                         </button>
-                       ))}
-                    </div>
-                  </div>
-                </div>
+                  </>
+                )}
               </div>
-            </>
+            )
           )}
         </div>
-      )
-    )}
-  </div>
 
-          {!isAgendaFull && !isCarousel && (
-            <button 
-              disabled={!canBook}
-              onClick={handleWhatsAppClick}
-              className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
-                !canBook 
-                ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
-                : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2 shadow-2xl ring-4 ring-primary/20 animate-pulse'
-              }`}
-            >
-              <Chat size={18} />
-              {canBook ? 'Enviar sua solicitação' : 'Selecione dia, hora e plano'}
-            </button>
-          )}
+        {!isAgendaFull && !isCarousel && (
+          <button 
+            disabled={!canBook}
+            onClick={handleWhatsAppClick}
+            className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
+              !canBook 
+              ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
+              : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2 shadow-2xl ring-4 ring-primary/20 animate-pulse'
+            }`}
+          >
+            <Chat size={18} />
+            {canBook ? 'Enviar sua solicitação' : 'Selecione dia, hora e plano'}
+          </button>
+        )}
 
-          {/* Footer Disclaimer */}
-          {!isCarousel && (
-            <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
-              <div className="space-y-3">
-                <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
-                   <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
-                </p>
-                <p className="text-[10px] text-primary/70 leading-relaxed font-medium">
-                  Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
-                </p>
-                <div className="text-[9px] bg-white/40 p-3 rounded-xl border border-secondary/5 text-primary/60 leading-normal">
-                  💡 <span className="font-bold">Dica:</span> Se você não tiver o encaminhamento, verifique no aplicativo do seu plano se existe a opção de <span className="font-bold underline">teleatendimento</span>. É um processo rápido que pode auxiliar você neste momento de decisão.
-                </div>
+        {!isCarousel && (
+          <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
+            <div className="space-y-3">
+              <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
+                <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
+              </p>
+              <p className="text-[10px] text-primary/70 leading-relaxed font-medium">
+                Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
+              </p>
+              <div className="text-[9px] bg-white/40 p-3 rounded-xl border border-secondary/5 text-primary/60 leading-normal">
+                💡 <span className="font-bold">Dica:</span> Faça uma consulta online (telemedicina) com qualquer médico, a qualquer hora, e peça o encaminhamento com CID. Rápido, 24h e resolve para você agendar pelo plano.
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 }
-
 function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isAdminUnlocked, shouldScrollToList }: CorpoClinicoProps) {
   useEffect(() => {
     if (shouldScrollToList) {
@@ -1877,12 +2056,8 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
           const offset = 100;
           const elementPosition = element.getBoundingClientRect().top;
           const offsetPosition = (elementPosition || 0) + window.pageYOffset - offset;
-          
-          window.scrollTo({
-            top: offsetPosition,
-            behavior: 'smooth'
-          });
-        }, 300); // Wait for transition
+          window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
+        }, 300);
       }
     } else {
       window.scrollTo(0, 0);
@@ -1894,20 +2069,33 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [step, setStep] = useState<number>(1);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CORREÇÃO APLICADA: usa getActiveShifts() em vez de s.shifts diretamente.
+  // Isso garante que especialistas com agenda via Google Sheets sejam
+  // incluídos corretamente ao filtrar por turno (manhã, tarde ou noite).
+  // ─────────────────────────────────────────────────────────────────────────
   const { exactMatches, alternativeMatches } = useMemo(() => {
     const perfect = specialists.filter(s => {
       const matchAgeGroup = !selectedAge || s.ageGroups.includes(selectedAge);
-      const matchSpecificAge = selectedSpecificAges.length === 0 || 
+      const matchSpecificAge = selectedSpecificAges.length === 0 ||
         (s.attendedAges && selectedSpecificAges.some(age => s.attendedAges?.includes(age)));
-      const matchShift = selectedShifts.length === 0 || selectedShifts.some(shift => s.shifts.includes(shift));
+
+      const activeShifts = getActiveShifts(s);
+      const matchShift = selectedShifts.length === 0 ||
+        selectedShifts.some(shift => activeShifts.includes(shift));
+
       return matchAgeGroup && matchSpecificAge && matchShift;
     });
 
     const alternatives = perfect.length === 0 ? specialists.filter(s => {
       const matchAgeGroup = !selectedAge || s.ageGroups.includes(selectedAge);
-      const matchSpecificAge = selectedSpecificAges.length === 0 || 
+      const matchSpecificAge = selectedSpecificAges.length === 0 ||
         (s.attendedAges && selectedSpecificAges.some(age => s.attendedAges?.includes(age)));
-      const hasDifferentShift = selectedShifts.length > 0 && !selectedShifts.some(shift => s.shifts.includes(shift));
+
+      const activeShifts = getActiveShifts(s);
+      const hasDifferentShift = selectedShifts.length > 0 &&
+        !selectedShifts.some(shift => activeShifts.includes(shift));
+
       return matchAgeGroup && matchSpecificAge && hasDifferentShift;
     }) : [];
 
@@ -2116,6 +2304,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                     href="https://wa.me/5548999549041" 
                     target="_blank" 
                     rel="noopener noreferrer"
+                    onClick={() => trackWhatsAppClick('contato_section')}
                     className="inline-flex items-center gap-4 bg-white text-primary px-10 py-5 rounded-2xl font-bold text-lg hover:shadow-2xl transition-all active:scale-95"
                   >
                     <Chat size={24} /> Conversar Agora
@@ -2155,7 +2344,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                       <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">Mensagem (Opcional)</label>
                       <textarea rows={4} className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary shadow-sm resize-none" placeholder="Conte-nos brevemente como podemos ajudar..."></textarea>
                    </div>
-                   <button className="w-full py-5 bg-secondary text-on-secondary font-bold text-lg rounded-2xl hover:shadow-xl transition-all active:scale-95">
+                   <button className="w-full py-5 bg-secondary text-on-secondary font-bold text-lg rounded-2xl hover:shadow-xl transition-all active:scale-95" onClick={() => trackFormSubmit('contato')}>
                       Enviar Solicitação
                    </button>
                 </form>
@@ -2315,6 +2504,8 @@ interface AdminScreenProps {
   onUpdateSubleaseRooms: (rooms: SubleaseRoom[]) => void;
   subleaseBookings: SubleaseBooking[];
   onUpdateSubleaseBookingStatus: (id: string, status: 'confirmed' | 'cancelled') => void;
+  psicoeducacaoArticles: PsicoeducacaoArticle[];
+  onUpdatePsicoeducacaoArticles: (articles: PsicoeducacaoArticle[]) => void;
   isDataLoaded: boolean;
 }
 
@@ -2378,29 +2569,21 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
     setSelectedDay(null);
   };
 
-  // Se uma sala estiver selecionada, mostramos a visão de tela cheia
   if (selectedRoom) {
     return (
       <Layout activeScreen={Screen.Sublocacao} onNavigate={onNavigate} settings={settings}>
         <div className="min-h-screen bg-background animate-fade-in pb-20 pt-28">
-          {/* Barra de Navegação Superior Fixa Interna */}
           <div className="sticky top-20 z-40 bg-white/95 backdrop-blur-xl border-b border-outline/10 px-6 py-4 flex justify-between items-center shadow-md -mt-4 mb-8">
             <button 
-              onClick={() => {
-                setSelectedRoom(null);
-                setCart([]);
-                setSelectedDay(null);
-              }}
+              onClick={() => { setSelectedRoom(null); setCart([]); setSelectedDay(null); }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container text-primary font-black uppercase text-[10px] tracking-widest hover:bg-primary hover:text-white transition-all group"
             >
               <ArrowBack size={14} className="group-hover:-translate-x-1 transition-transform" />
               Ver Todas as Salas
             </button>
-            
             <div className="hidden lg:flex items-center gap-4">
                <h2 className="text-lg font-black text-primary italic font-serif tracking-tighter truncate max-w-xs">{selectedRoom.name}</h2>
             </div>
-            
             <div className="flex items-center gap-4">
               <div className="hidden md:flex flex-col items-end">
                 <span className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">Total:</span>
@@ -2418,21 +2601,15 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
 
           <div className="max-w-[1600px] mx-auto px-6 md:px-8">
             <div className="flex flex-col lg:flex-row gap-8">
-              
-              {/* Esquerda: Fotos e Características */}
               <div className="lg:w-1/4 space-y-6">
                 <div className="space-y-4">
                   <div className="aspect-[4/3] rounded-[2rem] overflow-hidden border border-outline/10 modern-shadow">
                     <img src={selectedRoom.photos[0]} className="w-full h-full object-cover" />
                   </div>
-                  
                   <div className="space-y-2">
                     <span className="text-[9px] font-black text-secondary uppercase tracking-[0.2em] leading-none">Ambiente Clínico</span>
-                    <p className="text-on-surface-variant font-medium leading-normal italic text-sm opacity-80">
-                      "{selectedRoom.description}"
-                    </p>
+                    <p className="text-on-surface-variant font-medium leading-normal italic text-sm opacity-80">"{selectedRoom.description}"</p>
                   </div>
-
                   <div className="flex flex-wrap gap-1.5">
                     {selectedRoom.amenities.map(amenity => (
                       <span key={amenity} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 text-primary text-[9px] font-black uppercase tracking-widest rounded-lg border border-primary/5 transition-colors hover:bg-primary/10">
@@ -2448,7 +2625,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                     ))}
                   </div>
                 </div>
-
                 <div className="bg-surface-container/40 border border-outline/5 p-6 rounded-[2rem] space-y-4">
                   <div className="flex items-center gap-2 text-primary opacity-60">
                     <Info size={16} />
@@ -2471,7 +2647,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                 </div>
               </div>
 
-              {/* Direita: Seleção de Datas e Horários */}
               <div className="lg:w-3/4 space-y-6">
                 <div className="bg-white rounded-[3rem] border border-outline-alt/20 modern-shadow p-6 md:p-10 space-y-8">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
@@ -2484,7 +2659,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                         <p className="text-[9px] font-bold text-on-surface-variant/40 uppercase tracking-widest mt-1">Selecione o dia da semana</p>
                       </div>
                     </div>
-
                     <div className="flex flex-wrap gap-2">
                       {Object.keys(selectedRoom.schedule).map(day => (
                         <button
@@ -2526,23 +2700,15 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                                  </div>
                                </div>
                              </div>
-
                              <div className="grid grid-cols-4 gap-2">
                                {period.slots.map(slot => {
                                  const isSelected = cart.find(i => i.type === 'hour' && i.periodId === period.id && i.slotId === slot.id);
                                  const isBlockSelected = cart.find(i => i.type === 'block' && i.periodId === period.id);
-                                 
                                  return (
                                    <button
                                      key={slot.id}
                                      disabled={!slot.available || !!isBlockSelected}
-                                     onClick={() => toggleItem({
-                                       type: 'hour',
-                                       periodId: period.id,
-                                       slotId: slot.id,
-                                       label: `${slot.start}`,
-                                       price: period.priceHour
-                                     })}
+                                     onClick={() => toggleItem({ type: 'hour', periodId: period.id, slotId: slot.id, label: `${slot.start}`, price: period.priceHour })}
                                      className={`relative flex flex-col items-center justify-center py-2.5 rounded-lg border transition-all duration-300 ${
                                        isBlockSelected 
                                          ? 'bg-secondary/5 border-secondary/10 text-secondary/30 grayscale opacity-40 scale-95 cursor-default' 
@@ -2558,14 +2724,8 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                                })}
                              </div>
                            </div>
-
                            <button
-                             onClick={() => toggleItem({
-                               type: 'block',
-                               periodId: period.id,
-                               label: `Bloco ${period.id === 'manha' ? 'Manhã' : period.id === 'tarde' ? 'Tarde' : 'Noite'}`,
-                               price: period.priceBlock
-                             })}
+                             onClick={() => toggleItem({ type: 'block', periodId: period.id, label: `Bloco ${period.id === 'manha' ? 'Manhã' : period.id === 'tarde' ? 'Tarde' : 'Noite'}`, price: period.priceBlock })}
                              className={`w-full py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
                                cart.find(i => i.type === 'block' && i.periodId === period.id)
                                 ? 'bg-secondary text-white border-secondary shadow-md'
@@ -2585,38 +2745,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                       <p className="text-[11px] font-medium text-on-surface-variant/50 uppercase tracking-widest italic">Selecione um dia acima</p>
                     </div>
                   )}
-                </div>
-
-                {/* Tabela de Valores - Conforme solicitado */}
-                <div className="bg-white/50 backdrop-blur rounded-[2.5rem] border border-outline-alt/10 p-6 flex flex-col md:flex-row gap-6 items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center shrink-0">
-                      <LocalOffer size={18} className="text-primary" />
-                    </div>
-                    <div>
-                      <h5 className="text-sm font-black text-primary italic font-serif leading-none mb-1">Investimento</h5>
-                      <p className="text-[8px] font-bold text-on-surface-variant/40 uppercase tracking-widest">Valores fixos</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-4 items-center">
-                    <div className="space-y-0.5">
-                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Hora Avulsa</p>
-                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 31,90</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Bloco Manhã</p>
-                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 550,00</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Bloco Tarde</p>
-                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 550,00</p>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-[7px] font-black text-on-surface-variant/40 uppercase tracking-widest leading-none">Bloco Noite</p>
-                      <p className="text-sm font-black text-primary tracking-tighter leading-none">R$ 420,00</p>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -2674,13 +2802,11 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                       Disponível para Reserva
                     </div>
                   </div>
-
                   <div className="p-10 flex-grow space-y-8">
                     <div className="space-y-4">
                       <h3 className="text-3xl font-bold text-primary tracking-tight leading-none italic font-serif">{room.name}</h3>
                       <p className="text-sm text-on-surface-variant/70 font-medium line-clamp-3 italic leading-relaxed">"{room.description}"</p>
                     </div>
-
                     <div className="flex flex-wrap gap-2">
                       {room.amenities.slice(0, 4).map(amenity => (
                         <span key={amenity} className="inline-flex items-center gap-2 px-4 py-2 bg-surface-container text-primary text-[10px] font-black uppercase tracking-widest rounded-xl border border-outline/10">
@@ -2690,7 +2816,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                         </span>
                       ))}
                     </div>
-
                     <div className="space-y-4 pt-8 border-t border-outline/10">
                       <div className="flex items-center gap-3 text-secondary">
                         <CalendarMonth size={18} />
@@ -2704,7 +2829,6 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                         ))}
                       </div>
                     </div>
-
                     <button 
                       onClick={() => setSelectedRoom(room)}
                       className="w-full py-6 bg-primary text-white rounded-[2rem] font-black text-sm hover:shadow-2xl hover:shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-4 group"
@@ -2738,6 +2862,8 @@ function AdminScreen({
   onUpdateSubleaseRooms,
   subleaseBookings,
   onUpdateSubleaseBookingStatus,
+  psicoeducacaoArticles,
+  onUpdatePsicoeducacaoArticles,
   isDataLoaded
 }: AdminScreenProps) {
   const [localSettings, setLocalSettings] = useState<HomeSettings>(settings);
@@ -2745,9 +2871,11 @@ function AdminScreen({
   const [localApproaches, setLocalApproaches] = useState<Approach[]>(approaches);
   const [localInsurancePlans, setLocalInsurancePlans] = useState<InsurancePlan[]>(insurancePlans);
   const [localSubleaseRooms, setLocalSubleaseRooms] = useState<SubleaseRoom[]>(subleaseRooms);
+  const [localArticles, setLocalArticles] = useState<PsicoeducacaoArticle[]>(psicoeducacaoArticles);
+  const [editingArticle, setEditingArticle] = useState<PsicoeducacaoArticle | null>(null);
 
   const [hasInitialized, setHasInitialized] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'projetos' | 'integracoes' | 'home' | 'corpo' | 'abordagens' | 'sublocacao' | 'reservas_sublocacao'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'projetos' | 'integracoes' | 'home' | 'corpo' | 'abordagens' | 'psicoeducacao' | 'sublocacao' | 'reservas_sublocacao'>('dashboard');
   const [activeConfigTab, setActiveConfigTab] = useState<'home' | 'corpo' | 'abordagens'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
 
@@ -2778,9 +2906,17 @@ function AdminScreen({
       setLocalApproaches(approaches);
       setLocalInsurancePlans(insurancePlans);
       setLocalSubleaseRooms(subleaseRooms);
+      setLocalArticles(psicoeducacaoArticles);
       setHasInitialized(true);
     }
-  }, [isDataLoaded, specialists, settings, approaches, insurancePlans, subleaseRooms, hasInitialized]);
+  }, [isDataLoaded, specialists, settings, approaches, insurancePlans, subleaseRooms, psicoeducacaoArticles, hasInitialized]);
+
+  // Keep articles in sync with realtime updates
+  useEffect(() => {
+    if (hasInitialized) {
+      setLocalArticles(psicoeducacaoArticles);
+    }
+  }, [psicoeducacaoArticles, hasInitialized]);
 
   const isConfigGroupActive = ['home', 'corpo', 'abordagens'].includes(activeTab);
 
@@ -2792,12 +2928,7 @@ function AdminScreen({
       schedule[day] = {
         periods: [
           {
-            id: 'manha',
-            start: '07:00',
-            end: '12:00',
-            available: true,
-            priceBlock: 550,
-            priceHour: 31.9,
+            id: 'manha', start: '07:00', end: '12:00', available: true, priceBlock: 550, priceHour: 31.9,
             slots: [
               { id: 'h7', start: '07:00', end: '08:00', available: true },
               { id: 'h8', start: '08:00', end: '09:00', available: true },
@@ -2807,12 +2938,7 @@ function AdminScreen({
             ]
           },
           {
-            id: 'tarde',
-            start: '13:00',
-            end: '17:00',
-            available: true,
-            priceBlock: 550,
-            priceHour: 31.9,
+            id: 'tarde', start: '13:00', end: '17:00', available: true, priceBlock: 550, priceHour: 31.9,
             slots: [
               { id: 'h13', start: '13:00', end: '14:00', available: true },
               { id: 'h14', start: '14:00', end: '15:00', available: true },
@@ -2821,12 +2947,7 @@ function AdminScreen({
             ]
           },
           {
-            id: 'noite',
-            start: '18:00',
-            end: '21:00',
-            available: true,
-            priceBlock: 420,
-            priceHour: 31.9,
+            id: 'noite', start: '18:00', end: '21:00', available: true, priceBlock: 420, priceHour: 31.9,
             slots: [
               { id: 'h18', start: '18:00', end: '19:00', available: true },
               { id: 'h19', start: '19:00', end: '20:00', available: true },
@@ -3068,13 +3189,13 @@ function AdminScreen({
               </div>
             )}
             <div className="flex bg-white rounded-2xl p-1 modern-shadow border border-outline">
-              {(['home', 'corpo', 'abordagens'] as const).map(tab => (
+              {(['home', 'corpo', 'abordagens', 'psicoeducacao'] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface'}`}
                 >
-                  {tab === 'home' ? 'Página Inicial' : tab === 'corpo' ? 'Especialistas' : 'Abordagens'}
+                  {tab === 'home' ? 'Página Inicial' : tab === 'corpo' ? 'Especialistas' : tab === 'abordagens' ? 'Abordagens' : 'Psicoeducação'}
                 </button>
               ))}
             </div>
@@ -3134,440 +3255,6 @@ function AdminScreen({
         </div>
 
         <div className="bg-white rounded-[2.5rem] modern-shadow border border-outline p-10">
-          {/* Sublocação ocultada temporariamente conforme pedido */}
-          {false && activeTab === 'reservas_sublocacao' && (
-            <div className="space-y-8">
-              <div className="bg-primary/5 p-8 rounded-3xl border border-primary/10">
-                <h2 className="text-3xl font-black text-primary tracking-tight">Reservas de Sublocação</h2>
-                <p className="text-on-surface-variant font-medium">Visualize e confirme as solicitações de reserva de salas.</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4">
-                {subleaseBookings.length === 0 ? (
-                  <div className="text-center py-20 bg-surface-container rounded-3xl border border-dashed border-outline">
-                    <Calendar size={48} className="mx-auto text-on-surface-variant/20 mb-4" />
-                    <p className="text-on-surface-variant font-medium">Nenhuma reserva encontrada.</p>
-                  </div>
-                ) : (
-                  subleaseBookings.sort((a, b) => b.createdAt - a.createdAt).map(booking => (
-                    <div key={booking.id} className="bg-surface-container rounded-2xl border border-outline p-6 flex flex-col md:flex-row justify-between items-center gap-6">
-                      <div className="space-y-1 text-center md:text-left">
-                        <div className="flex items-center gap-2 justify-center md:justify-start">
-                          <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${
-                            booking.status === 'confirmed' ? 'bg-secondary/10 text-secondary' : 
-                            booking.status === 'cancelled' ? 'bg-accent/10 text-accent' : 
-                            'bg-primary/10 text-primary'
-                          }`}>
-                            {booking.status}
-                          </span>
-                          <p className="text-xs font-bold text-primary">{booking.userName}</p>
-                        </div>
-                        <p className="text-[10px] text-on-surface-variant">{booking.userEmail}</p>
-                        <p className="text-sm font-bold text-secondary">
-                          {subleaseRooms.find(r => r.id === booking.roomId)?.name || 'Sala Desconhecida'} - {booking.day} ({booking.periodLabel})
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2">
-                        {booking.status === 'pending' && (
-                          <>
-                            <button 
-                              onClick={() => onUpdateSubleaseBookingStatus(booking.id, 'confirmed')}
-                              className="p-3 bg-secondary text-white rounded-xl hover:scale-105 transition-all shadow-md"
-                            >
-                              <CheckCircle size={20} />
-                            </button>
-                            <button 
-                              onClick={() => onUpdateSubleaseBookingStatus(booking.id, 'cancelled')}
-                              className="p-3 bg-accent/10 text-accent rounded-xl hover:scale-105 transition-all"
-                            >
-                              <Close size={20} />
-                            </button>
-                          </>
-                        )}
-                        {booking.status !== 'pending' && (
-                          <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40">
-                            Processado
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Sublocação ocultada temporariamente conforme pedido */}
-          {false && activeTab === 'sublocacao' && (
-            <div className="space-y-12">
-              <div className="flex flex-col md:flex-row justify-between items-center gap-6 bg-primary/5 p-10 rounded-3xl border border-primary/10 shadow-sm">
-                <div>
-                  <h2 className="text-4xl font-black text-primary tracking-tight">Gerenciar Sublocação</h2>
-                  <p className="text-on-surface-variant font-medium mt-2">Personalize suas salas, defina comodidades e controle os horários de reserva.</p>
-                </div>
-                <button 
-                  onClick={addRoom}
-                  className="px-10 py-5 bg-primary text-white rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-xl active:scale-95 shrink-0"
-                >
-                  <Add size={24} />
-                  Adicionar Nova Sala
-                </button>
-              </div>
-
-              <div className="space-y-12">
-                {localSubleaseRooms.map(room => (
-                  <div key={room.id} className="bg-white rounded-[3rem] border border-outline-alt/50 p-8 md:p-12 modern-shadow flex flex-col lg:flex-row gap-12 group">
-                    {/* Visual Editor Section */}
-                    <div className="lg:w-2/3 space-y-10">
-                      <div className="flex justify-between items-center border-b border-outline/30 pb-6">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-black uppercase text-primary/40 tracking-[0.2em]">Configurações da Unidade</span>
-                          <input 
-                            className="text-3xl font-black text-primary bg-transparent outline-none border-none placeholder:text-outline focus:ring-0 w-full" 
-                            value={room.name} 
-                            onChange={e => updateRoom(room.id, { name: e.target.value })} 
-                            placeholder="Ex: Consultório Premium 302" 
-                          />
-                        </div>
-                        <div className="flex gap-3">
-                          <button 
-                            onClick={async () => {
-                              setSaveStatus({ ...saveStatus, [`room-${room.id}`]: true });
-                              await onUpdateSubleaseRooms(localSubleaseRooms);
-                              setTimeout(() => setSaveStatus(prev => ({ ...prev, [`room-${room.id}`]: false })), 2000);
-                            }}
-                            className={`px-6 py-3 rounded-2xl font-bold text-sm shadow-lg transition-all flex items-center gap-2 ${saveStatus[`room-${room.id}`] ? 'bg-secondary text-white' : 'bg-primary text-white hover:shadow-primary/20'}`}
-                          >
-                            {saveStatus[`room-${room.id}`] ? <CheckCircle size={18} /> : <AssignmentTurnedIn size={18} />}
-                            {saveStatus[`room-${room.id}`] ? 'Salvo!' : 'Salvar Alterações'}
-                          </button>
-                          <button onClick={() => removeRoom(room.id)} className="p-4 bg-accent/5 text-accent rounded-2xl hover:bg-accent hover:text-white transition-all">
-                            <Delete size={20} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                        <div className="space-y-6">
-                          <div className="space-y-4">
-                            <label className="text-[10px] font-black uppercase text-primary/60 tracking-widest block">Comodidades (Estilo Digital Dynamic)</label>
-                            <div className="grid grid-cols-2 gap-3">
-                              {[
-                                { label: 'WiFi', icon: <Wifi size={14} className="animate-pulse" /> },
-                                { label: 'Café', icon: <ConciergeBell size={14} /> },
-                                { label: 'Sala de espera', icon: <Users size={14} /> },
-                                { label: 'Ar-condicionado', icon: <Snowflake size={14} className="animate-spin-slow" /> },
-                                { label: 'Banheiro', icon: <Accessibility size={14} /> },
-                                { label: 'Rádio', icon: <Volume2 size={14} /> },
-                                { label: 'Portaria 24h', icon: <ShieldCheck size={14} /> },
-                              ].map(option => {
-                                const isActive = room.amenities.includes(option.label);
-                                return (
-                                  <button
-                                    key={option.label}
-                                    onClick={() => {
-                                      const newAmenities = isActive 
-                                        ? room.amenities.filter(a => a !== option.label)
-                                        : [...room.amenities, option.label];
-                                      updateRoom(room.id, { amenities: newAmenities });
-                                    }}
-                                    className={`relative flex items-center justify-center gap-3 px-4 py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-widest transition-all border overflow-hidden group ${
-                                      isActive 
-                                        ? 'bg-primary text-white border-primary shadow-xl shadow-primary/20 scale-105' 
-                                        : 'bg-surface-container text-on-surface-variant border-outline/20 hover:border-primary/40'
-                                    }`}
-                                  >
-                                    <div className={`shrink-0 ${isActive ? 'scale-125 transition-transform' : ''}`}>
-                                      {option.icon}
-                                    </div>
-                                    {option.label}
-                                    {isActive && (
-                                       <div className="absolute top-0 right-0 p-1">
-                                          <div className="w-1.5 h-1.5 bg-secondary rounded-full animate-ping" />
-                                       </div>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <p className="text-[9px] font-bold text-on-surface-variant/40 italic mt-2">
-                               * Ícones com animações suaves simulam o efeito dinâmico solicitado.
-                            </p>
-                          </div>
-
-                          <div className="space-y-4">
-                            <label className="text-[10px] font-black uppercase text-primary/60 tracking-widest block">Descrição do Ambiente</label>
-                            <textarea 
-                              className="w-full p-5 bg-surface-container rounded-3xl border border-outline/20 focus:border-primary outline-none text-sm leading-relaxed" 
-                              rows={4} 
-                              value={room.description} 
-                              onChange={e => updateRoom(room.id, { description: e.target.value })} 
-                              placeholder="Fale sobre a decoração, iluminação e o público ideal..." 
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-8">
-                          <label className="text-[10px] font-black uppercase text-primary/60 tracking-widest block">Galeria de Fotos (Destaque & Detalhes)</label>
-                          <div className="bg-primary/5 p-6 rounded-[2rem] border border-primary/10 mb-6">
-                            <p className="text-[10px] font-black text-primary uppercase tracking-widest leading-loose">
-                              <span className="text-secondary shrink-0">Tip:</span> Para melhores resultados use fotos horizontais 4:3 (ex: 1200x900px). O editor permite ajustar o enquadramento ideal.
-                            </p>
-                          </div>
-                          {[0, 1].map(index => (
-                            <div key={index} className="flex gap-6 items-center bg-white p-6 rounded-3xl border border-outline-alt/30 soft-shadow">
-                              <div className="w-32 h-24 rounded-2xl bg-surface-container border border-outline/20 overflow-hidden shrink-0 shadow-inner group-hover:scale-105 transition-transform">
-                                <img src={room.photos[index]} className="w-full h-full object-cover" />
-                              </div>
-                              <div className="flex-grow space-y-3">
-                                <div className="flex justify-between items-center">
-                                  <p className="text-[10px] font-black text-primary uppercase tracking-widest">
-                                    {index === 0 ? 'Foto Principal (Banner)' : 'Foto Secundária (Interior)'}
-                                  </p>
-                                  <span className="text-[9px] font-bold text-on-surface-variant/40 italic">Tam. quadro: 400x300 recomendados</span>
-                                </div>
-                                <div className="flex gap-2">
-                                  <label className="cursor-pointer flex-grow text-center px-4 py-3 bg-primary/5 border border-primary/10 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary hover:text-white transition-all shadow-sm">
-                                    AJUSTAR ZOOM E CORTE
-                                    <input 
-                                      type="file" 
-                                      className="hidden" 
-                                      accept="image/*"
-                                      onChange={(e) => {
-                                        if (e.target.files?.[0]) {
-                                          const reader = new FileReader();
-                                          reader.onload = () => {
-                                            setCropImage(reader.result as string);
-                                            setCroppingItemId(room.id);
-                                            setCroppingType(index === 0 ? 'sublease_1' : 'sublease_2');
-                                          };
-                                          reader.readAsDataURL(e.target.files[0]);
-                                        }
-                                      }} 
-                                    />
-                                  </label>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Schedule Editor Section */}
-                      <div className="space-y-6 pt-6 border-t border-outline/30">
-                        <div className="flex items-center gap-3">
-                          <CalendarMonth size={24} className="text-secondary" />
-                          <h4 className="text-lg font-black text-primary uppercase tracking-tighter italic font-serif">Disponibilidade Clínica</h4>
-                        </div>
-                        <div className="bg-surface-container rounded-3xl p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                          {['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(day => {
-                            const dayData = room.schedule[day] || { periods: [] };
-                            return (
-                              <div key={day} className="space-y-4 bg-white p-5 rounded-2xl border border-outline/10 shadow-sm">
-                                <div className="flex justify-between items-center">
-                                  <span className="text-xs font-black text-primary uppercase">{day}</span>
-                                  <div className="h-1 w-8 bg-secondary/20 rounded-full" />
-                                </div>
-                                <div className="space-y-2">
-                                  {dayData.periods.map(period => (
-                                    <div key={period.id} className="space-y-4 p-4 bg-primary/5 rounded-2xl border border-primary/10">
-                                      <div className="flex justify-between items-center">
-                                        <div className="flex flex-col">
-                                          <span className="text-[10px] font-black uppercase text-primary leading-tight">
-                                            {period.id === 'manha' ? 'Período Manhã' : period.id === 'tarde' ? 'Período Tarde' : 'Período Noite'}
-                                          </span>
-                                          <span className="text-[8px] font-medium text-on-surface-variant italic">
-                                            {period.start} - {period.end}
-                                          </span>
-                                        </div>
-                                        <button 
-                                          onClick={() => {
-                                            const newSchedule = { ...room.schedule };
-                                            const dayObj = { ...dayData };
-                                            dayObj.periods = dayObj.periods.map(p => 
-                                              p.id === period.id ? { ...p, available: !p.available } : p
-                                            );
-                                            newSchedule[day] = dayObj;
-                                            updateRoom(room.id, { schedule: newSchedule });
-                                          }}
-                                          className={`px-3 py-1 rounded-full text-[8px] font-black uppercase transition-all ${
-                                            period.available ? 'bg-secondary text-white' : 'bg-outline-alt text-white opacity-40'
-                                          }`}
-                                        >
-                                          {period.available ? 'Ativo' : 'Inativo'}
-                                        </button>
-                                      </div>
-                                      
-                                      <div className="flex flex-wrap gap-1.5 pt-2">
-                                        {period.slots.map(slot => (
-                                          <button
-                                            key={slot.id}
-                                            onClick={() => {
-                                              const newSchedule = { ...room.schedule };
-                                              const dayObj = { ...dayData };
-                                              dayObj.periods = dayObj.periods.map(p => {
-                                                if (p.id === period.id) {
-                                                  const newSlots = p.slots.map(s => 
-                                                    s.id === slot.id ? { ...s, available: !s.available } : s
-                                                  );
-                                                  return { ...p, slots: newSlots };
-                                                }
-                                                return p;
-                                              });
-                                              newSchedule[day] = dayObj;
-                                              updateRoom(room.id, { schedule: newSchedule });
-                                            }}
-                                            className={`px-2 py-1 rounded-lg text-[8px] font-bold border transition-all ${
-                                              slot.available 
-                                                ? 'border-primary/20 bg-white text-primary' 
-                                                : 'border-outline/10 bg-surface-container-highest text-on-surface-variant/30 opacity-40'
-                                            }`}
-                                          >
-                                            {slot.start}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ))}
-                                  {dayData.periods.length === 0 && (
-                                    <button 
-                                      onClick={() => {
-                                        const newSchedule = { ...room.schedule };
-                                        newSchedule[day] = {
-                                          periods: [
-                                            {
-                                              id: 'manha',
-                                              start: '07:00',
-                                              end: '12:00',
-                                              available: true,
-                                              priceBlock: 550,
-                                              priceHour: 31.9,
-                                              slots: [
-                                                { id: 'h7', start: '07:00', end: '08:00', available: true },
-                                                { id: 'h8', start: '08:00', end: '09:00', available: true },
-                                                { id: 'h9', start: '09:00', end: '10:00', available: true },
-                                                { id: 'h10', start: '10:00', end: '11:00', available: true },
-                                                { id: 'h11', start: '11:00', end: '12:00', available: true },
-                                              ]
-                                            },
-                                            {
-                                              id: 'tarde',
-                                              start: '13:00',
-                                              end: '17:00',
-                                              available: true,
-                                              priceBlock: 550,
-                                              priceHour: 31.9,
-                                              slots: [
-                                                { id: 'h13', start: '13:00', end: '14:00', available: true },
-                                                { id: 'h14', start: '14:00', end: '15:00', available: true },
-                                                { id: 'h15', start: '15:00', end: '16:00', available: true },
-                                                { id: 'h16', start: '16:00', end: '17:00', available: true },
-                                              ]
-                                            },
-                                            {
-                                              id: 'noite',
-                                              start: '18:00',
-                                              end: '21:00',
-                                              available: true,
-                                              priceBlock: 420,
-                                              priceHour: 31.9,
-                                              slots: [
-                                                { id: 'h18', start: '18:00', end: '19:00', available: true },
-                                                { id: 'h19', start: '19:00', end: '20:00', available: true },
-                                                { id: 'h20', start: '18:00', end: '21:00', available: true }, // Adjusted to match user's night range if needed
-                                              ]
-                                            }
-                                          ]
-                                        };
-                                        updateRoom(room.id, { schedule: newSchedule });
-                                      }}
-                                      className="w-full py-2 border border-dashed border-outline/50 rounded-xl text-[9px] font-black text-primary/40 hover:text-primary hover:border-primary transition-all uppercase"
-                                    >
-                                      Habilitar Dia
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Preview Section - What users will see */}
-                    <div className="lg:w-1/3">
-                      <div className="sticky top-12 space-y-6">
-                        <div className="flex items-center gap-2">
-                          <Public size={20} className="text-secondary" />
-                          <span className="text-[10px] font-black uppercase text-secondary/60 tracking-widest">Visualização em Tempo Real</span>
-                        </div>
-                        
-                        <div className="bg-background rounded-[2.5rem] overflow-hidden modern-shadow border border-outline-alt/30 scale-95 origin-top lg:scale-100">
-                          <div className="h-48 relative overflow-hidden">
-                            <img src={room.photos[0]} className="w-full h-full object-cover" />
-                            <div className="absolute top-4 left-4 bg-white/95 backdrop-blur px-3 py-1 rounded-full text-[9px] font-bold text-primary border border-white">
-                              DISPONÍVEL AGORA
-                            </div>
-                          </div>
-                          <div className="p-6 space-y-4 bg-white">
-                            <div>
-                              <h3 className="text-xl font-bold text-primary">{room.name || 'Nova Sala de Atendimento'}</h3>
-                              <p className="text-xs text-on-surface-variant font-medium mt-1 line-clamp-2 italic opacity-80">
-                                "{room.description || 'Breve descrição da sala...'}"
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 border-y border-outline/10 py-3">
-                              {room.amenities.map(amenity => (
-                                <span key={amenity} className="inline-flex items-center gap-1 px-2 py-1 bg-primary/5 text-primary text-[8px] font-black uppercase tracking-tighter rounded-lg border border-primary/10">
-                                  {amenity === 'WiFi' && <Wifi size={10} />}
-                                  {amenity === 'Café' && <ConciergeBell size={10} />}
-                                  {amenity === 'Ar-condicionado' && <Snowflake size={10} />}
-                                  {amenity === 'Sala de espera' && <Users size={10} />}
-                                  {amenity === 'Banheiro' && <Accessibility size={10} />}
-                                  {amenity === 'Rádio' && <Volume2 size={10} />}
-                                  {amenity === 'Portaria 24h' && <ShieldCheck size={10} />}
-                                  {amenity}
-                                </span>
-                              ))}
-                            </div>
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-1.5 text-secondary">
-                                <CalendarMonth size={12} />
-                                <span className="text-[8px] font-black uppercase tracking-widest">Atendimento</span>
-                              </div>
-                              <div className="flex flex-wrap gap-1">
-                                {Object.keys(room.schedule).map(day => (
-                                  <span key={day} className="px-1.5 py-0.5 bg-secondary/5 text-secondary text-[7px] font-black rounded-sm border border-secondary/5">
-                                    {day}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                            <button className="w-full py-3 bg-primary text-white rounded-xl font-bold text-xs shadow-lg flex items-center justify-center gap-2 mt-2">
-                              <AssignmentTurnedIn size={14} />
-                              Ver Horários e Reservar
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="bg-secondary/5 border border-secondary/10 p-6 rounded-[2.5rem]">
-                          <div className="flex items-center gap-3 mb-3 text-secondary">
-                            <Info size={18} />
-                            <h5 className="text-[10px] font-black uppercase tracking-widest">Dica de Gestão</h5>
-                          </div>
-                          <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed italic">
-                            "Mantenha a descrição focada nos benefícios (como silêncio ou conforto térmico). Uma sala bem apresentada atrai 40% mais reservas."
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {activeTab === 'home' && (
             <div className="space-y-8">
                <div className="pb-8 border-b border-outline">
@@ -3902,7 +3589,7 @@ function AdminScreen({
                                     if (scriptHandled) return;
                                     scriptHandled = true;
                                     if (script.parentNode) script.parentNode.removeChild(script);
-                                    (window as any)[jsonpCallbackName] = () => {}; // Safe no-op instead of delete
+                                    (window as any)[jsonpCallbackName] = () => {};
                                   };
 
                                   script.src = scriptUrlJsonp;
@@ -3923,7 +3610,6 @@ function AdminScreen({
                                     const parsedSchedule = parseSheetScheduleData(jsonpData);
                                     const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
                                     
-                                    // Conta horários disponíveis reais (com 💚 ou Livre)
                                     const availableCount = appointments.filter((r: any) => {
                                       const status = (r.status || r.paciente || '').toString().toLowerCase();
                                       return status.includes('💚') || status.includes('livre');
@@ -3931,7 +3617,6 @@ function AdminScreen({
                                     
                                     alert(`✅ AGENDA SINCRONIZADA!\nEncontramos ${availableCount} horários disponíveis (💚).\n\nA agenda foi atualizada localmente e no banco de dados. Clique em "Salvar Informações" para garantir.`);
                                     
-                                    // Atualiza Firestore IMEDIATAMENTE e localmente
                                     await updateSpecialistSchedule(s.id, parsedSchedule);
                                     updateSpecialist(s.id, { 
                                       googleAppsScriptUrl: s.googleAppsScriptUrl.trim(),
@@ -3960,45 +3645,63 @@ function AdminScreen({
                             </button>
                          </div>
 
-                         <div className="bg-secondary/5 p-5 rounded-2xl space-y-4">
-                           <div className="flex items-center gap-2 mb-2">
-                              <div className="w-6 h-6 bg-secondary text-white rounded-lg flex items-center justify-center">
-                                 <Info size={14} />
-                              </div>
-                              <p className="text-[10px] font-black uppercase text-secondary tracking-widest">
-                                 Instruções Rápidas de Integração
-                              </p>
+                         <div className="bg-gradient-to-br from-green-50 to-white p-8 rounded-[3rem] space-y-6 border-2 border-green-500/20 shadow-xl shadow-green-100/30 relative overflow-hidden">
+                           <div className="absolute top-0 right-0 p-4">
+                             <span className="bg-green-600 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">Configuração Obrigatória</span>
                            </div>
-                           
-                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[11px] text-primary/80">
-                             <div className="space-y-2 p-4 bg-white/50 rounded-xl border border-outline/30">
-                               <p className="font-bold text-primary flex items-center gap-2">
-                                 <span className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-[8px]">1</span>
-                                 No Google Scripts:
+                           <div className="flex items-center gap-4 mb-2">
+                              <div className="w-10 h-10 bg-green-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-green-200 animate-pulse">
+                                 <Info size={20} />
+                              </div>
+                              <div>
+                                <p className="text-[12px] font-black uppercase text-green-800 tracking-[0.2em]">Guia de Integração Instantânea</p>
+                                <p className="text-[10px] text-green-600/70 font-bold uppercase tracking-widest">Siga estes passos para sincronizar sua planilha</p>
+                              </div>
+                           </div>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-[11px] text-green-900/80">
+                             <div className="space-y-3 p-6 bg-white rounded-[2rem] border-2 border-green-100 shadow-sm hover:border-green-300 transition-colors group">
+                               <p className="font-black text-green-700 flex items-center gap-2 uppercase text-[10px] tracking-widest">
+                                 <span className="w-8 h-8 bg-green-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">1</span>
+                                 No Google Scripts
                                </p>
-                               <p>Salve o código `.gs` e vá em <strong>Implantar &gt; Nova Implantação</strong>.</p>
-                             </div>
-                             <div className="space-y-2 p-4 bg-white/50 rounded-xl border border-outline/30">
-                               <p className="font-bold text-primary flex items-center gap-2">
-                                 <span className="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-[8px]">2</span>
-                                 Configuração de Acesso:
+                               <p className="font-medium text-green-900/80 leading-relaxed">
+                                 Abra seu script, cole o código, salve e vá em: <br/>
+                                 <strong className="text-green-700">Implantar &gt; Nova Implantação</strong>.
                                </p>
-                               <p>Tipo <strong>"App da Web"</strong> e mudar para <strong>"Qualquer pessoa"</strong>.</p>
                              </div>
-                             <div className="sm:col-span-2 p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-4">
-                                <div className="text-amber-600 shrink-0">
-                                   <Info size={20} />
+                             <div className="space-y-3 p-6 bg-white rounded-[2rem] border-2 border-green-100 shadow-sm hover:border-green-300 transition-colors group">
+                               <p className="font-black text-green-700 flex items-center gap-2 uppercase text-[10px] tracking-widest">
+                                 <span className="w-8 h-8 bg-green-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">2</span>
+                                 Configuração de Acesso
+                               </p>
+                               <p className="font-medium text-green-900/80 leading-relaxed">
+                                 Selecione o tipo <strong>"App da Web"</strong> e mude quem pode acessar para <strong>"Qualquer pessoa"</strong>.
+                               </p>
+                             </div>
+                             <div className="sm:col-span-2 p-6 bg-amber-50 rounded-[2rem] border-2 border-amber-200/50 flex gap-5 shadow-inner">
+                                <div className="w-12 h-12 bg-amber-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-200">
+                                   <Info size={24} />
                                 </div>
-                                <div className="space-y-1">
-                                   <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">Dica de Ouro</p>
-                                   <p className="text-[11px] text-amber-700 leading-relaxed">
-                                     O link correto deve terminar em <strong>/exec</strong>.
+                                <div className="space-y-1.5 py-1">
+                                   <p className="text-[11px] font-black uppercase tracking-widest text-amber-800">Cuidado com o Link (URL)</p>
+                                   <p className="text-[12px] text-amber-700 font-bold leading-relaxed">
+                                     O link gerado na implantação <span className="underline decoration-2 underline-offset-4 decoration-amber-400">PRECISA</span> terminar exatamente com <span className="bg-amber-500 text-white px-2 py-0.5 rounded-lg text-[10px] font-black">/exec</span>.
                                    </p>
                                 </div>
                              </div>
                            </div>
-                           <div className="p-3 bg-secondary/10 rounded-xl border border-secondary/20 italic text-[10px] text-secondary font-bold">
-                             💡 Dica: O sistema buscará automaticamente as linhas que contêm o status "💚" (Livre).
+                           <div className="p-6 bg-green-700 rounded-[2rem] border-b-4 border-green-900 flex items-start gap-4 shadow-xl shadow-green-200/50">
+                             <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm text-white flex items-center justify-center shrink-0 border border-white/20">
+                               <Info size={24} />
+                             </div>
+                             <div className="space-y-1.5">
+                               <p className="text-[12px] font-black uppercase text-white tracking-[0.2em]">Padrão de Sincronização</p>
+                               <p className="text-[12px] text-green-50 font-bold leading-relaxed">
+                                 O sistema mapeia automaticamente horários marcados com <span className="bg-white/20 px-2 py-1 rounded-lg text-white font-black">💚</span> ou <span className="bg-white/20 px-2 py-1 rounded-lg text-white font-black">LIVRE</span>.
+                                 <br />
+                                 <span className="text-[10px] opacity-80 uppercase font-black text-white/90">Este é o único padrão aceito para visibilidade imediata.</span>
+                               </p>
+                             </div>
                            </div>
                          </div>
 
@@ -4219,6 +3922,173 @@ function AdminScreen({
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {activeTab === 'psicoeducacao' && (
+            <div className="space-y-8">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-on-surface-variant text-sm">Gerencie os artigos de Psicoeducação exibidos no site.</p>
+                  <p className="text-[10px] text-on-surface-variant/50 mt-1">Use <strong>## Título</strong>, <strong>### Subtítulo</strong>, <strong>**negrito**</strong> e <strong>- item</strong> para formatar o conteúdo.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const now = Date.now();
+                    const newArticle: PsicoeducacaoArticle = {
+                      id: now.toString(),
+                      title: 'Novo Artigo',
+                      subtitle: '',
+                      content: '## Introdução\n\nEscreva aqui o conteúdo do artigo...\n\n### Subtópico\n\n- Ponto importante\n- **Palavra em destaque**',
+                      createdAt: now,
+                      updatedAt: now
+                    };
+                    setLocalArticles([newArticle, ...localArticles]);
+                    setEditingArticle(newArticle);
+                  }}
+                  className="flex items-center gap-2 bg-primary/10 text-primary px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all"
+                >
+                  <Add size={16} /> Novo Artigo
+                </button>
+              </div>
+
+              {/* Lista de artigos ou editor */}
+              {editingArticle ? (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                  <div className="flex items-center gap-4 pb-4 border-b border-outline">
+                    <button
+                      onClick={() => setEditingArticle(null)}
+                      className="flex items-center gap-2 text-primary font-bold text-sm hover:underline group"
+                    >
+                      <ArrowForward size={16} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
+                      Voltar à lista
+                    </button>
+                    <h2 className="text-xl font-bold text-primary">
+                      {localArticles.find(a => a.id === editingArticle.id)?.title || 'Artigo'}
+                    </h2>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Título do Artigo *</label>
+                      <input
+                        className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                        value={editingArticle.title}
+                        onChange={e => setEditingArticle({ ...editingArticle, title: e.target.value })}
+                        placeholder="Ex: Ansiedade, TDAH, Depressão..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Subtítulo / Descrição curta</label>
+                      <input
+                        className="w-full border-b-2 border-outline focus:border-primary outline-none py-2 text-on-surface-variant"
+                        value={editingArticle.subtitle || ''}
+                        onChange={e => setEditingArticle({ ...editingArticle, subtitle: e.target.value })}
+                        placeholder="Ex: O que é, sintomas e como tratar"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Conteúdo do Artigo</label>
+                      <span className={`text-xs font-mono font-bold px-3 py-1 rounded-full ${
+                        editingArticle.content.length < 4000 ? 'bg-accent/10 text-accent'
+                        : editingArticle.content.length > 8000 ? 'bg-accent/10 text-accent'
+                        : 'bg-green-100 text-green-700'
+                      }`}>
+                        {editingArticle.content.length} caracteres
+                        {editingArticle.content.length >= 4000 && editingArticle.content.length <= 8000 && ' ✓'}
+                      </span>
+                    </div>
+                    <textarea
+                      className="w-full p-6 border-2 border-outline rounded-[1.5rem] focus:border-primary outline-none text-sm leading-relaxed font-mono resize-y min-h-[400px] transition-colors"
+                      value={editingArticle.content}
+                      onChange={e => setEditingArticle({ ...editingArticle, content: e.target.value })}
+                      placeholder="## O que é Ansiedade?&#10;&#10;A **ansiedade** é uma resposta natural do organismo...&#10;&#10;### Sintomas Comuns&#10;&#10;- Coração acelerado&#10;- **Dificuldade de concentração**&#10;- Tensão muscular"
+                      spellCheck={false}
+                    />
+                    <p className="text-xs text-on-surface-variant/50">
+                      <strong>## Título H2</strong> · <strong>### Subtítulo H3</strong> · <strong>**negrito**</strong> · <strong>- bullet</strong>
+                    </p>
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <button
+                      disabled={isQuotaLocked}
+                      onClick={async () => {
+                        const updated = localArticles.map(a =>
+                          a.id === editingArticle.id
+                            ? { ...editingArticle, updatedAt: Date.now() }
+                            : a
+                        );
+                        setLocalArticles(updated);
+                        setSaveStatus({ ...saveStatus, [`article-${editingArticle.id}`]: true });
+                        await onUpdatePsicoeducacaoArticles(updated);
+                        setTimeout(() => setSaveStatus(prev => ({ ...prev, [`article-${editingArticle.id}`]: false })), 2000);
+                        setEditingArticle(null);
+                      }}
+                      className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
+                        isQuotaLocked
+                          ? 'bg-outline-variant text-primary/30 cursor-not-allowed'
+                          : saveStatus[`article-${editingArticle.id}`]
+                            ? 'bg-green-500 text-white'
+                            : 'bg-primary text-white hover:bg-primary-light'
+                      }`}
+                    >
+                      {saveStatus[`article-${editingArticle.id}`] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
+                      {saveStatus[`article-${editingArticle.id}`] ? 'Salvo!' : 'Salvar Artigo'}
+                    </button>
+                    <button
+                      onClick={() => setEditingArticle(null)}
+                      className="px-6 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest border border-outline text-on-surface-variant hover:bg-surface transition-all"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </motion.div>
+              ) : (
+                <div className="space-y-4">
+                  {localArticles.length === 0 && (
+                    <div className="text-center py-16 bg-surface-container-low rounded-[2.5rem] border-2 border-dashed border-outline-alt/40">
+                      <Brain size={40} className="mx-auto text-primary/20 mb-3" />
+                      <p className="text-on-surface-variant font-medium">Nenhum artigo criado ainda.</p>
+                      <p className="text-xs text-on-surface-variant/50 mt-1">Clique em "Novo Artigo" para começar.</p>
+                    </div>
+                  )}
+                  {localArticles.map(article => (
+                    <div key={article.id} className="group flex items-center justify-between p-6 bg-surface-container/40 rounded-[1.5rem] border border-outline/30 hover:border-primary/30 transition-all">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-primary text-base truncate">{article.title}</h4>
+                        {article.subtitle && <p className="text-xs text-on-surface-variant/60 italic truncate mt-0.5">{article.subtitle}</p>}
+                        <p className="text-[10px] text-on-surface-variant/40 mt-1">{article.content.length} caracteres · atualizado {new Date(article.updatedAt).toLocaleDateString('pt-BR')}</p>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4 shrink-0">
+                        <button
+                          onClick={() => setEditingArticle(article)}
+                          className="p-2.5 bg-primary/5 text-primary rounded-xl hover:bg-primary hover:text-white transition-all"
+                          title="Editar"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Deseja excluir o artigo "${article.title}"?`)) {
+                              const updated = localArticles.filter(a => a.id !== article.id);
+                              setLocalArticles(updated);
+                              await onUpdatePsicoeducacaoArticles(updated);
+                            }
+                          }}
+                          className="p-2.5 bg-accent/5 text-accent rounded-xl hover:bg-accent hover:text-white transition-all opacity-0 group-hover:opacity-100"
+                          title="Excluir"
+                        >
+                          <Delete size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

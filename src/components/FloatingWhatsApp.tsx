@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { MessageCircle } from 'lucide-react';
+import { trackWhatsAppClick } from '../analytics';
 
 const FloatingWhatsApp = () => {
   const whatsappNumber = '5548999549041'; // Clínica Hope number
@@ -12,6 +13,7 @@ const FloatingWhatsApp = () => {
       href={whatsappUrl}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={() => trackWhatsAppClick('floating_button')}
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       whileHover={{ scale: 1.1 }}
@@ -28,3 +30,4 @@ const FloatingWhatsApp = () => {
 };
 
 export default FloatingWhatsApp;
+

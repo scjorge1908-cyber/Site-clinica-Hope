@@ -126,7 +126,8 @@ export const COLLECTIONS = {
   PROFISSIONAIS: 'profissionais',
   AGENDA: 'agenda',
   CONFIGURACOES: 'configuracoes',
-  HISTORICO: 'historico'
+  HISTORICO: 'historico',
+  PSICOEDUCACAO_ARTICLES: 'psicoeducacao_articles'
 };
 
 // Document IDs
@@ -381,3 +382,38 @@ export async function saveFirebaseAgenda(specialistId: string, agenda: any) {
   }
 }
 
+export async function getPsicoeducacaoArticles() {
+  const path = COLLECTIONS.PSICOEDUCACAO_ARTICLES;
+  try {
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.PSICOEDUCACAO_ARTICLES));
+    return querySnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return [];
+  }
+}
+
+export async function savePsicoeducacaoArticles(articles: any[]) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
+  try {
+    const querySnapshot = await getDocsFromServer(collection(db, COLLECTIONS.PSICOEDUCACAO_ARTICLES));
+    const existingIds = querySnapshot.docs.map(d => d.id);
+    const newIds = articles.map(a => a.id);
+
+    const batch = writeBatch(db);
+
+    const toDelete = existingIds.filter(id => !newIds.includes(id));
+    for (const id of toDelete) {
+      batch.delete(doc(db, COLLECTIONS.PSICOEDUCACAO_ARTICLES, id));
+    }
+
+    for (const a of articles) {
+      if (!a.id) continue;
+      batch.set(doc(db, COLLECTIONS.PSICOEDUCACAO_ARTICLES, a.id), a);
+    }
+
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, COLLECTIONS.PSICOEDUCACAO_ARTICLES);
+  }
+}
