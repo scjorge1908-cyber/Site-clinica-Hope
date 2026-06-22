@@ -84,6 +84,7 @@ import {
   saveSubleaseBooking,
   updateSubleaseBookingStatus,
   updateSpecialistSchedule,
+  getFirebaseAgenda,
   loginWithGoogle,
   logout as firebaseLogout,
   forceResetFirebase,
@@ -2874,7 +2875,8 @@ function AdminScreen({
   const [editingArticle, setEditingArticle] = useState<PsicoeducacaoArticle | null>(null);
 
   const [hasInitialized, setHasInitialized] = useState(false);
-  const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens' | 'psicoeducacao' | 'sublocacao' | 'reservas_sublocacao'>('home');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'projetos' | 'integracoes' | 'home' | 'corpo' | 'abordagens' | 'psicoeducacao' | 'sublocacao' | 'reservas_sublocacao'>('dashboard');
+  const [activeConfigTab, setActiveConfigTab] = useState<'home' | 'corpo' | 'abordagens'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
 
   const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | 'sublease_1' | 'sublease_2' | null>(null);
@@ -2915,6 +2917,8 @@ function AdminScreen({
       setLocalArticles(psicoeducacaoArticles);
     }
   }, [psicoeducacaoArticles, hasInitialized]);
+
+  const isConfigGroupActive = ['home', 'corpo', 'abordagens'].includes(activeTab);
 
   const addRoom = () => {
     const id = Date.now().toString();

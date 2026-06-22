@@ -121,6 +121,12 @@ export const COLLECTIONS = {
   INSURANCE: 'insurance_plans',
   SUBLEASE_ROOMS: 'sublease_rooms',
   SUBLEASE_BOOKINGS: 'sublease_bookings',
+  USERS: 'users',
+  PACIENTES: 'pacientes',
+  PROFISSIONAIS: 'profissionais',
+  AGENDA: 'agenda',
+  CONFIGURACOES: 'configuracoes',
+  HISTORICO: 'historico',
   PSICOEDUCACAO_ARTICLES: 'psicoeducacao_articles'
 };
 
@@ -330,6 +336,47 @@ export async function updateSubleaseBookingStatus(bookingId: string, status: str
   try {
     const docRef = doc(db, COLLECTIONS.SUBLEASE_BOOKINGS, bookingId);
     await setDoc(docRef, { status }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function getGenericCollection(collectionName: string) {
+  const path = collectionName;
+  try {
+    const querySnapshot = await getDocsFromServer(collection(db, collectionName));
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function saveGenericDocument(collectionName: string, docId: string, data: any) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
+  const path = `${collectionName}/${docId}`;
+  try {
+    await setDoc(doc(db, collectionName, docId), data, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function getFirebaseAgenda(specialistId: string) {
+  const path = `${COLLECTIONS.AGENDA}/${specialistId}`;
+  try {
+    const docRef = doc(db, COLLECTIONS.AGENDA, specialistId);
+    const docSnap = await getDocFromServer(docRef);
+    return docSnap.exists() ? docSnap.data() : null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
+}
+
+export async function saveFirebaseAgenda(specialistId: string, agenda: any) {
+  if (isQuotaExhausted()) throw new Error('Firestore Quota Exhausted');
+  const path = `${COLLECTIONS.AGENDA}/${specialistId}`;
+  try {
+    await setDoc(doc(db, COLLECTIONS.AGENDA, specialistId), agenda, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

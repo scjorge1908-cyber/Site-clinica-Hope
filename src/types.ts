@@ -96,6 +96,9 @@ export interface Specialist {
   googleSheetsId?: string;
   googleSheetsTab?: string;
   googleAppsScriptUrl?: string;
+  firebaseAgendaEnabled?: boolean;
+  firebaseAgendaCollection?: string;
+  agendaSource?: 'google_sheets' | 'firebase' | 'both';
   lastSync?: string;
   schedule?: {
     [day: string]: {
