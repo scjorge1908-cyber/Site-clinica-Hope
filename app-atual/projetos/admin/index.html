@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin — Agenda de Consultório</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;background:#f6f7fb;padding:20px;color:#111}
+    .card{background:#fff;padding:18px;border-radius:8px;max-width:820px;margin:12px auto;box-shadow:0 4px 18px rgba(16,24,40,0.06)}
+    label{display:block;margin:10px 0 6px;font-weight:700}
+    input,select,textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px}
+    button{margin-top:12px;padding:10px 14px;background:#0ea5a4;border:none;color:white;border-radius:6px;font-weight:700;cursor:pointer}
+    .success{color:green;margin-top:8px}
+    .error{color:#b91c1c;margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Admin — Agenda de Consultório</h2>
+    <p>Ferramenta simples para marcar/desmarcar o campo <strong>desborde</strong> em um slot da `agenda`.</p>
+
+    <label for="specialistId">specialistId (ID do documento em collection `agenda`)</label>
+    <input id="specialistId" placeholder="ex: especialista-123" />
+
+    <label for="linha">Linha (campo `linha` do slot)</label>
+    <input id="linha" type="number" placeholder="ex: 2" />
+
+    <label for="desborde">Desborde</label>
+    <select id="desborde">
+      <option value="true">Ativar (true)</option>
+      <option value="false" selected>Desativar (false)</option>
+    </select>
+
+    <label for="motivo">Motivo (opcional)</label>
+    <textarea id="motivo" rows="2" placeholder="Motivo da alteração"></textarea>
+
+    <button id="btn">Enviar</button>
+    <div id="out"></div>
+
+    <hr />
+    <p style="font-size:13px;color:#555">Observação: configure `API_BASE` abaixo para apontar para seu backend (ex.: https://us-central1-.../api). Em desenvolvimento local use o emulador (ex.: http://localhost:3000).</p>
+  </div>
+
+  <script>
+    // Ajuste conforme seu endpoint de funções/servidor
+    const API_BASE = window.API_BASE || '';
+
+    document.getElementById('btn').addEventListener('click', async () => {
+      const out = document.getElementById('out'); out.textContent = '';
+      const specialistId = document.getElementById('specialistId').value.trim();
+      const linha = document.getElementById('linha').value.trim();
+      const desborde = document.getElementById('desborde').value === 'true';
+      const motivo = document.getElementById('motivo').value.trim();
+
+      if (!specialistId || !linha) { out.innerHTML = '<div class="error">Preencha specialistId e linha</div>'; return; }
+
+      const url = API_BASE + '/agenda/' + encodeURIComponent(specialistId) + '/slot/' + encodeURIComponent(linha) + '/desborde';
+
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ desborde, motivo })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(JSON.stringify(data));
+        out.innerHTML = '<div class="success">Alteração aplicada com sucesso.</div>';
+      } catch (e) {
+        out.innerHTML = '<div class="error">Erro: ' + (e.message || e) + '</div>';
+        console.error(e);
+      }
+    });
+  </script>
+</body>
+</html>
