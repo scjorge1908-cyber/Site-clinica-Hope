@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main  # Altere para 'master' se for o caso
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
