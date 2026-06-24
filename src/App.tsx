@@ -2993,7 +2993,7 @@ function AdminScreen({
       ageGroups: [AgeGroup.Adults],
       shifts: [Shift.Morning]
     };
-    setLocalSpecialists([...localSpecialists, newSpec]);
+    setLocalSpecialists([newSpec, ...localSpecialists]);
   };
 
   const removeSpecialist = async (id: string) => {
