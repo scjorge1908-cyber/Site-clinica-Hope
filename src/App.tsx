@@ -2184,7 +2184,15 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                               </div>
                               <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
                             </button>
-                            {insurancePlans.filter(p => p.name.toLowerCase() !== 'particular').map(plan => (
+                            {insurancePlans
+                              .filter(p => p.name.toLowerCase() !== 'particular')
+                              .filter(plan => {
+                                if (spec.insurancePlans) {
+                                  return spec.insurancePlans.includes(plan.id);
+                                }
+                                return true;
+                              })
+                              .map(plan => (
                               <button
                                 key={plan.id}
                                 onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
@@ -3200,7 +3208,8 @@ function AdminScreen({
       desc: 'Descrição aqui...',
       img: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=688',
       ageGroups: [AgeGroup.Adults],
-      shifts: [Shift.Morning]
+      shifts: [Shift.Morning],
+      insurancePlans: []
     };
     setLocalSpecialists([newSpec, ...localSpecialists]);
   };
@@ -3941,6 +3950,42 @@ function AdminScreen({
                             </button>
                           ))}
                         </div>
+
+                        <p className="text-[10px] uppercase font-bold tracking-widest text-primary pt-2">Convênios Atendidos</p>
+                        {localInsurancePlans && localInsurancePlans.filter(p => p.name.toLowerCase() !== 'particular').length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {localInsurancePlans.filter(p => p.name.toLowerCase() !== 'particular').map(plan => {
+                              const current = s.insurancePlans || [];
+                              const isSelected = current.includes(plan.id);
+                              return (
+                                <button 
+                                  key={plan.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = isSelected 
+                                      ? current.filter(id => id !== plan.id) 
+                                      : [...current, plan.id];
+                                    updateSpecialist(s.id, { insurancePlans: updated });
+                                  }}
+                                  className={`px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all flex items-center gap-2 ${
+                                    isSelected 
+                                      ? 'bg-secondary text-white border-secondary shadow-sm' 
+                                      : 'bg-surface text-on-surface-variant border-outline hover:border-secondary/40'
+                                  }`}
+                                >
+                                  {plan.logo ? (
+                                    <img src={plan.logo} className="h-4 w-auto object-contain max-w-[40px] select-none" alt="" />
+                                  ) : (
+                                    <div className="w-1.5 h-1.5 rounded-full bg-current" />
+                                  )}
+                                  <span>{plan.name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-on-surface-variant/60 italic ml-1">Nenhum convênio cadastrado no site (exceto Particular). Cadastre convênios na aba "Configurações".</p>
+                        )}
                         
                         {!s.googleAppsScriptUrl && (
                           <>
