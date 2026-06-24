@@ -20,6 +20,7 @@ const FloatingWhatsApp = () => {
       whileTap={{ scale: 0.9 }}
       className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-[#25D366] text-white px-5 py-3 rounded-full shadow-2xl hover:bg-[#20ba5a] transition-colors group cursor-pointer border-2 border-white/20"
       id="floating-whatsapp"
+      data-event="contato_whatsapp"
     >
       <span className="font-bold text-sm tracking-tight whitespace-nowrap">
         Agende pelo WhatsApp
