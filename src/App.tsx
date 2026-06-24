@@ -95,7 +95,7 @@ import {
   savePsicoeducacaoArticles
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { onSnapshot, collection, doc } from 'firebase/firestore';
+import { onSnapshot, collection, doc, getDocs } from 'firebase/firestore';
 import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit } from './analytics';
 // Helper for Local Storage
 const LS_KEYS = {
@@ -216,21 +216,197 @@ export default function App() {
   
   const [scrollIntent, setScrollIntent] = useState(false);
 
+  const [syncingSpecs, setSyncingSpecs] = useState<Record<string, boolean>>({});
+
+  const syncSpecialist = async (specId: string, force: boolean = false) => {
+    if (syncingSpecs[specId]) return;
+
+    const spec = (specialists || []).find(s => s.id === specId);
+    if (!spec || (!spec.googleAppsScriptUrl && !spec.googleSheetsId)) return;
+
+    const twoHoursMs = 2 * 60 * 60 * 1000;
+    const isExpired = !spec.lastSync || (Date.now() - new Date(spec.lastSync).getTime() > twoHoursMs);
+
+    if (!isExpired && !force) {
+      console.log(`[Cache Ativo] Agenda de ${spec.name} está dentro das 2h válidas.`);
+      return;
+    }
+
+    console.log(`[Lazy Sync] Sincronizando agenda de ${spec.name}...`);
+    setSyncingSpecs(prev => ({ ...prev, [specId]: true }));
+
+    try {
+      let baseUrl = (spec.googleAppsScriptUrl || '').trim();
+      if (baseUrl && !baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
+
+      let newSchedule: any = null;
+      let foundData = false;
+
+      if (baseUrl && baseUrl.toLowerCase().includes('script.google.com') && baseUrl.includes('/exec')) {
+        const jsonpUrl = baseUrl.includes('?') 
+          ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` 
+          : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
+        
+        const jsonpData = await new Promise<any>((resolve) => {
+          const callbackName = `bg_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+          const script = document.createElement('script');
+          
+          let scriptResolved = false;
+          const cleanup = () => {
+            if (scriptResolved) return;
+            scriptResolved = true;
+            if (script.parentNode) script.parentNode.removeChild(script);
+            (window as any)[callbackName] = () => {};
+          };
+
+          script.src = `${jsonpUrl}&callback=${callbackName}`;
+          script.onerror = () => {
+            cleanup();
+            resolve(null);
+          };
+
+          (window as any)[callbackName] = (res: any) => {
+            cleanup();
+            resolve(res);
+          };
+
+          setTimeout(() => {
+            cleanup();
+            resolve(null);
+          }, 25000);
+
+          document.body.appendChild(script);
+        });
+
+        if (jsonpData) {
+          newSchedule = parseSheetScheduleData(jsonpData);
+          if (newSchedule && Object.keys(newSchedule).length > 0) {
+            foundData = true;
+          }
+        }
+      }
+
+      if (!foundData && spec.googleSheetsId) {
+        let sheetId = spec.googleSheetsId;
+        if (sheetId.includes('/d/')) {
+          const parts = sheetId.split('/d/');
+          if (parts.length > 1) sheetId = parts[1].split('/')[0];
+        }
+        const tabName = spec.googleSheetsTab || 'Agenda';
+        const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}&t=${Date.now()}`;
+        
+        const response = await fetch(url).catch(() => null);
+        if (response && response.ok) {
+          const csvText = await response.text();
+          const rows = csvText.split(/\r?\n/).map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim())).filter(row => row.length >= 3);
+          
+          const newCsvSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
+          rows.slice(1).forEach(row => {
+            const [dayRaw, timeRaw, statusRaw] = row;
+            const status = (statusRaw || '').toLowerCase().trim();
+            const isAvailable = status.includes('💚') || status.includes('livre');
+
+            if (dayRaw && timeRaw && isAvailable) {
+              const dayMap: Record<string, string> = {
+                'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'seg': 'Segunda',
+                'terca': 'Terça', 'terca-feira': 'Terça', 'ter': 'Terça',
+                'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'qua': 'Quarta',
+                'quinta': 'Quinta', 'quinta-feira': 'Quinta', 'qui': 'Quinta',
+                'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sex': 'Sexta',
+                'sabado': 'Sábado', 'sábado': 'Sábado', 'sab': 'Sábado'
+              };
+              const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
+              
+              if (!newCsvSchedule[day]) newCsvSchedule[day] = { periods: {} as any };
+              const hourMatch = timeRaw.match(/(\d{1,2})/);
+              if (hourMatch) {
+                const hour = parseInt(hourMatch[1]);
+                const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
+                if (!newCsvSchedule[day].periods[shift]) newCsvSchedule[day].periods[shift] = [];
+                const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
+                const processedTime = timeMatch ? timeMatch[1] : timeRaw;
+                if (!newCsvSchedule[day].periods[shift]?.includes(processedTime)) newCsvSchedule[day].periods[shift]?.push(processedTime);
+              }
+            }
+          });
+
+          if (Object.keys(newCsvSchedule).length > 0) {
+            newSchedule = newCsvSchedule;
+            foundData = true;
+          }
+        }
+      }
+
+      if (foundData && newSchedule) {
+        await updateSpecialistSchedule(specId, newSchedule);
+        setSpecialists(prev => (prev || []).map(s => s.id === specId ? {
+          ...s,
+          schedule: newSchedule,
+          lastSync: new Date().toISOString()
+        } : s));
+        console.log(`[Lazy Sync Sucesso] Agenda de ${spec.name} atualizada no Firestore.`);
+      }
+    } catch (e) {
+      console.error(`[Lazy Sync Erro] Falha ao sincronizar agenda de ${spec.name}:`, e);
+    } finally {
+      setSyncingSpecs(prev => ({ ...prev, [specId]: false }));
+    }
+  };
+
+  const syncAllExpiredSpecialists = async (targetId: string) => {
+    if (!specialists || specialists.length === 0) return;
+
+    const twoHoursMs = 2 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const expiredSpecs = specialists.filter(s => {
+      if (!s.googleAppsScriptUrl && !s.googleSheetsId) return false;
+      const isExpired = !s.lastSync || (now - new Date(s.lastSync).getTime() > twoHoursMs);
+      return isExpired || s.id === targetId;
+    });
+
+    if (expiredSpecs.length === 0) return;
+
+    console.log(`[Lazy Sync Geral] Sincronizando agendas expiradas (${expiredSpecs.length} psicólogos)...`);
+    await Promise.all(expiredSpecs.map(s => syncSpecialist(s.id, s.id === targetId)));
+  };
+
   // Initial Load from Firebase (Real-time Sync) and Auth check
   useEffect(() => {
+    let unsubSpecs = () => {};
+
+    const startSpecsListener = () => {
+      unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
+        setSpecialists(data.length > 0 ? data : []);
+        specsLoaded = true;
+        checkAllLoaded();
+      }, (error) => {
+        console.error("Erro no listener de especialistas:", error);
+        setSpecialists([]);
+        specsLoaded = true;
+        checkAllLoaded();
+      });
+    };
+
     const unsubscribeAuth = onAuthStateChanged(auth, (authUser) => {
       setUser(authUser);
       if (authUser) {
         console.log("Usuário logado:", authUser.email);
         if (authUser.email === 'scjorge1908@gmail.com') {
           setIsAdminUnlocked(true);
-          console.log("Admin desbloqueado via email");
+          console.log("Admin detectado. Ativando sincronização em tempo real de especialistas...");
+          unsubSpecs();
+          startSpecsListener();
         } else {
           setIsAdminUnlocked(false);
         }
       } else {
         console.log("Usuário não logado");
         setIsAdminUnlocked(false);
+        unsubSpecs();
+        unsubSpecs = () => {};
       }
     });
 
@@ -280,13 +456,14 @@ export default function App() {
       checkAllLoaded();
     });
 
-    const unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
+    // For public users (default on load), load specialists once instead of real-time listener
+    getDocs(collection(db, COLLECTIONS.SPECIALISTS)).then((snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
       setSpecialists(data.length > 0 ? data : []);
       specsLoaded = true;
       checkAllLoaded();
-    }, (error) => {
-      console.error("Erro no listener de especialistas:", error);
+    }).catch((error) => {
+      console.error("Erro ao carregar especialistas uma vez:", error);
       setSpecialists([]);
       specsLoaded = true;
       checkAllLoaded();
@@ -538,6 +715,8 @@ export default function App() {
               approaches={approaches}
               specialists={specialists}
               isAdminUnlocked={isAdminUnlocked}
+              syncingSpecs={syncingSpecs}
+              onSyncRequest={syncAllExpiredSpecialists}
             />
           )}
           {currentScreen === Screen.SEO && <SEOScreen onNavigate={navigateTo} settings={homeSettings} />}
@@ -549,6 +728,8 @@ export default function App() {
               settings={safeSettings}
               isAdminUnlocked={isAdminUnlocked}
               shouldScrollToList={scrollIntent}
+              syncingSpecs={syncingSpecs}
+              onSyncRequest={syncAllExpiredSpecialists}
             />
           )}
           {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} settings={homeSettings} />}
@@ -837,9 +1018,11 @@ interface HomeProps extends ScreenProps {
   settings: HomeSettings;
   approaches: Approach[];
   isAdminUnlocked: boolean;
+  syncingSpecs?: Record<string, boolean>;
+  onSyncRequest?: (specId: string) => void;
 }
 
-function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlocked }: HomeProps & { specialists: Specialist[] }) {
+function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlocked, syncingSpecs, onSyncRequest }: HomeProps & { specialists: Specialist[] }) {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -1019,6 +1202,8 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                           isAdminUnlocked={isAdminUnlocked}
                           isCarousel={true}
                           onNavigate={onNavigate}
+                          isSyncing={!!syncingSpecs?.[spec.id]}
+                          onSyncRequest={() => onSyncRequest?.(spec.id)}
                         />
                       </motion.div>
                     );
@@ -1447,6 +1632,8 @@ interface CorpoClinicoProps extends ScreenProps {
   settings: HomeSettings;
   isAdminUnlocked: boolean;
   shouldScrollToList?: boolean;
+  syncingSpecs?: Record<string, boolean>;
+  onSyncRequest?: (specId: string) => void;
 }
 
 interface SpecialistCardProps {
@@ -1455,6 +1642,8 @@ interface SpecialistCardProps {
   isAdminUnlocked?: boolean;
   isCarousel?: boolean;
   onNavigate?: (screen: Screen, transition?: TransitionType, scroll?: boolean) => void;
+  isSyncing?: boolean;
+  onSyncRequest?: () => void;
 }
 
 function sortKeys(obj: any): any {
@@ -1524,17 +1713,25 @@ function parseSheetScheduleData(jsonpData: any): Record<string, { periods: Recor
   return newSchedule;
 }
 
-function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate }: SpecialistCardProps) {
+function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate, isSyncing, onSyncRequest }: SpecialistCardProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(spec.schedule || null);
   
   useEffect(() => {
-    if (!spec.googleAppsScriptUrl && !spec.googleSheetsId) {
-      setSheetSchedule(spec.schedule || null);
+    setSheetSchedule(spec.schedule || null);
+  }, [spec.schedule]);
+
+  useEffect(() => {
+    if (!isAdminUnlocked && (spec.googleAppsScriptUrl || spec.googleSheetsId)) {
+      const twoHoursMs = 2 * 60 * 60 * 1000;
+      const isExpired = !spec.lastSync || (Date.now() - new Date(spec.lastSync).getTime() > twoHoursMs);
+      if (isExpired && onSyncRequest) {
+        onSyncRequest();
+      }
     }
-  }, [spec.schedule, spec.googleAppsScriptUrl, spec.googleSheetsId]);
+  }, [spec.lastSync, isAdminUnlocked, spec.googleAppsScriptUrl, spec.googleSheetsId]);
 
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
@@ -1543,6 +1740,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!isAdminUnlocked) return;
+
     if (spec.googleAppsScriptUrl || spec.googleSheetsId) {
       const fetchSheetData = async () => {
         if (isLoadingSheet) return;
@@ -1826,7 +2025,15 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
             </div>
           ) : (
             displayAgenda && (
-              <div className="pt-6 border-t border-outline-alt/30 space-y-4">
+              <div className={`pt-6 border-t border-outline-alt/30 space-y-4 relative transition-opacity duration-300 ${!isAdminUnlocked && isSyncing ? 'opacity-60 pointer-events-none' : 'opacity-100'}`}>
+                {!isAdminUnlocked && isSyncing && (
+                  <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-amber-50 rounded-lg w-fit border border-amber-200/50 animate-pulse">
+                    <RefreshCw size={12} className="text-amber-600 animate-spin" />
+                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">
+                      Verificando...
+                    </p>
+                  </div>
+                )}
                 {spec.attendedAges && spec.attendedAges.length > 0 && (
                   <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                     <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
@@ -2046,7 +2253,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
     </motion.div>
   );
 }
-function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isAdminUnlocked, shouldScrollToList }: CorpoClinicoProps) {
+function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isAdminUnlocked, shouldScrollToList, syncingSpecs, onSyncRequest }: CorpoClinicoProps) {
   useEffect(() => {
     if (shouldScrollToList) {
       const element = document.getElementById('topo-especialistas');
@@ -2253,6 +2460,8 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
                    spec={spec} 
                    insurancePlans={settings.insurancePlans || []} 
                    isAdminUnlocked={isAdminUnlocked}
+                   isSyncing={!!syncingSpecs?.[spec.id]}
+                   onSyncRequest={() => onSyncRequest?.(spec.id)}
                  />
                </div>
              ))}
