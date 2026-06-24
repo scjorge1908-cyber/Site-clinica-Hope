@@ -104,6 +104,7 @@ export interface Specialist {
       };
     };
   };
+  insurancePlans?: string[];
 }
 
 export interface Approach {
