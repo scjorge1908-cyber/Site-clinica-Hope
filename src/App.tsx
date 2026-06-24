@@ -63,7 +63,9 @@ import {
   Edit2,
   RefreshCw,
   CreditCard,
-  AlertTriangle
+  AlertTriangle,
+  Code,
+  Target
 } from 'lucide-react';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Cropper from 'react-easy-crop';
@@ -213,6 +215,92 @@ export default function App() {
   const [psicoeducacaoArticles, setPsicoeducacaoArticles] = useState<PsicoeducacaoArticle[]>([]);
   const [isDataInitialized, setIsDataInitialized] = useState(false);
   const [user, setUser] = useState<any>(null);
+
+  // Dynamic Marketing & Analytics Script Injection
+  useEffect(() => {
+    if (!homeSettings) return;
+
+    const { gtmId, ga4Id, metaPixelId } = homeSettings;
+    const addedElements: HTMLElement[] = [];
+
+    // Clear existing marketing injection elements if any (to prevent multiple copies on state updates)
+    const existingScripts = document.querySelectorAll('.dynamic-marketing-script');
+    existingScripts.forEach(el => el.remove());
+
+    const injectScript = (id: string, code: string, isHead = true, innerHTML = true) => {
+      const el = document.createElement(innerHTML ? 'script' : 'noscript');
+      el.className = 'dynamic-marketing-script';
+      if (innerHTML) {
+        el.innerHTML = code;
+      } else {
+        el.setAttribute('id', id);
+      }
+      if (isHead) {
+        document.head.appendChild(el);
+      } else {
+        document.body.appendChild(el);
+      }
+      addedElements.push(el);
+    };
+
+    // 1. Google Tag Manager (GTM)
+    if (gtmId && gtmId.trim()) {
+      const cleanGtm = gtmId.trim();
+      const gtmHeadCode = `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+      'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+      })(window,document,'script','dataLayer','${cleanGtm}');`;
+      injectScript('gtm-head', gtmHeadCode, true, true);
+
+      const gtmBodyCode = `<iframe src="https://www.googletagmanager.com/ns.html?id=${cleanGtm}"
+      height="0" width="0" style="display:none;visibility:hidden"></iframe>`;
+      injectScript('gtm-body', gtmBodyCode, false, true);
+    }
+
+    // 2. Google Analytics 4 (GA4)
+    if (ga4Id && ga4Id.trim()) {
+      const cleanGa4 = ga4Id.trim();
+      const ga4Lib = document.createElement('script');
+      ga4Lib.className = 'dynamic-marketing-script';
+      ga4Lib.async = true;
+      ga4Lib.src = `https://www.googletagmanager.com/gtag/js?id=${cleanGa4}`;
+      document.head.appendChild(ga4Lib);
+      addedElements.push(ga4Lib);
+
+      const ga4ConfigCode = `window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', '${cleanGa4}');`;
+      injectScript('ga4-config', ga4ConfigCode, true, true);
+    }
+
+    // 3. Meta Pixel (Facebook Pixel)
+    if (metaPixelId && metaPixelId.trim()) {
+      const cleanPixel = metaPixelId.trim();
+      const pixelHeadCode = `!function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', '${cleanPixel}');
+      fbq('track', 'PageView');`;
+      injectScript('pixel-head', pixelHeadCode, true, true);
+
+      const pixelBodyCode = `<img height="1" width="1" style="display:none"
+      src="https://www.facebook.com/tr?id=${cleanPixel}&ev=PageView&noscript=1" />`;
+      injectScript('pixel-body', pixelBodyCode, false, true);
+    }
+
+    return () => {
+      addedElements.forEach(el => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      });
+    };
+  }, [homeSettings]);
   
   const [scrollIntent, setScrollIntent] = useState(false);
 
@@ -875,6 +963,8 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
           <div className="flex items-center gap-4">
             <button 
               onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
+              id="header-cta-agendar"
+              data-event="inicio_agendamento"
               className="hidden md:block bg-primary text-white text-sm font-bold px-7 py-3 rounded-full hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-primary/20"
             >
               Agendar Consulta
@@ -928,6 +1018,8 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
               <div className="mt-auto pt-10 space-y-6">
                 <button 
                   onClick={() => { onNavigate(Screen.CorpoClinico, 'push', true); setMenuOpen(false); }}
+                  id="mobile-menu-cta-agendar"
+                  data-event="inicio_agendamento"
                   className="w-full bg-secondary text-white py-5 rounded-[2rem] font-bold text-lg shadow-xl shadow-secondary/20 flex items-center justify-center gap-3"
                 >
                   <CalendarMonth size={24} />
@@ -1064,6 +1156,8 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <button 
                 onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
+                id="hero-cta-agendar"
+                data-event="inicio_agendamento"
                 className="btn-primary shadow-xl"
               >
                 Agendar Consulta
@@ -1162,6 +1256,8 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             
             <button 
               onClick={() => onNavigate(Screen.CorpoClinico)}
+              id="specialists-list-cta-agendar"
+              data-event="inicio_agendamento"
               className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center md:self-end"
             >
               Agendar Terapia 
@@ -1291,6 +1387,8 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             </p>
             <button 
               onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
+              id="mid-page-cta-agendar"
+              data-event="inicio_agendamento"
               className="bg-white text-primary px-12 py-6 rounded-2xl font-bold text-lg hover:shadow-2xl transition-all active:scale-95 group-hover:scale-105"
             >
               Agendar agora!
@@ -1506,7 +1604,12 @@ function PsicoeducacaoScreen({ onNavigate, settings, articles }: ScreenProps & {
 
           {!openArticle && (
             <div className="max-w-4xl mx-auto mt-12 text-center">
-              <button onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)} className="btn-primary shadow-xl">
+              <button 
+                onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)} 
+                id="psicoeducacao-footer-cta-agendar"
+                data-event="inicio_agendamento"
+                className="btn-primary shadow-xl"
+              >
                 Agendar Consulta
               </button>
             </div>
@@ -2235,6 +2338,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
           <button 
             disabled={!canBook}
             onClick={handleWhatsAppClick}
+            id="btn-enviar-solicitacao"
+            data-event="agendamento"
             className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
               !canBook 
               ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
@@ -2525,6 +2630,8 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                     target="_blank" 
                     rel="noopener noreferrer"
                     onClick={() => trackWhatsAppClick('contato_section')}
+                    id="btn-whatsapp-contato-section"
+                    data-event="contato_whatsapp"
                     className="inline-flex items-center gap-4 bg-white text-primary px-10 py-5 rounded-2xl font-bold text-lg hover:shadow-2xl transition-all active:scale-95"
                   >
                     <Chat size={24} /> Conversar Agora
@@ -2564,7 +2671,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                       <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">Mensagem (Opcional)</label>
                       <textarea rows={4} className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary shadow-sm resize-none" placeholder="Conte-nos brevemente como podemos ajudar..."></textarea>
                    </div>
-                   <button className="w-full py-5 bg-secondary text-on-secondary font-bold text-lg rounded-2xl hover:shadow-xl transition-all active:scale-95" onClick={() => trackFormSubmit('contato')}>
+                   <button className="w-full py-5 bg-secondary text-on-secondary font-bold text-lg rounded-2xl hover:shadow-xl transition-all active:scale-95" onClick={() => trackFormSubmit('contato')} id="btn-enviar-mensagem-contato" data-event="contato_form">
                       Enviar Solicitação
                    </button>
                 </form>
@@ -3095,7 +3202,7 @@ function AdminScreen({
   const [editingArticle, setEditingArticle] = useState<PsicoeducacaoArticle | null>(null);
 
   const [hasInitialized, setHasInitialized] = useState(false);
-  const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens' | 'psicoeducacao' | 'sublocacao' | 'reservas_sublocacao'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens' | 'psicoeducacao' | 'sublocacao' | 'reservas_sublocacao' | 'marketing'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
 
   const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | 'sublease_1' | 'sublease_2' | null>(null);
@@ -3407,13 +3514,13 @@ function AdminScreen({
               </div>
             )}
             <div className="flex bg-white rounded-2xl p-1 modern-shadow border border-outline">
-              {(['home', 'corpo', 'abordagens', 'psicoeducacao'] as const).map(tab => (
+              {(['home', 'corpo', 'abordagens', 'psicoeducacao', 'marketing'] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface'}`}
                 >
-                  {tab === 'home' ? 'Página Inicial' : tab === 'corpo' ? 'Especialistas' : tab === 'abordagens' ? 'Abordagens' : 'Psicoeducação'}
+                  {tab === 'home' ? 'Página Inicial' : tab === 'corpo' ? 'Especialistas' : tab === 'abordagens' ? 'Abordagens' : tab === 'psicoeducacao' ? 'Psicoeducação' : 'Marketing'}
                 </button>
               ))}
             </div>
@@ -4343,6 +4450,138 @@ function AdminScreen({
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'marketing' && (
+            <div className="space-y-8">
+              <div>
+                <h2 className="text-2xl font-display font-black text-primary mb-2">Integrações de Marketing</h2>
+                <p className="text-on-surface-variant text-sm">
+                  Insira seus IDs de rastreamento para conectar ferramentas de análise de tráfego e campanhas de anúncios (Google Ads, Meta Ads).
+                </p>
+                <p className="text-[10px] text-accent font-semibold mt-1">
+                  Nota: Os scripts serão injetados dinamicamente no cabeçalho (&lt;head&gt;) do site de forma automática apenas quando os campos estiverem preenchidos.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {/* Google Tag Manager */}
+                <div className="bg-surface-container/20 p-6 rounded-[1.5rem] border border-outline/30 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center text-primary">
+                        <Code size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-primary text-sm">Google Tag Manager</h4>
+                        <p className="text-[10px] text-on-surface-variant/60 font-medium">Recomendado</p>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary block">ID do GTM</label>
+                      <input
+                        className="w-full text-base font-bold border-b border-outline focus:border-primary outline-none py-1.5 bg-transparent"
+                        value={localSettings.gtmId || ''}
+                        onChange={e => setLocalSettings({ ...localSettings, gtmId: e.target.value })}
+                        placeholder="Ex: GTM-XXXXXXX"
+                      />
+                    </div>
+                    <p className="text-xs text-on-surface-variant/60 leading-relaxed">
+                      Centraliza o gerenciamento de todas as tags de marketing (Pixel, Analytics, etc.) sem precisar mexer no código do site.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Google Analytics 4 */}
+                <div className="bg-surface-container/20 p-6 rounded-[1.5rem] border border-outline/30 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center text-primary">
+                        <AssignmentTurnedIn size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-primary text-sm">Google Analytics 4</h4>
+                        <p className="text-[10px] text-on-surface-variant/60 font-medium">Análise de Tráfego</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary block">ID do GA4</label>
+                      <input
+                        className="w-full text-base font-bold border-b border-outline focus:border-primary outline-none py-1.5 bg-transparent"
+                        value={localSettings.ga4Id || ''}
+                        onChange={e => setLocalSettings({ ...localSettings, ga4Id: e.target.value })}
+                        placeholder="Ex: G-XXXXXXXXXX"
+                      />
+                    </div>
+                    <p className="text-xs text-on-surface-variant/60 leading-relaxed">
+                      Mede visitas, comportamento dos usuários, fontes de tráfego e visualizações de página de maneira profunda e detalhada.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Meta Pixel */}
+                <div className="bg-surface-container/20 p-6 rounded-[1.5rem] border border-outline/30 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center text-primary">
+                        <Target size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-primary text-sm">Meta Pixel</h4>
+                        <p className="text-[10px] text-on-surface-variant/60 font-medium">Facebook &amp; Instagram Ads</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary block">ID do Pixel da Meta</label>
+                      <input
+                        className="w-full text-base font-bold border-b border-outline focus:border-primary outline-none py-1.5 bg-transparent"
+                        value={localSettings.metaPixelId || ''}
+                        onChange={e => setLocalSettings({ ...localSettings, metaPixelId: e.target.value })}
+                        placeholder="Ex: 123456789012345"
+                      />
+                    </div>
+                    <p className="text-xs text-on-surface-variant/60 leading-relaxed">
+                      Crucial para criar públicos-alvo, fazer remarketing e rastrear conversões vindas de anúncios patrocinados no Facebook/Instagram.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-amber-400/10 p-5 rounded-2xl border border-amber-400/20 text-xs text-amber-800 leading-relaxed space-y-2">
+                <p className="font-bold">💡 Dica de Rastreamento Automático de Conversões (GTM):</p>
+                <p>
+                  Todos os botões principais do site (como <strong>Agendar Consulta</strong>, <strong>WhatsApp</strong> e envios de formulário) já foram configurados com atributos semânticos especiais, como <code>data-event="agendamento"</code>, para que você possa facilmente configurar os disparadores de conversões no painel do Google Tag Manager sem precisar alterar o código do site novamente.
+                </p>
+              </div>
+
+              <div className="flex justify-start">
+                <button
+                  disabled={isQuotaLocked}
+                  onClick={async () => {
+                    try {
+                      setSaveStatus({ ...saveStatus, marketing: true });
+                      await onUpdateSettings(localSettings);
+                      setTimeout(() => setSaveStatus(prev => ({ ...prev, marketing: false })), 2000);
+                    } catch (e) {
+                      alert("Erro ao salvar integrações de marketing.");
+                    }
+                  }}
+                  className={`flex items-center gap-2 px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
+                    isQuotaLocked
+                      ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none'
+                      : saveStatus['marketing']
+                        ? 'bg-green-500 text-white'
+                        : 'bg-primary text-white hover:bg-primary-light'
+                  }`}
+                >
+                  {saveStatus['marketing'] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
+                  {saveStatus['marketing'] ? 'Integrações Salvas!' : 'Salvar Integrações'}
+                </button>
+              </div>
             </div>
           )}
         </div>
