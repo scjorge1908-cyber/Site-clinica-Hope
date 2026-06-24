@@ -1719,6 +1719,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(spec.schedule || null);
   
+  const particularPlan = insurancePlans?.find(p => p.name.toLowerCase() === 'particular');
+  
   useEffect(() => {
     setSheetSchedule(spec.schedule || null);
   }, [spec.schedule]);
@@ -2171,19 +2173,21 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                           </div>
 
                           <div className="grid grid-cols-2 gap-4">
-                            <button
-                              onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
-                              className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
-                                selectedPlan === 'Particular'
-                                ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
-                                : 'bg-transparent text-primary hover:bg-secondary/5'
-                              }`}
-                            >
-                              <div className="w-12 h-10 flex items-center justify-center">
-                                <CreditCard size={28} className="text-secondary" />
-                              </div>
-                              <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
-                            </button>
+                            {(!spec.insurancePlans || (particularPlan && spec.insurancePlans.includes(particularPlan.id))) && (
+                              <button
+                                onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
+                                className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
+                                  selectedPlan === 'Particular'
+                                  ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
+                                  : 'bg-transparent text-primary hover:bg-secondary/5'
+                                }`}
+                              >
+                                <div className="w-12 h-10 flex items-center justify-center">
+                                  <CreditCard size={28} className="text-secondary" />
+                                </div>
+                                <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
+                              </button>
+                            )}
                             {insurancePlans
                               .filter(p => p.name.toLowerCase() !== 'particular')
                               .filter(plan => {
@@ -3952,9 +3956,9 @@ function AdminScreen({
                         </div>
 
                         <p className="text-[10px] uppercase font-bold tracking-widest text-primary pt-2">Convênios Atendidos</p>
-                        {localInsurancePlans && localInsurancePlans.filter(p => p.name.toLowerCase() !== 'particular').length > 0 ? (
+                        {localInsurancePlans && localInsurancePlans.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
-                            {localInsurancePlans.filter(p => p.name.toLowerCase() !== 'particular').map(plan => {
+                            {localInsurancePlans.map(plan => {
                               const current = s.insurancePlans || [];
                               const isSelected = current.includes(plan.id);
                               return (
@@ -3984,7 +3988,7 @@ function AdminScreen({
                             })}
                           </div>
                         ) : (
-                          <p className="text-[10px] text-on-surface-variant/60 italic ml-1">Nenhum convênio cadastrado no site (exceto Particular). Cadastre convênios na aba "Configurações".</p>
+                          <p className="text-[10px] text-on-surface-variant/60 italic ml-1">Nenhum convênio cadastrado no site. Cadastre convênios na aba "Configurações".</p>
                         )}
                         
                         {!s.googleAppsScriptUrl && (
