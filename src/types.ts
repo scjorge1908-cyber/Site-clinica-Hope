@@ -133,4 +133,7 @@ export interface HomeSettings {
   address?: string;
   footerRights?: string;
   psicoeducacaoText?: string;
+  gtmId?: string;
+  ga4Id?: string;
+  metaPixelId?: string;
 }
