@@ -65,7 +65,9 @@ import {
   CreditCard,
   AlertTriangle,
   Code,
-  Target
+  Target,
+  Check,
+  AlertCircle
 } from 'lucide-react';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Cropper from 'react-easy-crop';
@@ -97,8 +99,11 @@ import {
   savePsicoeducacaoArticles
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { onSnapshot, collection, doc, getDocs } from 'firebase/firestore';
+import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit } from './analytics';
+import SublocacaoSystemWrapper from './sublocacao/SublocacaoSystemWrapper';
+import AdminDashboardView from './sublocacao/components/AdminDashboardView';
+import { INITIAL_ADMIN_SETTINGS } from './sublocacao/data';
 // Helper for Local Storage
 const LS_KEYS = {
   SETTINGS: 'clinica_hope_settings',
@@ -216,6 +221,12 @@ export default function App() {
   const [isDataInitialized, setIsDataInitialized] = useState(false);
   const [user, setUser] = useState<any>(null);
 
+  // Sublease state for main admin integration
+  const [subleaseAdminSettings, setSubleaseAdminSettings] = useState<any>(null);
+  const [subleaseRoomsList, setSubleaseRoomsList] = useState<any[]>([]);
+  const [subleaseBookingsList, setSubleaseBookingsList] = useState<any[]>([]);
+  const [subleaseUsersList, setSubleaseUsersList] = useState<any[]>([]);
+
   // Dynamic Marketing & Analytics Script Injection
   useEffect(() => {
     if (!homeSettings) return;
@@ -227,14 +238,10 @@ export default function App() {
     const existingScripts = document.querySelectorAll('.dynamic-marketing-script');
     existingScripts.forEach(el => el.remove());
 
-    const injectScript = (id: string, code: string, isHead = true, innerHTML = true) => {
-      const el = document.createElement(innerHTML ? 'script' : 'noscript');
+    const injectScript = (id: string, code: string, isHead = true, isNoscript = false) => {
+      const el = document.createElement(isNoscript ? 'noscript' : 'script');
       el.className = 'dynamic-marketing-script';
-      if (innerHTML) {
-        el.innerHTML = code;
-      } else {
-        el.setAttribute('id', id);
-      }
+      el.innerHTML = code;
       if (isHead) {
         document.head.appendChild(el);
       } else {
@@ -243,15 +250,25 @@ export default function App() {
       addedElements.push(el);
     };
 
+    const isValidId = (id: string | null | undefined): boolean => {
+      if (!id) return false;
+      const t = id.trim();
+      if (!t || t.length < 3) return false;
+      if (t.includes('<') || t.includes('>') || t.includes('SEU_') || t.includes('YOUR_') || t.includes('XXXXXX') || t.includes('[') || t.includes(']')) {
+        return false;
+      }
+      return true;
+    };
+
     // 1. Google Tag Manager (GTM)
-    if (gtmId && gtmId.trim()) {
+    if (gtmId && isValidId(gtmId)) {
       const cleanGtm = gtmId.trim();
       const gtmHeadCode = `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
       new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
       j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
       })(window,document,'script','dataLayer','${cleanGtm}');`;
-      injectScript('gtm-head', gtmHeadCode, true, true);
+      injectScript('gtm-head', gtmHeadCode, true, false);
 
       const gtmBodyCode = `<iframe src="https://www.googletagmanager.com/ns.html?id=${cleanGtm}"
       height="0" width="0" style="display:none;visibility:hidden"></iframe>`;
@@ -259,7 +276,7 @@ export default function App() {
     }
 
     // 2. Google Analytics 4 (GA4)
-    if (ga4Id && ga4Id.trim()) {
+    if (ga4Id && isValidId(ga4Id)) {
       const cleanGa4 = ga4Id.trim();
       const ga4Lib = document.createElement('script');
       ga4Lib.className = 'dynamic-marketing-script';
@@ -272,11 +289,11 @@ export default function App() {
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
       gtag('config', '${cleanGa4}');`;
-      injectScript('ga4-config', ga4ConfigCode, true, true);
+      injectScript('ga4-config', ga4ConfigCode, true, false);
     }
 
     // 3. Meta Pixel (Facebook Pixel)
-    if (metaPixelId && metaPixelId.trim()) {
+    if (metaPixelId && isValidId(metaPixelId)) {
       const cleanPixel = metaPixelId.trim();
       const pixelHeadCode = `!function(f,b,e,v,n,t,s)
       {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
@@ -288,7 +305,7 @@ export default function App() {
       'https://connect.facebook.net/en_US/fbevents.js');
       fbq('init', '${cleanPixel}');
       fbq('track', 'PageView');`;
-      injectScript('pixel-head', pixelHeadCode, true, true);
+      injectScript('pixel-head', pixelHeadCode, true, false);
 
       const pixelBodyCode = `<img height="1" width="1" style="display:none"
       src="https://www.facebook.com/tr?id=${cleanPixel}&ev=PageView&noscript=1" />`;
@@ -621,14 +638,39 @@ export default function App() {
     };
   }, []);
 
-  // Separate effect for bookings listener (Admins only)
+  // Separate effect for bookings and sublease collections listener (Admins only)
   useEffect(() => {
     if (!isAdminUnlocked) {
       setSubleaseBookings([]);
+      setSubleaseAdminSettings(null);
+      setSubleaseRoomsList([]);
+      setSubleaseBookingsList([]);
+      setSubleaseUsersList([]);
       return;
     }
 
-    const unsubBookings = onSnapshot(collection(db, COLLECTIONS.SUBLEASE_BOOKINGS), (snapshot) => {
+    // Settings
+    const unsubSettings = onSnapshot(doc(db, 'sublease_settings', 'config'), (snapshot) => {
+      if (snapshot.exists()) {
+        setSubleaseAdminSettings(snapshot.data());
+      } else {
+        setSubleaseAdminSettings(INITIAL_ADMIN_SETTINGS);
+      }
+    }, (error) => {
+      console.warn("Erro no listener de sublease_settings (AppAdmin):", error);
+      setSubleaseAdminSettings(INITIAL_ADMIN_SETTINGS);
+    });
+
+    // Rooms
+    const unsubRooms = onSnapshot(collection(db, 'sublease_rooms'), (snapshot) => {
+      const loadedRooms = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setSubleaseRoomsList(loadedRooms);
+    }, (error) => {
+      console.warn("Erro no listener de sublease_rooms (AppAdmin):", error);
+    });
+
+    // Bookings (legacy)
+    const unsubBookingsLegacy = onSnapshot(collection(db, COLLECTIONS.SUBLEASE_BOOKINGS), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as SubleaseBooking[];
       setSubleaseBookings(data);
     }, (error) => {
@@ -636,7 +678,31 @@ export default function App() {
       setSubleaseBookings([]);
     });
 
-    return () => unsubBookings();
+    // Bookings (new)
+    const unsubBookings = onSnapshot(collection(db, 'sublease_bookings'), (snapshot) => {
+      const loadedBookings = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setSubleaseBookingsList(loadedBookings);
+    }, (error) => {
+      console.warn("Erro no listener de sublease_bookings (AppAdmin):", error);
+      setSubleaseBookingsList([]);
+    });
+
+    // Users
+    const unsubUsers = onSnapshot(collection(db, 'sublease_users'), (snapshot) => {
+      const loadedUsers = snapshot.docs.map(d => d.data());
+      setSubleaseUsersList(loadedUsers);
+    }, (error) => {
+      console.warn("Erro no listener de sublease_users (AppAdmin):", error);
+      setSubleaseUsersList([]);
+    });
+
+    return () => {
+      unsubSettings();
+      unsubRooms();
+      unsubBookingsLegacy();
+      unsubBookings();
+      unsubUsers();
+    };
   }, [isAdminUnlocked]);
 
   const checkQuotaLock = () => {
@@ -700,6 +766,43 @@ export default function App() {
       await saveSubleaseRooms(newRooms);
     } catch (e) {
       console.error("Erro ao salvar salas de sublocação:", e);
+    }
+  };
+
+  const handleUpdateSubleaseSettings = async (newSettings: any) => {
+    try {
+      await setDoc(doc(db, 'sublease_settings', 'config'), newSettings);
+      setSubleaseAdminSettings(newSettings);
+    } catch (err) {
+      console.error('Error updating admin settings:', err);
+    }
+  };
+
+  const handleCancelSubleaseBooking = async (bookingId: string) => {
+    try {
+      await setDoc(doc(db, 'sublease_bookings', bookingId), { status: 'Cancelado' }, { merge: true });
+    } catch (err) {
+      console.error('Error cancelling booking:', err);
+    }
+  };
+
+  const handleUpdateSubleaseRoomsList = async (updatedRooms: any[]) => {
+    try {
+      for (const r of updatedRooms) {
+        await setDoc(doc(db, 'sublease_rooms', r.id), r);
+      }
+    } catch (err) {
+      console.error('Error updating rooms:', err);
+    }
+  };
+
+  const handleUpdateSubleaseUsersList = async (updatedUsers: any[]) => {
+    try {
+      for (const u of updatedUsers) {
+        await setDoc(doc(db, 'sublease_users', u.email), u);
+      }
+    } catch (err) {
+      console.error('Error updating users:', err);
     }
   };
 
@@ -823,35 +926,8 @@ export default function App() {
           {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} settings={homeSettings} />}
           {currentScreen === Screen.Abordagens && <AbordagensScreen onNavigate={navigateTo} approaches={approaches} settings={homeSettings} />}
           {currentScreen === Screen.Psicoeducacao && <PsicoeducacaoScreen onNavigate={navigateTo} settings={homeSettings} articles={psicoeducacaoArticles} />}
-          {/* Sublocação ocultada temporariamente */}
-          {false && currentScreen === Screen.Sublocacao && (
-            <SublocacaoScreen 
-              rooms={subleaseRooms || []} 
-              user={user} 
-              settings={safeSettings}
-              onBooking={async (roomId, day, dayLabel, items, totalPrice) => {
-                const booking: SubleaseBooking = {
-                  id: Date.now().toString(),
-                  roomId,
-                  userId: user.uid,
-                  userName: user.displayName || user.email || 'Usuário',
-                  userEmail: user.email || '',
-                  day,
-                  dayLabel,
-                  items,
-                  totalPrice,
-                  status: 'pending',
-                  createdAt: Date.now()
-                };
-                try {
-                  await saveSubleaseBooking(booking);
-                  alert('Sua solicitação de reserva foi enviada com sucesso! Aguarde a confirmação via WhatsApp ou e-mail.');
-                } catch (e) {
-                  alert('Erro ao processar sua reserva. Tente novamente mais tarde.');
-                }
-              }}
-              onNavigate={navigateTo}
-            />
+          {currentScreen === Screen.Sublocacao && (
+            <SublocacaoSystemWrapper onNavigate={navigateTo} />
           )}
 
           {currentScreen === Screen.Login && (
@@ -886,6 +962,14 @@ export default function App() {
               psicoeducacaoArticles={psicoeducacaoArticles}
               onUpdatePsicoeducacaoArticles={updatePsicoeducacaoArticles}
               isDataLoaded={isDataInitialized}
+              subleaseAdminSettings={subleaseAdminSettings || INITIAL_ADMIN_SETTINGS}
+              subleaseRoomsList={subleaseRoomsList}
+              subleaseBookingsList={subleaseBookingsList}
+              subleaseUsersList={subleaseUsersList}
+              onUpdateSubleaseSettings={handleUpdateSubleaseSettings}
+              onCancelSubleaseBooking={handleCancelSubleaseBooking}
+              onUpdateSubleaseRoomsList={handleUpdateSubleaseRoomsList}
+              onUpdateSubleaseUsersList={handleUpdateSubleaseUsersList}
             />
           )}
         </motion.div>
@@ -916,11 +1000,11 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
 
   const navItems = [
     { id: Screen.Home, label: 'Início' },
+    { id: Screen.Sublocacao, label: 'Sublocação' },
     { id: Screen.SEO, label: 'A Clínica' },
     { id: Screen.Abordagens, label: 'Abordagens' },
     { id: Screen.CorpoClinico, label: 'Especialistas' },
     { id: Screen.Psicoeducacao, label: 'Psicoeducação' },
-    // { id: Screen.Sublocacao, label: 'Sublocação' },
   ];
 
   return (
@@ -945,19 +1029,36 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
           </button>
           
           <nav className="hidden lg:flex gap-8 items-center">
-            {navItems.map(item => (
-              <button
-                key={item.id}
-                onClick={() => onNavigate(item.id, activeScreen === Screen.Home ? 'push' : 'none')}
-                className={`text-sm font-bold transition-all hover:text-primary tracking-tight ${
-                  activeScreen === item.id 
-                    ? 'text-primary' 
-                    : 'text-on-surface-variant/70'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+            {navItems.map(item => {
+              const isSublocacao = item.id === Screen.Sublocacao;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onNavigate(item.id, activeScreen === Screen.Home ? 'push' : 'none')}
+                  className={
+                    isSublocacao
+                      ? `text-sm transition-all relative flex items-center gap-1 py-1 cursor-pointer`
+                      : `text-sm font-bold transition-all hover:text-primary tracking-tight ${
+                          activeScreen === item.id 
+                            ? 'text-primary' 
+                            : 'text-on-surface-variant/70'
+                        }`
+                  }
+                >
+                  {isSublocacao ? (
+                    <span className="font-sans font-black tracking-tight text-base flex items-center hover:opacity-95 transition-opacity">
+                      <span className="text-primary">Subloca</span>
+                      <span className="text-secondary">Hope</span>
+                      <span className={`absolute -bottom-1 left-0 right-0 h-0.5 bg-secondary rounded-full transition-all duration-300 ${
+                        activeScreen === item.id ? 'w-full' : 'w-0'
+                      }`} />
+                    </span>
+                  ) : (
+                    item.label
+                  )}
+                </button>
+              );
+            })}
           </nav>
 
           <div className="flex items-center gap-4">
@@ -1003,14 +1104,20 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
                   <button
                     key={item.id}
                     onClick={() => { onNavigate(item.id); setMenuOpen(false); }}
-                    className={`flex items-center justify-between p-5 rounded-3xl text-lg font-bold transition-all ${
+                    className={`flex items-center p-5 rounded-3xl text-lg font-bold transition-all ${
                       activeScreen === item.id 
                       ? 'bg-primary text-white shadow-lg' 
                       : 'bg-surface-container-low text-primary hover:bg-surface-container'
                     }`}
                   >
-                    {item.label}
-                    <ArrowForward size={20} />
+                    {item.id === Screen.Sublocacao ? (
+                      <span className="flex items-center">
+                        <span className={activeScreen === item.id ? 'text-white' : 'text-primary'}>Subloca</span>
+                        <span className={activeScreen === item.id ? 'text-white/90' : 'text-secondary'}>Hope</span>
+                      </span>
+                    ) : (
+                      item.label
+                    )}
                   </button>
                 ))}
               </div>
@@ -1039,11 +1146,12 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
 
       <main className="flex-grow">{children}</main>
 
-      <footer className="py-20 border-t border-outline-alt/30 bg-[#fdfdff]">
-        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-          <div className="flex flex-col gap-8">
-            <div className="flex items-center gap-4">
-              <div className="shrink-0">
+      {activeScreen !== Screen.Sublocacao && (
+        <footer className="py-20 border-t border-outline-alt/30 bg-[#fdfdff]">
+          <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+            <div className="flex flex-col gap-8">
+              <div className="flex items-center gap-4">
+                <div className="shrink-0">
                 {settings?.logoUrl ? (
                   <img src={settings.logoUrl} className="h-12 w-auto object-contain" alt="Logo" />
                 ) : (
@@ -1055,7 +1163,14 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             <div className="flex flex-wrap gap-6 text-on-surface-variant text-sm font-medium">
               {navItems.map(item => (
                 <button key={item.id} onClick={() => onNavigate(item.id)} className="hover:text-primary hover:underline transition-all">
-                  {item.label}
+                  {item.id === Screen.Sublocacao ? (
+                    <span className="font-bold">
+                      <span className="text-primary">Subloca</span>
+                      <span className="text-secondary">Hope</span>
+                    </span>
+                  ) : (
+                    item.label
+                  )}
                 </button>
               ))}
               <button 
@@ -1096,6 +1211,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
           </p>
         </div>
       </footer>
+      )}
     </div>
   );
 }
@@ -2834,6 +2950,14 @@ interface AdminScreenProps {
   psicoeducacaoArticles: PsicoeducacaoArticle[];
   onUpdatePsicoeducacaoArticles: (articles: PsicoeducacaoArticle[]) => void;
   isDataLoaded: boolean;
+  subleaseAdminSettings?: any;
+  subleaseRoomsList?: any[];
+  subleaseBookingsList?: any[];
+  subleaseUsersList?: any[];
+  onUpdateSubleaseSettings?: (settings: any) => Promise<void>;
+  onCancelSubleaseBooking?: (bookingId: string) => Promise<void>;
+  onUpdateSubleaseRoomsList?: (rooms: any[]) => Promise<void>;
+  onUpdateSubleaseUsersList?: (users: any[]) => Promise<void>;
 }
 
 function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: { 
@@ -3035,7 +3159,7 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                                    <button
                                      key={slot.id}
                                      disabled={!slot.available || !!isBlockSelected}
-                                     onClick={() => toggleItem({ type: 'hour', periodId: period.id, slotId: slot.id, label: `${slot.start}`, price: period.priceHour })}
+                                     onClick={() => toggleItem({ type: 'hour', periodId: period.id, slotId: slot.id, label: `${slot.start}`, price: period.priceHour ?? 0 })}
                                      className={`relative flex flex-col items-center justify-center py-2.5 rounded-lg border transition-all duration-300 ${
                                        isBlockSelected 
                                          ? 'bg-secondary/5 border-secondary/10 text-secondary/30 grayscale opacity-40 scale-95 cursor-default' 
@@ -3059,7 +3183,7 @@ function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: {
                                 : 'bg-white text-secondary border-secondary/20 hover:border-secondary hover:bg-secondary/5'
                              }`}
                            >
-                             Reservar Bloco (R$ {period.priceBlock.toFixed(2)})
+                             Reservar Bloco (R$ {(period.priceBlock ?? 0).toFixed(2)})
                            </button>
                         </div>
                       ))}
@@ -3191,7 +3315,15 @@ function AdminScreen({
   onUpdateSubleaseBookingStatus,
   psicoeducacaoArticles,
   onUpdatePsicoeducacaoArticles,
-  isDataLoaded
+  isDataLoaded,
+  subleaseAdminSettings,
+  subleaseRoomsList = [],
+  subleaseBookingsList = [],
+  subleaseUsersList = [],
+  onUpdateSubleaseSettings = async () => {},
+  onCancelSubleaseBooking = async () => {},
+  onUpdateSubleaseRoomsList = async () => {},
+  onUpdateSubleaseUsersList = async () => {}
 }: AdminScreenProps) {
   const [localSettings, setLocalSettings] = useState<HomeSettings>(settings);
   const [localSpecialists, setLocalSpecialists] = useState<Specialist[]>(specialists);
@@ -3212,6 +3344,9 @@ function AdminScreen({
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   const [isQuotaLocked, setIsQuotaLocked] = useState(false);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [syncStatusAll, setSyncStatusAll] = useState('');
+  const [syncResultsAll, setSyncResultsAll] = useState<{name: string, status: 'success' | 'error', message: string}[]>([]);
 
   useEffect(() => {
     const lock = localStorage.getItem('firestore_quota_exhausted');
@@ -3397,6 +3532,125 @@ function AdminScreen({
     }, 2000);
   };
 
+  const syncAllSchedules = async () => {
+    if (isQuotaLocked) {
+      alert('❌ ERRO DE COTA: O banco de dados está temporariamente em modo leitura. Tente novamente amanhã.');
+      return;
+    }
+
+    const specialistsToSync = localSpecialists.filter(s => s.googleAppsScriptUrl && s.googleAppsScriptUrl.trim() !== '');
+    if (specialistsToSync.length === 0) {
+      alert('ℹ️ Nenhuma psicóloga possui uma URL de integração configurada.');
+      return;
+    }
+
+    if (!confirm(`Deseja sincronizar as agendas de ${specialistsToSync.length} especialista(s) no Firestore agora?`)) {
+      return;
+    }
+
+    setIsSyncingAll(true);
+    setSyncResultsAll([]);
+    setSyncStatusAll('Iniciando sincronização de todas as agendas...');
+
+    const { updateSpecialistSchedule } = await import('./lib/firebase');
+    const updatedSpecialists = [...localSpecialists];
+    const results: {name: string, status: 'success' | 'error', message: string}[] = [];
+
+    for (let i = 0; i < specialistsToSync.length; i++) {
+      const s = specialistsToSync[i];
+      setSyncStatusAll(`[${i + 1}/${specialistsToSync.length}] Sincronizando agenda de: ${s.name}...`);
+      
+      try {
+        let scriptUrlRaw = s.googleAppsScriptUrl.trim();
+        if (!scriptUrlRaw.startsWith('http')) scriptUrlRaw = `https://${scriptUrlRaw}`;
+        
+        // Wrap JSONP in a Promise
+        const jsonpData = await new Promise<any>((resolve, reject) => {
+          const jsonpCallbackName = `google_script_cb_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+          const scriptUrlJsonp = scriptUrlRaw.includes('?') 
+            ? `${scriptUrlRaw}&action=getDadosDaAgenda&callback=${jsonpCallbackName}` 
+            : `${scriptUrlRaw}?action=getDadosDaAgenda&callback=${jsonpCallbackName}`;
+          
+          const script = document.createElement('script');
+          
+          let scriptHandled = false;
+          const cleanup = () => {
+            if (scriptHandled) return;
+            scriptHandled = true;
+            if (script.parentNode) script.parentNode.removeChild(script);
+            delete (window as any)[jsonpCallbackName];
+          };
+
+          script.src = scriptUrlJsonp;
+          script.onerror = () => {
+            cleanup();
+            reject(new Error('Google Script não respondeu. Verifique se foi publicado como "Qualquer pessoa" e se a URL termina em /exec.'));
+          };
+          
+          const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error('Tempo limite excedido (45 segundos).'));
+          }, 45000);
+
+          (window as any)[jsonpCallbackName] = (data: any) => {
+            clearTimeout(timeout);
+            cleanup();
+            resolve(data);
+          };
+
+          document.body.appendChild(script);
+        });
+
+        const parsedSchedule = parseSheetScheduleData(jsonpData);
+        const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
+        const availableCount = appointments.filter((row: any) => {
+          const status = (row.status || row.paciente || '').toString().toLowerCase();
+          return status.includes('💚') || status.includes('livre');
+        }).length;
+
+        // Save directly to the individual specialists' schedules collection in Firestore
+        await updateSpecialistSchedule(s.id, parsedSchedule);
+
+        // Update local state list to hold the parsed schedule
+        const idx = updatedSpecialists.findIndex(spec => spec.id === s.id);
+        if (idx !== -1) {
+          updatedSpecialists[idx] = {
+            ...updatedSpecialists[idx],
+            schedule: parsedSchedule,
+            lastSync: new Date().toISOString()
+          };
+        }
+
+        results.push({
+          name: s.name,
+          status: 'success',
+          message: `Sincronizada com sucesso! Encontrados ${availableCount} horários disponíveis.`
+        });
+      } catch (e: any) {
+        console.error(`Erro ao sincronizar ${s.name}:`, e);
+        const errorMsg = e.message || 'Falha na conexão ou processamento.';
+        results.push({
+          name: s.name,
+          status: 'error',
+          message: errorMsg.includes('resource-exhausted') 
+            ? 'Limite diário do banco de dados (quota) atingido.' 
+            : errorMsg
+        });
+      }
+
+      // Small pause to be gentle
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    // Save the entire specialists list so lastSync times and updated metadata are stored in Firestore
+    setLocalSpecialists(updatedSpecialists);
+    await onUpdateSpecialists(updatedSpecialists);
+
+    setSyncResultsAll(results);
+    setSyncStatusAll('Sincronização em lote concluída!');
+    setIsSyncingAll(false);
+  };
+
   const addInsurance = () => {
     const id = Date.now().toString();
     const newInsurance = {
@@ -3496,35 +3750,57 @@ function AdminScreen({
   return (
     <div className="min-h-screen bg-surface p-6 md:p-12">
       <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-12">
-          <div className="flex items-center gap-4">
-            <button onClick={() => onNavigate(Screen.Home, 'push_back')} className="p-3 bg-white border border-outline rounded-full shadow-sm hover:bg-outline transition-colors">
-              <ArrowForward className="rotate-180" />
-            </button>
-            <h1 className="text-4xl font-display font-bold text-primary tracking-tighter">Painel de Administração</h1>
-          </div>
-          <div className="flex gap-4">
-            {isQuotaLocked && (
-              <div className="flex items-center gap-3 px-4 py-2 bg-accent/10 text-accent rounded-2xl border border-accent/20 animate-pulse">
-                <AlertTriangle size={18} />
-                <span className="text-[10px] font-black uppercase tracking-widest text-left leading-tight">
-                  Banco de Dados em Modo Leitura<br/>
-                  <span className="opacity-70">Limite Diário Atingido</span>
-                </span>
+        {/* Modern Double-Layer Admin Header */}
+        <div className="flex flex-col gap-6 mb-10 pb-6 border-b border-outline-alt/40">
+          {/* Top Row: Title & Action Buttons */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => onNavigate(Screen.Home, 'push_back')} 
+                className="p-3 bg-white border border-outline rounded-full shadow-sm hover:bg-slate-50 active:scale-95 transition-all text-primary shrink-0"
+                title="Voltar para a Página Inicial"
+              >
+                <ArrowForward className="rotate-180 w-5 h-5" />
+              </button>
+              <div>
+                <h1 className="text-3xl md:text-4xl font-display font-black text-primary tracking-tight">
+                  Painel de Administração
+                </h1>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  Gerencie todo o conteúdo, especialistas e o sistema de sublocação.
+                </p>
               </div>
-            )}
-            <div className="flex bg-white rounded-2xl p-1 modern-shadow border border-outline">
-              {(['home', 'corpo', 'abordagens', 'psicoeducacao', 'marketing'] as const).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface'}`}
-                >
-                  {tab === 'home' ? 'Página Inicial' : tab === 'corpo' ? 'Especialistas' : tab === 'abordagens' ? 'Abordagens' : tab === 'psicoeducacao' ? 'Psicoeducação' : 'Marketing'}
-                </button>
-              ))}
             </div>
-            <div className="flex gap-4 items-center">
+
+            {/* Quick Actions & System Info */}
+            <div className="flex flex-wrap items-center gap-3">
+              {isQuotaLocked && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-accent/10 text-accent rounded-xl border border-accent/20 animate-pulse">
+                  <AlertTriangle size={14} />
+                  <span className="text-[9px] font-black uppercase tracking-wider text-left leading-tight">
+                    Modo Leitura <span className="opacity-60">(Limite Atingido)</span>
+                  </span>
+                </div>
+              )}
+
+              {/* Sincronizar Button */}
+              <button 
+                onClick={async () => {
+                  if (confirm("Deseja sincronizar os dados com o servidor? Isso irá recarregar as informações mais recentes e descartar qualquer alteração não salva localmente.")) {
+                    const btn = document.getElementById('sync-btn');
+                    if (btn) btn.classList.add('animate-spin');
+                    await forceResetFirebase();
+                  }
+                }}
+                id="sync-btn"
+                className="px-4 py-2.5 bg-secondary/10 text-secondary rounded-xl hover:bg-secondary hover:text-white transition-all duration-200 flex items-center gap-2 border border-secondary/10 text-[10px] font-black uppercase tracking-widest cursor-pointer"
+                title="Sincronizar com o Servidor (Limpar Cache)"
+              >
+                <RefreshCw size={14} />
+                <span>Sincronizar</span>
+              </button>
+
+              {/* Publicar Alterações Button */}
               <button 
                 disabled={isQuotaLocked}
                 onClick={async () => {
@@ -3539,7 +3815,7 @@ function AdminScreen({
                     alert("Erro ao salvar todas as alterações.");
                   }
                 }}
-                className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 ${
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-200 shadow-sm active:scale-95 cursor-pointer ${
                   isQuotaLocked 
                   ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
                   : saveStatus['global'] 
@@ -3548,34 +3824,44 @@ function AdminScreen({
                 }`}
                 title="Publicar todas as alterações no site"
               >
-                {saveStatus['global'] ? <CheckCircle size={18} /> : <Send size={18} />}
+                {saveStatus['global'] ? <CheckCircle size={14} /> : <Send size={14} />}
                 <span>{saveStatus['global'] ? 'Publicado!' : 'Publicar Alterações'}</span>
               </button>
 
+              {/* Sair Button */}
               <button 
-                onClick={async () => {
-                  if (confirm("Deseja sincronizar os dados com o servidor? Isso irá recarregar as informações mais recentes e descartar qualquer alteração não salva localmente.")) {
-                    const btn = document.getElementById('sync-btn');
-                    if (btn) btn.classList.add('animate-spin');
-                    await forceResetFirebase();
-                  }
-                }}
-                id="sync-btn"
-                className="p-3 bg-secondary/10 text-secondary rounded-2xl shadow-sm hover:shadow-md hover:bg-secondary hover:text-white transition-all flex items-center gap-2 group"
-                title="Sincronizar com o Servidor (Limpar Cache)"
+                onClick={onLogout}
+                className="px-4 py-2.5 bg-white border border-outline rounded-xl hover:bg-accent/10 hover:text-accent hover:border-accent/30 transition-all duration-200 text-accent flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest cursor-pointer"
+                title="Sair"
               >
-                <RefreshCw size={20} className="group-hover:rotate-180 transition-transform duration-700" />
-                <span className="text-[10px] font-black uppercase tracking-widest">Sincronizar</span>
+                <LogOut size={14} />
+                <span>Sair</span>
               </button>
             </div>
-            <button 
-              onClick={onLogout}
-              className="p-3 bg-white border border-outline rounded-2xl shadow-sm hover:bg-accent hover:text-white transition-all text-accent flex items-center gap-2"
-              title="Sair"
-            >
-              <LogOut size={20} />
-              <span className="text-[10px] font-bold uppercase tracking-widest">Sair</span>
-            </button>
+          </div>
+
+          {/* Bottom Row: Category Tabs Navigation */}
+          <div className="w-full overflow-x-auto pb-1 scrollbar-thin">
+            <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 min-w-max gap-1">
+              {(['home', 'corpo', 'abordagens', 'psicoeducacao', 'sublocacao', 'marketing'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                    activeTab === tab 
+                      ? 'bg-white text-primary shadow-sm font-bold' 
+                      : 'text-slate-600 hover:text-primary hover:bg-white/50'
+                  }`}
+                >
+                  {tab === 'home' && 'Página Inicial'}
+                  {tab === 'corpo' && 'Especialistas'}
+                  {tab === 'abordagens' && 'Abordagens'}
+                  {tab === 'psicoeducacao' && 'Psicoeducação'}
+                  {tab === 'sublocacao' && 'Sublocação'}
+                  {tab === 'marketing' && 'Marketing'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -3804,6 +4090,26 @@ function AdminScreen({
             </div>
           )}
 
+          {activeTab === 'sublocacao' && (
+            <div className="space-y-6">
+              <div className="pb-4 border-b border-outline">
+                <h2 className="text-2xl font-display font-black text-primary mb-2">Administração do Sistema de Sublocação</h2>
+                <p className="text-on-surface-variant text-sm">Gerencie salas, reservas, configurações gerais e aprovações de profissionais parceiros de sublocação.</p>
+              </div>
+              <AdminDashboardView 
+                adminSettings={subleaseAdminSettings || INITIAL_ADMIN_SETTINGS}
+                bookings={subleaseBookingsList}
+                rooms={subleaseRoomsList}
+                onUpdateSettings={onUpdateSubleaseSettings}
+                onCancelBooking={onCancelSubleaseBooking}
+                onUpdateRooms={onUpdateSubleaseRoomsList}
+                registeredUsers={subleaseUsersList}
+                onUpdateUsers={onUpdateSubleaseUsersList}
+                setView={() => {}}
+              />
+            </div>
+          )}
+
           {activeTab === 'corpo' && (
             <div className="space-y-10">
               <div className="flex justify-between items-center">
@@ -3812,6 +4118,82 @@ function AdminScreen({
                   <Add size={16} /> Especialista
                 </button>
               </div>
+
+              {/* Painel de Sincronização Geral */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-[2rem] p-6 sm:p-8 space-y-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-black uppercase text-indigo-900 tracking-wider flex items-center gap-2">
+                      <RefreshCw size={16} className={`text-indigo-600 ${isSyncingAll ? 'animate-spin' : ''}`} />
+                      Sincronização em Massa de Agendas
+                    </h3>
+                    <p className="text-xs text-indigo-700 font-medium">
+                      Atualize instantaneamente a agenda de todas as psicólogas que possuem URL do Google Sheets vinculada.
+                    </p>
+                  </div>
+                  <button
+                    disabled={isSyncingAll || isQuotaLocked}
+                    onClick={syncAllSchedules}
+                    className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm shrink-0 cursor-pointer ${
+                      isQuotaLocked
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300'
+                        : isSyncingAll
+                        ? 'bg-indigo-200 text-indigo-700 cursor-wait'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-200 hover:scale-[1.02] active:scale-95'
+                    }`}
+                  >
+                    {isSyncingAll ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        Sincronizando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={14} />
+                        Sincronizar Todas as Agendas
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Status e Resultados da Sincronização */}
+                {(isSyncingAll || syncStatusAll || syncResultsAll.length > 0) && (
+                  <div className="bg-white rounded-2xl p-5 border border-indigo-100/50 space-y-4">
+                    {/* Status Text */}
+                    {syncStatusAll && (
+                      <div className="flex items-center gap-3">
+                        {isSyncingAll && <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />}
+                        <p className="text-xs font-semibold text-indigo-950 uppercase tracking-wide">
+                          {syncStatusAll}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Individual Results */}
+                    {syncResultsAll.length > 0 && (
+                      <div className="space-y-2 border-t border-indigo-50 pt-3">
+                        <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Relatório de Resultados:</p>
+                        <div className="max-h-60 overflow-y-auto divide-y divide-gray-50 pr-2">
+                          {syncResultsAll.map((res, index) => (
+                            <div key={index} className="py-2.5 flex items-start justify-between gap-3 text-xs">
+                              <span className="font-bold text-gray-800 shrink-0">{res.name}</span>
+                              <div className="flex items-center gap-2 text-right">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                                  res.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {res.status === 'success' ? 'Sucesso' : 'Erro'}
+                                </span>
+                                <span className="text-gray-600 font-medium text-[11px]">{res.message}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 gap-8">
                 {localSpecialists.map((s, idx) => (
                   <div key={s.id} className="p-8 border border-outline rounded-[2rem] flex flex-col md:flex-row gap-8 items-start relative group">
