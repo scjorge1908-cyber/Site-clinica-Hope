@@ -29,7 +29,7 @@ export const DEFAULT_SPECIALISTS: Specialist[] = [
     name: 'Dra. Mariana Costa',
     crp: 'CRP 12/00000',
     spec: 'Psicologia Clínica',
-    tags: ['TCC', 'Ansiedade', 'Adultos'],
+    tags: ['TCC', 'Adultos', 'Terapia Individual'],
     desc: 'Especialista em auxiliar adultos a navegar por momentos de transição e gerenciamento de estresse com empatia e técnica.',
     img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCy4FxItzzF0l_uQVfaJLfAihSf9eC9kjTPe9o6IgdfgO7cJs-CLOUdWkbr75en44KHtvbBJQlGXcZ_Ng8D5bdMh5mWKeshRlJRGCMmR5eKvCLMxo7aL5D3lsIWIqcxDSoOvjLGNFZdEIUNhs9vU-lMIR-JEl9GkFpasyNTL6clrTbw7LhkYyEy466wFLNDAFTMyQpavnLP6C6XYMGwK3mtXS38A_8nMpVeliUsQ0S3H1Ijn5YGETIC9DWJOpNssJ-V0uPQSfeT8_A',
     color: 'bg-[#D1D9D5]',
@@ -55,7 +55,7 @@ export const DEFAULT_SPECIALISTS: Specialist[] = [
     name: 'Dr. Ricardo Almeida',
     crp: 'CRP 12/11111',
     spec: 'Infantojuvenil',
-    tags: ['Ludoterapia', 'TDAH', 'Adolescentes'],
+    tags: ['Ludoterapia', 'Infantojuvenil', 'Adolescentes'],
     desc: 'Trabalho focado no desenvolvimento infantil e suporte a pais, utilizando ferramentas lúdicas para facilitar a expressão emocional.',
     img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCePyTXW1pCC647MZg6MJ0OkRxDztLYFVhqoDRzMLyd1QPTZc5ZhVz_DKDKoV-P7yGwBrziEaCXAeEXP8gtPkM7_CHAjT3nn02jH7I2mbZ-JO6whqfN6_VEaB25uD5Q26nc72TYL-_fOSEdjv5_VFMrlZ9E8fNIE3keDW8G6_bm0gzx-K9qYUmycF76cnSu2hTQ8pO5cWx6J5NQzBs1oYMsErVt1CPaKHWGcme_CYB3nBEa-ygIjB26aKKqoVUHRYdm0kea4tbhagE',
     color: 'bg-[#E2D6CC]',
@@ -103,7 +103,7 @@ export const DEFAULT_APPROACHES: Approach[] = [
     id: '1',
     title: 'Terapia Cognitivo-Comportamental (TCC)',
     desc: 'Focada em padrões de pensamento.',
-    details: 'A TCC ajuda a identificar pensamentos negativos e modificar comportamentos que causam sofrimento. É uma das terapias mais indicadas para ansiedade e depressão.'
+    details: 'A TCC ajuda a identificar pensamentos negativos e modificar comportamentos que causam sofrimento, promovendo mais equilíbrio emocional no dia a dia.'
   },
   {
     id: '2',
@@ -125,15 +125,15 @@ export const DEFAULT_APPROACHES: Approach[] = [
   },
   {
     id: '5',
-    title: 'ABA (Terapia para Autismo)',
-    desc: 'Análise do Comportamento Aplicada.',
-    details: 'Método baseado na análise do comportamento, muito utilizado no desenvolvimento de crianças com autismo.'
+    title: 'ABA (Análise do Comportamento Aplicada)',
+    desc: 'Método baseado na análise do comportamento.',
+    details: 'Método baseado na análise do comportamento, amplamente utilizado no apoio ao desenvolvimento infantil e na promoção da comunicação e autonomia.'
   },
   {
     id: '6',
     title: 'Neuropsicologia',
     desc: 'Avaliação das funções cognitivas.',
-    details: 'Avalia memória, atenção e outras funções cognitivas, auxiliando em diagnósticos como TDAH.'
+    details: 'Avalia memória, atenção e outras funções cognitivas, auxiliando na compreensão do funcionamento cognitivo e no direcionamento do cuidado mais adequado.'
   },
   {
     id: '7',
@@ -252,4 +252,3 @@ export const DEFAULT_SUBLEASE_ROOMS: SubleaseRoom[] = [
     }
   }
 ];
-
