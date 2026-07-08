@@ -101,9 +101,34 @@ import {
 import { onAuthStateChanged } from 'firebase/auth';
 import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit } from './analytics';
-import SublocacaoSystemWrapper from './sublocacao/SublocacaoSystemWrapper';
-import AdminDashboardView from './sublocacao/components/AdminDashboardView';
-import { INITIAL_ADMIN_SETTINGS } from './sublocacao/data';
+// Placeholder/Fallback components for Sublocação since it might not be deployed yet in all environments
+const SublocacaoSystemWrapper = ({ onNavigate }: any) => {
+  return (
+    <div className="min-h-[50vh] flex flex-col items-center justify-center p-8 text-center max-w-md mx-auto">
+      <h2 className="text-2xl font-black text-primary mb-4">Em Breve</h2>
+      <p className="text-on-surface-variant text-sm mb-6">O sistema de sublocação de salas está sendo preparado. Em breve, você poderá agendar e gerenciar salas diretamente pelo nosso site.</p>
+      <button onClick={() => onNavigate(Screen.Home)} className="bg-primary text-white text-sm font-bold px-6 py-2.5 rounded-full hover:shadow-xl transition-all">
+        Voltar ao Início
+      </button>
+    </div>
+  );
+};
+
+const AdminDashboardView = ({ adminSettings, bookings, rooms, onUpdateSettings, onCancelBooking, onUpdateRooms, registeredUsers, onUpdateUsers, setView }: any) => {
+  return (
+    <div className="p-8 border border-outline rounded-[2rem] text-center bg-surface-container-low max-w-lg mx-auto">
+      <h3 className="text-lg font-bold text-primary mb-2">Painel de Sublocação Desativado</h3>
+      <p className="text-sm text-on-surface-variant">O módulo de sublocação não está ativado ou os arquivos correspondentes não foram localizados no repositório.</p>
+    </div>
+  );
+};
+
+const INITIAL_ADMIN_SETTINGS = {
+  maxBookingsPerProfessional: 3,
+  advanceBookingDays: 30,
+  cancelationHoursLimit: 24,
+  autoApproveProfessionals: false
+};
 // Helper for Local Storage
 const LS_KEYS = {
   SETTINGS: 'clinica_hope_settings',
