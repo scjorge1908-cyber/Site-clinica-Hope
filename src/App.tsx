@@ -3868,6 +3868,81 @@ function AdminScreen({
         <div className="bg-white rounded-[2.5rem] modern-shadow border border-outline p-10">
           {activeTab === 'home' && (
             <div className="space-y-8">
+              {/* Painel de Sincronização Geral na Página Inicial do Painel */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-[2rem] p-6 sm:p-8 space-y-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-black uppercase text-indigo-900 tracking-wider flex items-center gap-2">
+                      <RefreshCw size={16} className={`text-indigo-600 ${isSyncingAll ? 'animate-spin' : ''}`} />
+                      Sincronização em Massa de Agendas
+                    </h3>
+                    <p className="text-xs text-indigo-700 font-medium">
+                      Atualize instantaneamente a agenda de todas as psicólogas que possuem URL do Google Sheets vinculada.
+                    </p>
+                  </div>
+                  <button
+                    disabled={isSyncingAll || isQuotaLocked}
+                    onClick={syncAllSchedules}
+                    className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm shrink-0 cursor-pointer ${
+                      isQuotaLocked
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300'
+                        : isSyncingAll
+                        ? 'bg-indigo-200 text-indigo-700 cursor-wait'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-200 hover:scale-[1.02] active:scale-95'
+                    }`}
+                  >
+                    {isSyncingAll ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        Sincronizando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={14} />
+                        Sincronizar Todas as Agendas
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Status e Resultados da Sincronização */}
+                {(isSyncingAll || syncStatusAll || syncResultsAll.length > 0) && (
+                  <div className="bg-white rounded-2xl p-5 border border-indigo-100/50 space-y-4">
+                    {/* Status Text */}
+                    {syncStatusAll && (
+                      <div className="flex items-center gap-3">
+                        {isSyncingAll && <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />}
+                        <p className="text-xs font-semibold text-indigo-950 uppercase tracking-wide">
+                          {syncStatusAll}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Individual Results */}
+                    {syncResultsAll.length > 0 && (
+                      <div className="space-y-2 border-t border-indigo-50 pt-3">
+                        <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Relatório de Resultados:</p>
+                        <div className="max-h-60 overflow-y-auto divide-y divide-gray-50 pr-2">
+                          {syncResultsAll.map((res, index) => (
+                            <div key={index} className="py-2.5 flex items-start justify-between gap-3 text-xs">
+                              <span className="font-bold text-gray-800 shrink-0">{res.name}</span>
+                              <div className="flex items-center gap-2 text-right">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                                  res.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {res.status === 'success' ? 'Sucesso' : 'Erro'}
+                                </span>
+                                <span className="text-gray-600 font-medium text-[11px]">{res.message}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
                <div className="pb-8 border-b border-outline">
                 <h2 className="text-2xl font-display font-black text-primary mb-6">Informações da Clínica</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
