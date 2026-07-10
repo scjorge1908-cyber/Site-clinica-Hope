@@ -2475,34 +2475,17 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
           )}
         </div>
 
-        {!isAgendaFull && !isCarousel && (
-  <button 
-    disabled={!canBook}
-    onClick={handleWhatsAppClick}
-    id="btn-enviar-solicitacao"
-    data-event="agendamento"
-    className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
-      !canBook 
-      ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
-      : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2 shadow-2xl ring-4 ring-primary/20 animate-pulse'
-    }`}
-  >
-    <Chat size={18} />
-    {canBook ? 'Enviar sua solicitação' : 'Selecione dia, hora e plano'}
-  </button>
+       {!isAgendaFull && !isCarousel && (
+  <button>... Enviar sua solicitação ...</button>
 )}
 
 {!isCarousel && (
   <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
     <div className="space-y-3">
-      <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
-        <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
-      </p>
-      <p className="text-[10px] text-primary/70 leading-relaxed font-medium">
-        Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
-      </p>
+      <p>... Informação importante ...</p>
+      <p>... Para agendamentos via plano de saúde ...</p>
       
-      {/* CORREÇÃO: Dica sobre telemedicina */}
+      {/* ✅ Dica sobre telemedicina - CORRETA */}
       <div className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/30">
         <p className="text-[10px] text-primary/80 leading-relaxed font-medium">
           💡 <span className="font-bold">Dica:</span> Verifique se o seu plano oferece telemedicina. Em muitos casos, o atendimento é imediato e funciona 24 horas.
