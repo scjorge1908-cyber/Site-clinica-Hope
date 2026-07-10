@@ -1964,7 +1964,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(spec.schedule || null);
   
-  const particularPlan = insurancePlans?.find(p => p.name.toLowerCase() === 'particular');
+  const particularPlan = insurancePlans?.find(p => (p?.name || '').toLowerCase() === 'particular');
   
   useEffect(() => {
     setSheetSchedule(spec.schedule || null);
@@ -2137,8 +2137,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
   const canBook = selectedDay && selectedTime && selectedPlan;
 
-  const getSpecialtyIcon = (specialty: string) => {
-    const s = specialty.toLowerCase();
+  const getSpecialtyIcon = (specialty?: string) => {
+    const s = (specialty || '').toLowerCase();
     if (s.includes('infant') || s.includes('criança') || s.includes('baby')) return <Baby size={14} />;
     if (s.includes('casal') || s.includes('família') || s.includes('relacionamento')) return <Heart size={14} />;
     if (s.includes('neuro') || s.includes('cognitiva') || s.includes('tcc') || s.includes('psicanálise')) return <Brain size={14} />;
@@ -2248,12 +2248,12 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
         <div className="space-y-6">
           {!isCarousel && (
             <div className="flex flex-wrap gap-2">
-              {spec.ageGroups.map(g => (
+              {(spec.ageGroups || []).map(g => (
                 <span key={g} className="inline-flex items-center gap-1.5 bg-surface-container text-on-surface-variant px-3 py-1 rounded-full text-[10px] font-bold uppercase">
-                  {g.toLowerCase().includes('criança') && <Baby size={12} />}
-                  {g.toLowerCase().includes('adolescente') && <Users size={12} />}
-                  {g.toLowerCase().includes('adulto') && <User size={12} />}
-                  {g.toLowerCase().includes('idoso') && <Users size={12} />}
+                  {(g || '').toLowerCase().includes('criança') && <Baby size={12} />}
+                  {(g || '').toLowerCase().includes('adolescente') && <Users size={12} />}
+                  {(g || '').toLowerCase().includes('adulto') && <User size={12} />}
+                  {(g || '').toLowerCase().includes('idoso') && <Users size={12} />}
                   {g}
                 </span>
               ))}
