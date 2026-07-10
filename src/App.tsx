@@ -64,14 +64,12 @@ import {
   RefreshCw,
   CreditCard,
   AlertTriangle,
-  Code,
-  Target,
   Check,
   AlertCircle
 } from 'lucide-react';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Cropper from 'react-easy-crop';
-import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan, SubleaseRoom, SubleaseBooking, PsicoeducacaoArticle } from './types';
+import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan, SubleaseRoom, SubleaseBooking } from './types';
 import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL, DEFAULT_SUBLEASE_ROOMS } from './constants';
 import { 
   getHomeSettings, 
@@ -94,41 +92,11 @@ import {
   auth,
   COLLECTIONS,
   DOCS,
-  db,
-  getPsicoeducacaoArticles,
-  savePsicoeducacaoArticles
+  db
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
-import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit } from './analytics';
-// Placeholder/Fallback components for Sublocação since it might not be deployed yet in all environments
-const SublocacaoSystemWrapper = ({ onNavigate }: any) => {
-  return (
-    <div className="min-h-[50vh] flex flex-col items-center justify-center p-8 text-center max-w-md mx-auto">
-      <h2 className="text-2xl font-black text-primary mb-4">Em Breve</h2>
-      <p className="text-on-surface-variant text-sm mb-6">O sistema de sublocação de salas está sendo preparado. Em breve, você poderá agendar e gerenciar salas diretamente pelo nosso site.</p>
-      <button onClick={() => onNavigate(Screen.Home)} className="bg-primary text-white text-sm font-bold px-6 py-2.5 rounded-full hover:shadow-xl transition-all">
-        Voltar ao Início
-      </button>
-    </div>
-  );
-};
+import { onSnapshot, collection, doc } from 'firebase/firestore';
 
-const AdminDashboardView = ({ adminSettings, bookings, rooms, onUpdateSettings, onCancelBooking, onUpdateRooms, registeredUsers, onUpdateUsers, setView }: any) => {
-  return (
-    <div className="p-8 border border-outline rounded-[2rem] text-center bg-surface-container-low max-w-lg mx-auto">
-      <h3 className="text-lg font-bold text-primary mb-2">Painel de Sublocação Desativado</h3>
-      <p className="text-sm text-on-surface-variant">O módulo de sublocação não está ativado ou os arquivos correspondentes não foram localizados no repositório.</p>
-    </div>
-  );
-};
-
-const INITIAL_ADMIN_SETTINGS = {
-  maxBookingsPerProfessional: 3,
-  advanceBookingDays: 30,
-  cancelationHoursLimit: 24,
-  autoApproveProfessionals: false
-};
 // Helper for Local Storage
 const LS_KEYS = {
   SETTINGS: 'clinica_hope_settings',
@@ -242,301 +210,26 @@ export default function App() {
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[] | null>(null);
   const [subleaseRooms, setSubleaseRooms] = useState<SubleaseRoom[] | null>(null);
   const [subleaseBookings, setSubleaseBookings] = useState<SubleaseBooking[] | null>(null);
-  const [psicoeducacaoArticles, setPsicoeducacaoArticles] = useState<PsicoeducacaoArticle[]>([]);
   const [isDataInitialized, setIsDataInitialized] = useState(false);
   const [user, setUser] = useState<any>(null);
-
-  // Sublease state for main admin integration
-  const [subleaseAdminSettings, setSubleaseAdminSettings] = useState<any>(null);
-  const [subleaseRoomsList, setSubleaseRoomsList] = useState<any[]>([]);
-  const [subleaseBookingsList, setSubleaseBookingsList] = useState<any[]>([]);
-  const [subleaseUsersList, setSubleaseUsersList] = useState<any[]>([]);
-
-  // Dynamic Marketing & Analytics Script Injection
-  useEffect(() => {
-    if (!homeSettings) return;
-
-    const { gtmId, ga4Id, metaPixelId } = homeSettings;
-    const addedElements: HTMLElement[] = [];
-
-    // Clear existing marketing injection elements if any (to prevent multiple copies on state updates)
-    const existingScripts = document.querySelectorAll('.dynamic-marketing-script');
-    existingScripts.forEach(el => el.remove());
-
-    const injectScript = (id: string, code: string, isHead = true, isNoscript = false) => {
-      const el = document.createElement(isNoscript ? 'noscript' : 'script');
-      el.className = 'dynamic-marketing-script';
-      el.innerHTML = code;
-      if (isHead) {
-        document.head.appendChild(el);
-      } else {
-        document.body.appendChild(el);
-      }
-      addedElements.push(el);
-    };
-
-    const isValidId = (id: string | null | undefined): boolean => {
-      if (!id) return false;
-      const t = id.trim();
-      if (!t || t.length < 3) return false;
-      if (t.includes('<') || t.includes('>') || t.includes('SEU_') || t.includes('YOUR_') || t.includes('XXXXXX') || t.includes('[') || t.includes(']')) {
-        return false;
-      }
-      return true;
-    };
-
-    // 1. Google Tag Manager (GTM)
-    if (gtmId && isValidId(gtmId)) {
-      const cleanGtm = gtmId.trim();
-      const gtmHeadCode = `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-      'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-      })(window,document,'script','dataLayer','${cleanGtm}');`;
-      injectScript('gtm-head', gtmHeadCode, true, false);
-
-      const gtmBodyCode = `<iframe src="https://www.googletagmanager.com/ns.html?id=${cleanGtm}"
-      height="0" width="0" style="display:none;visibility:hidden"></iframe>`;
-      injectScript('gtm-body', gtmBodyCode, false, true);
-    }
-
-    // 2. Google Analytics 4 (GA4)
-    if (ga4Id && isValidId(ga4Id)) {
-      const cleanGa4 = ga4Id.trim();
-      const ga4Lib = document.createElement('script');
-      ga4Lib.className = 'dynamic-marketing-script';
-      ga4Lib.async = true;
-      ga4Lib.src = `https://www.googletagmanager.com/gtag/js?id=${cleanGa4}`;
-      document.head.appendChild(ga4Lib);
-      addedElements.push(ga4Lib);
-
-      const ga4ConfigCode = `window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', '${cleanGa4}');`;
-      injectScript('ga4-config', ga4ConfigCode, true, false);
-    }
-
-    // 3. Meta Pixel (Facebook Pixel)
-    if (metaPixelId && isValidId(metaPixelId)) {
-      const cleanPixel = metaPixelId.trim();
-      const pixelHeadCode = `!function(f,b,e,v,n,t,s)
-      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-      n.queue=[];t=b.createElement(e);t.async=!0;
-      t.src=v;s=b.getElementsByTagName(e)[0];
-      s.parentNode.insertBefore(t,s)}(window, document,'script',
-      'https://connect.facebook.net/en_US/fbevents.js');
-      fbq('init', '${cleanPixel}');
-      fbq('track', 'PageView');`;
-      injectScript('pixel-head', pixelHeadCode, true, false);
-
-      const pixelBodyCode = `<img height="1" width="1" style="display:none"
-      src="https://www.facebook.com/tr?id=${cleanPixel}&ev=PageView&noscript=1" />`;
-      injectScript('pixel-body', pixelBodyCode, false, true);
-    }
-
-    return () => {
-      addedElements.forEach(el => {
-        if (el.parentNode) el.parentNode.removeChild(el);
-      });
-    };
-  }, [homeSettings]);
   
   const [scrollIntent, setScrollIntent] = useState(false);
 
-  const [syncingSpecs, setSyncingSpecs] = useState<Record<string, boolean>>({});
-
-  const syncSpecialist = async (specId: string, force: boolean = false) => {
-    if (syncingSpecs[specId]) return;
-
-    const spec = (specialists || []).find(s => s.id === specId);
-    if (!spec || (!spec.googleAppsScriptUrl && !spec.googleSheetsId)) return;
-
-    const twoHoursMs = 2 * 60 * 60 * 1000;
-    const isExpired = !spec.lastSync || (Date.now() - new Date(spec.lastSync).getTime() > twoHoursMs);
-
-    if (!isExpired && !force) {
-      console.log(`[Cache Ativo] Agenda de ${spec.name} está dentro das 2h válidas.`);
-      return;
-    }
-
-    console.log(`[Lazy Sync] Sincronizando agenda de ${spec.name}...`);
-    setSyncingSpecs(prev => ({ ...prev, [specId]: true }));
-
-    try {
-      let baseUrl = (spec.googleAppsScriptUrl || '').trim();
-      if (baseUrl && !baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
-
-      let newSchedule: any = null;
-      let foundData = false;
-
-      if (baseUrl && baseUrl.toLowerCase().includes('script.google.com') && baseUrl.includes('/exec')) {
-        const jsonpUrl = baseUrl.includes('?') 
-          ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` 
-          : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
-        
-        const jsonpData = await new Promise<any>((resolve) => {
-          const callbackName = `bg_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-          const script = document.createElement('script');
-          
-          let scriptResolved = false;
-          const cleanup = () => {
-            if (scriptResolved) return;
-            scriptResolved = true;
-            if (script.parentNode) script.parentNode.removeChild(script);
-            (window as any)[callbackName] = () => {};
-          };
-
-          script.src = `${jsonpUrl}&callback=${callbackName}`;
-          script.onerror = () => {
-            cleanup();
-            resolve(null);
-          };
-
-          (window as any)[callbackName] = (res: any) => {
-            cleanup();
-            resolve(res);
-          };
-
-          setTimeout(() => {
-            cleanup();
-            resolve(null);
-          }, 25000);
-
-          document.body.appendChild(script);
-        });
-
-        if (jsonpData) {
-          newSchedule = parseSheetScheduleData(jsonpData);
-          if (newSchedule && Object.keys(newSchedule).length > 0) {
-            foundData = true;
-          }
-        }
-      }
-
-      if (!foundData && spec.googleSheetsId) {
-        let sheetId = spec.googleSheetsId;
-        if (sheetId.includes('/d/')) {
-          const parts = sheetId.split('/d/');
-          if (parts.length > 1) sheetId = parts[1].split('/')[0];
-        }
-        const tabName = spec.googleSheetsTab || 'Agenda';
-        const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}&t=${Date.now()}`;
-        
-        const response = await fetch(url).catch(() => null);
-        if (response && response.ok) {
-          const csvText = await response.text();
-          const rows = csvText.split(/\r?\n/).map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim())).filter(row => row.length >= 3);
-          
-          const newCsvSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
-          rows.slice(1).forEach(row => {
-            const [dayRaw, timeRaw, statusRaw] = row;
-            const status = (statusRaw || '').toLowerCase().trim();
-            const isAvailable = status.includes('💚') || status.includes('livre');
-
-            if (dayRaw && timeRaw && isAvailable) {
-              const dayMap: Record<string, string> = {
-                'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'seg': 'Segunda',
-                'terca': 'Terça', 'terca-feira': 'Terça', 'ter': 'Terça',
-                'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'qua': 'Quarta',
-                'quinta': 'Quinta', 'quinta-feira': 'Quinta', 'qui': 'Quinta',
-                'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sex': 'Sexta',
-                'sabado': 'Sábado', 'sábado': 'Sábado', 'sab': 'Sábado'
-              };
-              const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-              const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
-              
-              if (!newCsvSchedule[day]) newCsvSchedule[day] = { periods: {} as any };
-              const hourMatch = timeRaw.match(/(\d{1,2})/);
-              if (hourMatch) {
-                const hour = parseInt(hourMatch[1]);
-                const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
-                if (!newCsvSchedule[day].periods[shift]) newCsvSchedule[day].periods[shift] = [];
-                const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
-                const processedTime = timeMatch ? timeMatch[1] : timeRaw;
-                if (!newCsvSchedule[day].periods[shift]?.includes(processedTime)) newCsvSchedule[day].periods[shift]?.push(processedTime);
-              }
-            }
-          });
-
-          if (Object.keys(newCsvSchedule).length > 0) {
-            newSchedule = newCsvSchedule;
-            foundData = true;
-          }
-        }
-      }
-
-      if (foundData && newSchedule) {
-        await updateSpecialistSchedule(specId, newSchedule);
-        setSpecialists(prev => (prev || []).map(s => s.id === specId ? {
-          ...s,
-          schedule: newSchedule,
-          lastSync: new Date().toISOString()
-        } : s));
-        console.log(`[Lazy Sync Sucesso] Agenda de ${spec.name} atualizada no Firestore.`);
-      }
-    } catch (e) {
-      console.error(`[Lazy Sync Erro] Falha ao sincronizar agenda de ${spec.name}:`, e);
-    } finally {
-      setSyncingSpecs(prev => ({ ...prev, [specId]: false }));
-    }
-  };
-
-  const syncAllExpiredSpecialists = async (targetId: string) => {
-    if (!specialists || specialists.length === 0) return;
-
-    const twoHoursMs = 2 * 60 * 60 * 1000;
-    const now = Date.now();
-
-    const expiredSpecs = specialists.filter(s => {
-      if (!s.googleAppsScriptUrl && !s.googleSheetsId) return false;
-      const isExpired = !s.lastSync || (now - new Date(s.lastSync).getTime() > twoHoursMs);
-      return isExpired || s.id === targetId;
-    });
-
-    if (expiredSpecs.length === 0) return;
-
-    console.log(`[Lazy Sync Geral] Sincronizando agendas expiradas (${expiredSpecs.length} psicólogos)...`);
-    await Promise.all(expiredSpecs.map(s => syncSpecialist(s.id, s.id === targetId)));
-  };
-
   // Initial Load from Firebase (Real-time Sync) and Auth check
   useEffect(() => {
-    let unsubSpecs = () => {};
-
-    const startSpecsListener = () => {
-      unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
-        setSpecialists(data.length > 0 ? data : []);
-        specsLoaded = true;
-        checkAllLoaded();
-      }, (error) => {
-        console.error("Erro no listener de especialistas:", error);
-        setSpecialists([]);
-        specsLoaded = true;
-        checkAllLoaded();
-      });
-    };
-
     const unsubscribeAuth = onAuthStateChanged(auth, (authUser) => {
       setUser(authUser);
       if (authUser) {
         console.log("Usuário logado:", authUser.email);
         if (authUser.email === 'scjorge1908@gmail.com') {
           setIsAdminUnlocked(true);
-          console.log("Admin detectado. Ativando sincronização em tempo real de especialistas...");
-          unsubSpecs();
-          startSpecsListener();
+          console.log("Admin desbloqueado via email");
         } else {
           setIsAdminUnlocked(false);
         }
       } else {
         console.log("Usuário não logado");
         setIsAdminUnlocked(false);
-        unsubSpecs();
-        unsubSpecs = () => {};
       }
     });
 
@@ -586,14 +279,13 @@ export default function App() {
       checkAllLoaded();
     });
 
-    // For public users (default on load), load specialists once instead of real-time listener
-    getDocs(collection(db, COLLECTIONS.SPECIALISTS)).then((snapshot) => {
+    const unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
       setSpecialists(data.length > 0 ? data : []);
       specsLoaded = true;
       checkAllLoaded();
-    }).catch((error) => {
-      console.error("Erro ao carregar especialistas uma vez:", error);
+    }, (error) => {
+      console.error("Erro no listener de especialistas:", error);
       setSpecialists([]);
       specsLoaded = true;
       checkAllLoaded();
@@ -639,15 +331,6 @@ export default function App() {
       checkAllLoaded();
     });
 
-    // Psicoeducação Articles — não bloqueia o loading
-    const unsubArticles = onSnapshot(collection(db, COLLECTIONS.PSICOEDUCACAO_ARTICLES), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PsicoeducacaoArticle[];
-      setPsicoeducacaoArticles(data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
-    }, (error) => {
-      console.warn("Erro no listener de artigos:", error);
-      setPsicoeducacaoArticles([]);
-    });
-
     bookingsLoaded = true;
     checkAllLoaded();
 
@@ -659,43 +342,17 @@ export default function App() {
       unsubApproaches();
       unsubInsurance();
       unsubRooms();
-      unsubArticles();
     };
   }, []);
 
-  // Separate effect for bookings and sublease collections listener (Admins only)
+  // Separate effect for bookings listener (Admins only)
   useEffect(() => {
     if (!isAdminUnlocked) {
       setSubleaseBookings([]);
-      setSubleaseAdminSettings(null);
-      setSubleaseRoomsList([]);
-      setSubleaseBookingsList([]);
-      setSubleaseUsersList([]);
       return;
     }
 
-    // Settings
-    const unsubSettings = onSnapshot(doc(db, 'sublease_settings', 'config'), (snapshot) => {
-      if (snapshot.exists()) {
-        setSubleaseAdminSettings(snapshot.data());
-      } else {
-        setSubleaseAdminSettings(INITIAL_ADMIN_SETTINGS);
-      }
-    }, (error) => {
-      console.warn("Erro no listener de sublease_settings (AppAdmin):", error);
-      setSubleaseAdminSettings(INITIAL_ADMIN_SETTINGS);
-    });
-
-    // Rooms
-    const unsubRooms = onSnapshot(collection(db, 'sublease_rooms'), (snapshot) => {
-      const loadedRooms = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setSubleaseRoomsList(loadedRooms);
-    }, (error) => {
-      console.warn("Erro no listener de sublease_rooms (AppAdmin):", error);
-    });
-
-    // Bookings (legacy)
-    const unsubBookingsLegacy = onSnapshot(collection(db, COLLECTIONS.SUBLEASE_BOOKINGS), (snapshot) => {
+    const unsubBookings = onSnapshot(collection(db, COLLECTIONS.SUBLEASE_BOOKINGS), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as SubleaseBooking[];
       setSubleaseBookings(data);
     }, (error) => {
@@ -703,31 +360,7 @@ export default function App() {
       setSubleaseBookings([]);
     });
 
-    // Bookings (new)
-    const unsubBookings = onSnapshot(collection(db, 'sublease_bookings'), (snapshot) => {
-      const loadedBookings = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setSubleaseBookingsList(loadedBookings);
-    }, (error) => {
-      console.warn("Erro no listener de sublease_bookings (AppAdmin):", error);
-      setSubleaseBookingsList([]);
-    });
-
-    // Users
-    const unsubUsers = onSnapshot(collection(db, 'sublease_users'), (snapshot) => {
-      const loadedUsers = snapshot.docs.map(d => d.data());
-      setSubleaseUsersList(loadedUsers);
-    }, (error) => {
-      console.warn("Erro no listener de sublease_users (AppAdmin):", error);
-      setSubleaseUsersList([]);
-    });
-
-    return () => {
-      unsubSettings();
-      unsubRooms();
-      unsubBookingsLegacy();
-      unsubBookings();
-      unsubUsers();
-    };
+    return () => unsubBookings();
   }, [isAdminUnlocked]);
 
   const checkQuotaLock = () => {
@@ -791,53 +424,6 @@ export default function App() {
       await saveSubleaseRooms(newRooms);
     } catch (e) {
       console.error("Erro ao salvar salas de sublocação:", e);
-    }
-  };
-
-  const handleUpdateSubleaseSettings = async (newSettings: any) => {
-    try {
-      await setDoc(doc(db, 'sublease_settings', 'config'), newSettings);
-      setSubleaseAdminSettings(newSettings);
-    } catch (err) {
-      console.error('Error updating admin settings:', err);
-    }
-  };
-
-  const handleCancelSubleaseBooking = async (bookingId: string) => {
-    try {
-      await setDoc(doc(db, 'sublease_bookings', bookingId), { status: 'Cancelado' }, { merge: true });
-    } catch (err) {
-      console.error('Error cancelling booking:', err);
-    }
-  };
-
-  const handleUpdateSubleaseRoomsList = async (updatedRooms: any[]) => {
-    try {
-      for (const r of updatedRooms) {
-        await setDoc(doc(db, 'sublease_rooms', r.id), r);
-      }
-    } catch (err) {
-      console.error('Error updating rooms:', err);
-    }
-  };
-
-  const handleUpdateSubleaseUsersList = async (updatedUsers: any[]) => {
-    try {
-      for (const u of updatedUsers) {
-        await setDoc(doc(db, 'sublease_users', u.email), u);
-      }
-    } catch (err) {
-      console.error('Error updating users:', err);
-    }
-  };
-
-  const updatePsicoeducacaoArticles = async (newArticles: PsicoeducacaoArticle[]) => {
-    setPsicoeducacaoArticles(newArticles);
-    if (checkQuotaLock()) return;
-    try {
-      await savePsicoeducacaoArticles(newArticles);
-    } catch (e) {
-      console.error("Erro ao salvar artigos de psicoeducação:", e);
     }
   };
 
@@ -931,8 +517,6 @@ export default function App() {
               approaches={approaches}
               specialists={specialists}
               isAdminUnlocked={isAdminUnlocked}
-              syncingSpecs={syncingSpecs}
-              onSyncRequest={syncAllExpiredSpecialists}
             />
           )}
           {currentScreen === Screen.SEO && <SEOScreen onNavigate={navigateTo} settings={homeSettings} />}
@@ -944,15 +528,38 @@ export default function App() {
               settings={safeSettings}
               isAdminUnlocked={isAdminUnlocked}
               shouldScrollToList={scrollIntent}
-              syncingSpecs={syncingSpecs}
-              onSyncRequest={syncAllExpiredSpecialists}
             />
           )}
           {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} settings={homeSettings} />}
           {currentScreen === Screen.Abordagens && <AbordagensScreen onNavigate={navigateTo} approaches={approaches} settings={homeSettings} />}
-          {currentScreen === Screen.Psicoeducacao && <PsicoeducacaoScreen onNavigate={navigateTo} settings={homeSettings} articles={psicoeducacaoArticles} />}
           {currentScreen === Screen.Sublocacao && (
-            <SublocacaoSystemWrapper onNavigate={navigateTo} />
+            <SublocacaoScreen 
+              rooms={subleaseRooms || []} 
+              user={user} 
+              settings={safeSettings}
+              onBooking={async (roomId, day, dayLabel, items, totalPrice) => {
+                const booking: SubleaseBooking = {
+                  id: Date.now().toString(),
+                  roomId,
+                  userId: user.uid,
+                  userName: user.displayName || user.email || 'Usuário',
+                  userEmail: user.email || '',
+                  day,
+                  dayLabel,
+                  items,
+                  totalPrice,
+                  status: 'pending',
+                  createdAt: Date.now()
+                };
+                try {
+                  await saveSubleaseBooking(booking);
+                  alert('Sua solicitação de reserva foi enviada com sucesso! Aguarde a confirmação via WhatsApp ou e-mail.');
+                } catch (e) {
+                  alert('Erro ao processar sua reserva. Tente novamente mais tarde.');
+                }
+              }}
+              onNavigate={navigateTo}
+            />
           )}
 
           {currentScreen === Screen.Login && (
@@ -984,17 +591,7 @@ export default function App() {
                   alert('Erro ao atualizar status da reserva.');
                 }
               }}
-              psicoeducacaoArticles={psicoeducacaoArticles}
-              onUpdatePsicoeducacaoArticles={updatePsicoeducacaoArticles}
               isDataLoaded={isDataInitialized}
-              subleaseAdminSettings={subleaseAdminSettings || INITIAL_ADMIN_SETTINGS}
-              subleaseRoomsList={subleaseRoomsList}
-              subleaseBookingsList={subleaseBookingsList}
-              subleaseUsersList={subleaseUsersList}
-              onUpdateSubleaseSettings={handleUpdateSubleaseSettings}
-              onCancelSubleaseBooking={handleCancelSubleaseBooking}
-              onUpdateSubleaseRoomsList={handleUpdateSubleaseRoomsList}
-              onUpdateSubleaseUsersList={handleUpdateSubleaseUsersList}
             />
           )}
         </motion.div>
@@ -1029,7 +626,6 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
     { id: Screen.SEO, label: 'A Clínica' },
     { id: Screen.Abordagens, label: 'Abordagens' },
     { id: Screen.CorpoClinico, label: 'Especialistas' },
-    { id: Screen.Psicoeducacao, label: 'Psicoeducação' },
   ];
 
   return (
@@ -1089,8 +685,6 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
           <div className="flex items-center gap-4">
             <button 
               onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
-              id="header-cta-agendar"
-              data-event="inicio_agendamento"
               className="hidden md:block bg-primary text-white text-sm font-bold px-7 py-3 rounded-full hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-primary/20"
             >
               Agendar Consulta
@@ -1150,8 +744,6 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
               <div className="mt-auto pt-10 space-y-6">
                 <button 
                   onClick={() => { onNavigate(Screen.CorpoClinico, 'push', true); setMenuOpen(false); }}
-                  id="mobile-menu-cta-agendar"
-                  data-event="inicio_agendamento"
                   className="w-full bg-secondary text-white py-5 rounded-[2rem] font-bold text-lg shadow-xl shadow-secondary/20 flex items-center justify-center gap-3"
                 >
                   <CalendarMonth size={24} />
@@ -1171,12 +763,11 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
 
       <main className="flex-grow">{children}</main>
 
-      {activeScreen !== Screen.Sublocacao && (
-        <footer className="py-20 border-t border-outline-alt/30 bg-[#fdfdff]">
-          <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-            <div className="flex flex-col gap-8">
-              <div className="flex items-center gap-4">
-                <div className="shrink-0">
+      <footer className="py-20 border-t border-outline-alt/30 bg-[#fdfdff]">
+        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+          <div className="flex flex-col gap-8">
+            <div className="flex items-center gap-4">
+              <div className="shrink-0">
                 {settings?.logoUrl ? (
                   <img src={settings.logoUrl} className="h-12 w-auto object-contain" alt="Logo" />
                 ) : (
@@ -1236,7 +827,6 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
           </p>
         </div>
       </footer>
-      )}
     </div>
   );
 }
@@ -1251,11 +841,9 @@ interface HomeProps extends ScreenProps {
   settings: HomeSettings;
   approaches: Approach[];
   isAdminUnlocked: boolean;
-  syncingSpecs?: Record<string, boolean>;
-  onSyncRequest?: (specId: string) => void;
 }
 
-function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlocked, syncingSpecs, onSyncRequest }: HomeProps & { specialists: Specialist[] }) {
+function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlocked }: HomeProps & { specialists: Specialist[] }) {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -1297,8 +885,6 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <button 
                 onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
-                id="hero-cta-agendar"
-                data-event="inicio_agendamento"
                 className="btn-primary shadow-xl"
               >
                 Agendar Consulta
@@ -1397,8 +983,6 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             
             <button 
               onClick={() => onNavigate(Screen.CorpoClinico)}
-              id="specialists-list-cta-agendar"
-              data-event="inicio_agendamento"
               className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center md:self-end"
             >
               Agendar Terapia 
@@ -1439,8 +1023,6 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                           isAdminUnlocked={isAdminUnlocked}
                           isCarousel={true}
                           onNavigate={onNavigate}
-                          isSyncing={!!syncingSpecs?.[spec.id]}
-                          onSyncRequest={() => onSyncRequest?.(spec.id)}
                         />
                       </motion.div>
                     );
@@ -1528,8 +1110,6 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             </p>
             <button 
               onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
-              id="mid-page-cta-agendar"
-              data-event="inicio_agendamento"
               className="bg-white text-primary px-12 py-6 rounded-2xl font-bold text-lg hover:shadow-2xl transition-all active:scale-95 group-hover:scale-105"
             >
               Agendar agora!
@@ -1608,153 +1188,6 @@ function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (s
            <h3 className="text-4xl md:text-5xl font-bold tracking-tight italic">"O segredo da mudança é a construção do novo."</h3>
            <div className="w-16 h-1.5 bg-secondary mx-auto rounded-full"></div>
            <button onClick={() => onNavigate(Screen.CorpoClinico, 'push')} className="btn-secondary !bg-white !text-primary transform hover:scale-105">Iniciar Jornada</button>
-        </div>
-      </section>
-    </Layout>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PSICOEDUCAÇÃO SCREEN — Lista de artigos + visualização individual
-// ─────────────────────────────────────────────────────────────────────────────
-function PsicoeducacaoScreen({ onNavigate, settings, articles }: ScreenProps & { settings: HomeSettings; articles: PsicoeducacaoArticle[] }) {
-  const [openArticle, setOpenArticle] = useState<PsicoeducacaoArticle | null>(null);
-
-  const renderContent = (rawText: string) => {
-    if (!rawText.trim()) return null;
-    const lines = rawText.split('\n');
-    const elements: React.ReactNode[] = [];
-    let bulletBuffer: string[] = [];
-
-    const flushBullets = (key: string) => {
-      if (bulletBuffer.length > 0) {
-        elements.push(
-          <ul key={`ul-${key}`} className="list-disc list-inside space-y-2 pl-2 my-4">
-            {bulletBuffer.map((b, i) => (
-              <li key={i} className="text-on-surface-variant leading-relaxed text-base md:text-lg"
-                dangerouslySetInnerHTML={{ __html: b.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />
-            ))}
-          </ul>
-        );
-        bulletBuffer = [];
-      }
-    };
-
-    lines.forEach((line, i) => {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('### ')) {
-        flushBullets(String(i));
-        elements.push(<h3 key={i} className="text-xl md:text-2xl font-bold text-primary mt-8 mb-3 tracking-tight">{trimmed.slice(4)}</h3>);
-      } else if (trimmed.startsWith('## ')) {
-        flushBullets(String(i));
-        elements.push(<h2 key={i} className="text-2xl md:text-3xl font-extrabold text-primary mt-10 mb-4 tracking-tight border-l-4 border-secondary pl-4">{trimmed.slice(3)}</h2>);
-      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-        bulletBuffer.push(trimmed.slice(2));
-      } else if (trimmed === '') {
-        flushBullets(String(i));
-      } else {
-        flushBullets(String(i));
-        elements.push(<p key={i} className="text-on-surface-variant leading-loose text-base md:text-lg mb-4"
-          dangerouslySetInnerHTML={{ __html: trimmed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />);
-      }
-    });
-    flushBullets('end');
-    return elements;
-  };
-
-  return (
-    <Layout activeScreen={Screen.Psicoeducacao} onNavigate={onNavigate} settings={settings}>
-      <header className="section-padding bg-background pt-32 pb-12">
-        <div className="max-w-4xl mx-auto px-6 space-y-6">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <span className="inline-block px-4 py-1.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-widest shadow-sm">
-              Educação em Saúde Mental
-            </span>
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold text-primary tracking-tight mt-8">
-              Psicoeducação
-            </h1>
-            <p className="text-base md:text-lg text-on-surface-variant font-medium max-w-2xl mt-6 leading-relaxed">
-              Conteúdo educativo para ampliar seu autoconhecimento e apoiar sua jornada terapêutica.
-            </p>
-          </motion.div>
-        </div>
-      </header>
-
-      <section className="px-6 pb-24">
-        <div className="max-w-4xl mx-auto space-y-6">
-
-          {/* Lista de artigos */}
-          {!openArticle && (
-            <>
-              {articles.length === 0 ? (
-                <div className="text-center py-20 bg-surface-container-low rounded-[3rem] border-2 border-dashed border-outline-alt/40">
-                  <Brain size={48} className="mx-auto text-primary/20 mb-4" />
-                  <p className="text-on-surface-variant font-medium italic">Nenhum artigo publicado ainda.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {articles.map((article, idx) => (
-                    <motion.button
-                      key={article.id}
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.07 }}
-                      onClick={() => setOpenArticle(article)}
-                      className="group text-left bg-white rounded-[2.5rem] border border-outline-alt/30 p-8 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col gap-4"
-                    >
-                      <div className="w-12 h-12 bg-secondary-container/50 rounded-2xl flex items-center justify-center text-secondary group-hover:bg-secondary group-hover:text-white transition-colors">
-                        <Brain size={22} />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-xl font-extrabold text-primary tracking-tight group-hover:text-secondary transition-colors">
-                          {article.title}
-                        </h3>
-                        {article.subtitle && (
-                          <p className="text-sm text-on-surface-variant/70 mt-1 font-medium italic line-clamp-2">{article.subtitle}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-secondary font-bold text-xs uppercase tracking-widest">
-                        Ler artigo <ArrowForward size={14} className="group-hover:translate-x-1 transition-transform" />
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Artigo aberto */}
-          {openArticle && (
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-              <button
-                onClick={() => setOpenArticle(null)}
-                className="flex items-center gap-2 text-primary font-bold text-sm mb-8 hover:underline group"
-              >
-                <ArrowForward size={16} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
-                Voltar para Psicoeducação
-              </button>
-              <div className="bg-white rounded-[3rem] shadow-xl border border-outline-alt/30 p-8 md:p-16 text-left">
-                <h2 className="text-3xl md:text-5xl font-extrabold text-primary tracking-tight mb-2">{openArticle.title}</h2>
-                {openArticle.subtitle && (
-                  <p className="text-lg text-secondary italic font-medium mb-8 border-l-4 border-secondary/30 pl-4">{openArticle.subtitle}</p>
-                )}
-                <div className="mt-8">{renderContent(openArticle.content)}</div>
-              </div>
-            </motion.div>
-          )}
-
-          {!openArticle && (
-            <div className="max-w-4xl mx-auto mt-12 text-center">
-              <button 
-                onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)} 
-                id="psicoeducacao-footer-cta-agendar"
-                data-event="inicio_agendamento"
-                className="btn-primary shadow-xl"
-              >
-                Agendar Consulta
-              </button>
-            </div>
-          )}
         </div>
       </section>
     </Layout>
@@ -1876,8 +1309,6 @@ interface CorpoClinicoProps extends ScreenProps {
   settings: HomeSettings;
   isAdminUnlocked: boolean;
   shouldScrollToList?: boolean;
-  syncingSpecs?: Record<string, boolean>;
-  onSyncRequest?: (specId: string) => void;
 }
 
 interface SpecialistCardProps {
@@ -1886,8 +1317,6 @@ interface SpecialistCardProps {
   isAdminUnlocked?: boolean;
   isCarousel?: boolean;
   onNavigate?: (screen: Screen, transition?: TransitionType, scroll?: boolean) => void;
-  isSyncing?: boolean;
-  onSyncRequest?: () => void;
 }
 
 function sortKeys(obj: any): any {
@@ -1957,27 +1386,17 @@ function parseSheetScheduleData(jsonpData: any): Record<string, { periods: Recor
   return newSchedule;
 }
 
-function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate, isSyncing, onSyncRequest }: SpecialistCardProps) {
+function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate }: SpecialistCardProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(spec.schedule || null);
   
-  const particularPlan = insurancePlans?.find(p => p.name.toLowerCase() === 'particular');
-  
   useEffect(() => {
-    setSheetSchedule(spec.schedule || null);
-  }, [spec.schedule]);
-
-  useEffect(() => {
-    if (!isAdminUnlocked && (spec.googleAppsScriptUrl || spec.googleSheetsId)) {
-      const twoHoursMs = 2 * 60 * 60 * 1000;
-      const isExpired = !spec.lastSync || (Date.now() - new Date(spec.lastSync).getTime() > twoHoursMs);
-      if (isExpired && onSyncRequest) {
-        onSyncRequest();
-      }
+    if (!spec.googleAppsScriptUrl && !spec.googleSheetsId) {
+      setSheetSchedule(spec.schedule || null);
     }
-  }, [spec.lastSync, isAdminUnlocked, spec.googleAppsScriptUrl, spec.googleSheetsId]);
+  }, [spec.schedule, spec.googleAppsScriptUrl, spec.googleSheetsId]);
 
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
@@ -1986,8 +1405,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isAdminUnlocked) return;
-
     if (spec.googleAppsScriptUrl || spec.googleSheetsId) {
       const fetchSheetData = async () => {
         if (isLoadingSheet) return;
@@ -2149,8 +1566,6 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
   const handleWhatsAppClick = () => {
     if (!canBook) return;
-    trackWhatsAppClick('specialist_card');
-    trackScheduleClick(spec.name);
     const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
     window.open(`https://wa.me/5548999549041?text=${encodeURIComponent(message)}`, '_blank');
   };
@@ -2271,15 +1686,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
             </div>
           ) : (
             displayAgenda && (
-              <div className={`pt-6 border-t border-outline-alt/30 space-y-4 relative transition-opacity duration-300 ${!isAdminUnlocked && isSyncing ? 'opacity-60 pointer-events-none' : 'opacity-100'}`}>
-                {!isAdminUnlocked && isSyncing && (
-                  <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-amber-50 rounded-lg w-fit border border-amber-200/50 animate-pulse">
-                    <RefreshCw size={12} className="text-amber-600 animate-spin" />
-                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">
-                      Verificando...
-                    </p>
-                  </div>
-                )}
+              <div className="pt-6 border-t border-outline-alt/30 space-y-4">
                 {spec.attendedAges && spec.attendedAges.length > 0 && (
                   <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                     <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
@@ -2417,30 +1824,20 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                           </div>
 
                           <div className="grid grid-cols-2 gap-4">
-                            {(!spec.insurancePlans || (particularPlan && spec.insurancePlans.includes(particularPlan.id))) && (
-                              <button
-                                onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
-                                className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
-                                  selectedPlan === 'Particular'
-                                  ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
-                                  : 'bg-transparent text-primary hover:bg-secondary/5'
-                                }`}
-                              >
-                                <div className="w-12 h-10 flex items-center justify-center">
-                                  <CreditCard size={28} className="text-secondary" />
-                                </div>
-                                <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
-                              </button>
-                            )}
-                            {insurancePlans
-                              .filter(p => p.name.toLowerCase() !== 'particular')
-                              .filter(plan => {
-                                if (spec.insurancePlans) {
-                                  return spec.insurancePlans.includes(plan.id);
-                                }
-                                return true;
-                              })
-                              .map(plan => (
+                            <button
+                              onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
+                              className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
+                                selectedPlan === 'Particular'
+                                ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
+                                : 'bg-transparent text-primary hover:bg-secondary/5'
+                              }`}
+                            >
+                              <div className="w-12 h-10 flex items-center justify-center">
+                                <CreditCard size={28} className="text-secondary" />
+                              </div>
+                              <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
+                            </button>
+                            {insurancePlans.filter(p => p.name.toLowerCase() !== 'particular').map(plan => (
                               <button
                                 key={plan.id}
                                 onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
@@ -2475,28 +1872,43 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
           )}
         </div>
 
-       {!isAgendaFull && !isCarousel && (
-  <button>... Enviar sua solicitação ...</button>
-)}
+        {!isAgendaFull && !isCarousel && (
+          <button 
+            disabled={!canBook}
+            onClick={handleWhatsAppClick}
+            className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
+              !canBook 
+              ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
+              : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2 shadow-2xl ring-4 ring-primary/20 animate-pulse'
+            }`}
+          >
+            <Chat size={18} />
+            {canBook ? 'Enviar sua solicitação' : 'Selecione dia, hora e plano'}
+          </button>
+        )}
 
-{!isCarousel && (
-  <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
-    <div className="space-y-3">
-      <p>... Informação importante ...</p>
-      <p>... Para agendamentos via plano de saúde ...</p>
-      
-      {/* ✅ Dica sobre telemedicina - CORRETA */}
-      <div className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/30">
-        <p className="text-[10px] text-primary/80 leading-relaxed font-medium">
-          💡 <span className="font-bold">Dica:</span> Verifique se o seu plano oferece telemedicina. Em muitos casos, o atendimento é imediato e funciona 24 horas.
-          <br />
-          Na consulta, solicite ao médico uma guia de encaminhamento para psicoterapia com o CID do tratamento. Esse é um documento obrigatório para a autorização das sessões pelo plano de saúde.
-        </p>
+        {!isCarousel && (
+          <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
+            <div className="space-y-3">
+              <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
+                <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
+              </p>
+              <div className="text-[10px] bg-white/40 p-4 rounded-xl border border-secondary/5 text-primary/80 leading-relaxed space-y-3">
+                <p>
+                  💡 <span className="font-bold">Dica:</span> Verifique se o seu plano oferece telemedicina. Em muitos casos, o atendimento é imediato e funciona 24 horas.
+                </p>
+                <p>
+                  Na consulta, solicite ao médico uma guia de encaminhamento para psicoterapia com o CID do tratamento. Esse é um documento obrigatório para a autorização das sessões pelo plano de saúde.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-    </div>
-  </div>
-)}
-function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isAdminUnlocked, shouldScrollToList, syncingSpecs, onSyncRequest }: CorpoClinicoProps) {
+    </motion.div>
+  );
+}
+function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isAdminUnlocked, shouldScrollToList }: CorpoClinicoProps) {
   useEffect(() => {
     if (shouldScrollToList) {
       const element = document.getElementById('topo-especialistas');
@@ -2703,8 +2115,6 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
                    spec={spec} 
                    insurancePlans={settings.insurancePlans || []} 
                    isAdminUnlocked={isAdminUnlocked}
-                   isSyncing={!!syncingSpecs?.[spec.id]}
-                   onSyncRequest={() => onSyncRequest?.(spec.id)}
                  />
                </div>
              ))}
@@ -2755,9 +2165,6 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                     href="https://wa.me/5548999549041" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    onClick={() => trackWhatsAppClick('contato_section')}
-                    id="btn-whatsapp-contato-section"
-                    data-event="contato_whatsapp"
                     className="inline-flex items-center gap-4 bg-white text-primary px-10 py-5 rounded-2xl font-bold text-lg hover:shadow-2xl transition-all active:scale-95"
                   >
                     <Chat size={24} /> Conversar Agora
@@ -2797,7 +2204,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                       <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">Mensagem (Opcional)</label>
                       <textarea rows={4} className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary shadow-sm resize-none" placeholder="Conte-nos brevemente como podemos ajudar..."></textarea>
                    </div>
-                   <button className="w-full py-5 bg-secondary text-on-secondary font-bold text-lg rounded-2xl hover:shadow-xl transition-all active:scale-95" onClick={() => trackFormSubmit('contato')} id="btn-enviar-mensagem-contato" data-event="contato_form">
+                   <button className="w-full py-5 bg-secondary text-on-secondary font-bold text-lg rounded-2xl hover:shadow-xl transition-all active:scale-95">
                       Enviar Solicitação
                    </button>
                 </form>
@@ -2827,7 +2234,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                 <p className="text-on-surface-variant font-medium leading-relaxed max-w-4xl">
                   Para agendamentos via <span className="text-secondary font-bold">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="text-secondary font-bold">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos. 
                   <span className="block mt-4 text-sm bg-white/50 p-4 rounded-xl border border-outline-alt/30">
-                    💡 <span className="font-bold">Dica:</span> Verifique se o seu plano oferece telemedicina. Em muitos casos, o atendimento é imediato e funciona 24 horas. Na consulta, solicite ao médico uma guia de encaminhamento para psicoterapia com o CID do tratamento. Esse é um documento obrigatório para a autorização das sessões pelo plano de saúde.
+                    💡 <span className="font-bold">Dica:</span> Se você não tiver o encaminhamento, verifique no aplicativo do seu plano se existe a opção de <span className="font-bold underline">teleatendimento</span>. É um processo rápido que pode auxiliar você neste momento de decisão.
                   </span>
                 </p>
               </div>
@@ -2957,17 +2364,7 @@ interface AdminScreenProps {
   onUpdateSubleaseRooms: (rooms: SubleaseRoom[]) => void;
   subleaseBookings: SubleaseBooking[];
   onUpdateSubleaseBookingStatus: (id: string, status: 'confirmed' | 'cancelled') => void;
-  psicoeducacaoArticles: PsicoeducacaoArticle[];
-  onUpdatePsicoeducacaoArticles: (articles: PsicoeducacaoArticle[]) => void;
   isDataLoaded: boolean;
-  subleaseAdminSettings?: any;
-  subleaseRoomsList?: any[];
-  subleaseBookingsList?: any[];
-  subleaseUsersList?: any[];
-  onUpdateSubleaseSettings?: (settings: any) => Promise<void>;
-  onCancelSubleaseBooking?: (bookingId: string) => Promise<void>;
-  onUpdateSubleaseRoomsList?: (rooms: any[]) => Promise<void>;
-  onUpdateSubleaseUsersList?: (users: any[]) => Promise<void>;
 }
 
 function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: { 
@@ -3323,28 +2720,16 @@ function AdminScreen({
   onUpdateSubleaseRooms,
   subleaseBookings,
   onUpdateSubleaseBookingStatus,
-  psicoeducacaoArticles,
-  onUpdatePsicoeducacaoArticles,
-  isDataLoaded,
-  subleaseAdminSettings,
-  subleaseRoomsList = [],
-  subleaseBookingsList = [],
-  subleaseUsersList = [],
-  onUpdateSubleaseSettings = async () => {},
-  onCancelSubleaseBooking = async () => {},
-  onUpdateSubleaseRoomsList = async () => {},
-  onUpdateSubleaseUsersList = async () => {}
+  isDataLoaded
 }: AdminScreenProps) {
   const [localSettings, setLocalSettings] = useState<HomeSettings>(settings);
   const [localSpecialists, setLocalSpecialists] = useState<Specialist[]>(specialists);
   const [localApproaches, setLocalApproaches] = useState<Approach[]>(approaches);
   const [localInsurancePlans, setLocalInsurancePlans] = useState<InsurancePlan[]>(insurancePlans);
   const [localSubleaseRooms, setLocalSubleaseRooms] = useState<SubleaseRoom[]>(subleaseRooms);
-  const [localArticles, setLocalArticles] = useState<PsicoeducacaoArticle[]>(psicoeducacaoArticles);
-  const [editingArticle, setEditingArticle] = useState<PsicoeducacaoArticle | null>(null);
 
   const [hasInitialized, setHasInitialized] = useState(false);
-  const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens' | 'psicoeducacao' | 'sublocacao' | 'reservas_sublocacao' | 'marketing'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens' | 'sublocacao' | 'reservas_sublocacao'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
 
   const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | 'sublease_1' | 'sublease_2' | null>(null);
@@ -3377,17 +2762,9 @@ function AdminScreen({
       setLocalApproaches(approaches);
       setLocalInsurancePlans(insurancePlans);
       setLocalSubleaseRooms(subleaseRooms);
-      setLocalArticles(psicoeducacaoArticles);
       setHasInitialized(true);
     }
-  }, [isDataLoaded, specialists, settings, approaches, insurancePlans, subleaseRooms, psicoeducacaoArticles, hasInitialized]);
-
-  // Keep articles in sync with realtime updates
-  useEffect(() => {
-    if (hasInitialized) {
-      setLocalArticles(psicoeducacaoArticles);
-    }
-  }, [psicoeducacaoArticles, hasInitialized]);
+  }, [isDataLoaded, specialists, settings, approaches, insurancePlans, subleaseRooms, hasInitialized]);
 
   const addRoom = () => {
     const id = Date.now().toString();
@@ -3464,10 +2841,9 @@ function AdminScreen({
       desc: 'Descrição aqui...',
       img: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=688',
       ageGroups: [AgeGroup.Adults],
-      shifts: [Shift.Morning],
-      insurancePlans: []
+      shifts: [Shift.Morning]
     };
-    setLocalSpecialists([newSpec, ...localSpecialists]);
+    setLocalSpecialists([...localSpecialists, newSpec]);
   };
 
   const removeSpecialist = async (id: string) => {
@@ -3760,57 +3136,35 @@ function AdminScreen({
   return (
     <div className="min-h-screen bg-surface p-6 md:p-12">
       <div className="max-w-6xl mx-auto">
-        {/* Modern Double-Layer Admin Header */}
-        <div className="flex flex-col gap-6 mb-10 pb-6 border-b border-outline-alt/40">
-          {/* Top Row: Title & Action Buttons */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={() => onNavigate(Screen.Home, 'push_back')} 
-                className="p-3 bg-white border border-outline rounded-full shadow-sm hover:bg-slate-50 active:scale-95 transition-all text-primary shrink-0"
-                title="Voltar para a Página Inicial"
-              >
-                <ArrowForward className="rotate-180 w-5 h-5" />
-              </button>
-              <div>
-                <h1 className="text-3xl md:text-4xl font-display font-black text-primary tracking-tight">
-                  Painel de Administração
-                </h1>
-                <p className="text-xs text-on-surface-variant mt-0.5">
-                  Gerencie todo o conteúdo, especialistas e o sistema de sublocação.
-                </p>
+        <div className="flex justify-between items-center mb-12">
+          <div className="flex items-center gap-4">
+            <button onClick={() => onNavigate(Screen.Home, 'push_back')} className="p-3 bg-white border border-outline rounded-full shadow-sm hover:bg-outline transition-colors">
+              <ArrowForward className="rotate-180" />
+            </button>
+            <h1 className="text-4xl font-display font-bold text-primary tracking-tighter">Painel de Administração</h1>
+          </div>
+          <div className="flex gap-4">
+            {isQuotaLocked && (
+              <div className="flex items-center gap-3 px-4 py-2 bg-accent/10 text-accent rounded-2xl border border-accent/20 animate-pulse">
+                <AlertTriangle size={18} />
+                <span className="text-[10px] font-black uppercase tracking-widest text-left leading-tight">
+                  Banco de Dados em Modo Leitura<br/>
+                  <span className="opacity-70">Limite Diário Atingido</span>
+                </span>
               </div>
+            )}
+            <div className="flex bg-white rounded-2xl p-1 modern-shadow border border-outline">
+              {(['home', 'corpo', 'abordagens'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface'}`}
+                >
+                  {tab === 'home' ? 'Página Inicial' : tab === 'corpo' ? 'Especialistas' : 'Abordagens'}
+                </button>
+              ))}
             </div>
-
-            {/* Quick Actions & System Info */}
-            <div className="flex flex-wrap items-center gap-3">
-              {isQuotaLocked && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-accent/10 text-accent rounded-xl border border-accent/20 animate-pulse">
-                  <AlertTriangle size={14} />
-                  <span className="text-[9px] font-black uppercase tracking-wider text-left leading-tight">
-                    Modo Leitura <span className="opacity-60">(Limite Atingido)</span>
-                  </span>
-                </div>
-              )}
-
-              {/* Sincronizar Button */}
-              <button 
-                onClick={async () => {
-                  if (confirm("Deseja sincronizar os dados com o servidor? Isso irá recarregar as informações mais recentes e descartar qualquer alteração não salva localmente.")) {
-                    const btn = document.getElementById('sync-btn');
-                    if (btn) btn.classList.add('animate-spin');
-                    await forceResetFirebase();
-                  }
-                }}
-                id="sync-btn"
-                className="px-4 py-2.5 bg-secondary/10 text-secondary rounded-xl hover:bg-secondary hover:text-white transition-all duration-200 flex items-center gap-2 border border-secondary/10 text-[10px] font-black uppercase tracking-widest cursor-pointer"
-                title="Sincronizar com o Servidor (Limpar Cache)"
-              >
-                <RefreshCw size={14} />
-                <span>Sincronizar</span>
-              </button>
-
-              {/* Publicar Alterações Button */}
+            <div className="flex gap-4 items-center">
               <button 
                 disabled={isQuotaLocked}
                 onClick={async () => {
@@ -3825,7 +3179,7 @@ function AdminScreen({
                     alert("Erro ao salvar todas as alterações.");
                   }
                 }}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-200 shadow-sm active:scale-95 cursor-pointer ${
+                className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 ${
                   isQuotaLocked 
                   ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
                   : saveStatus['global'] 
@@ -3834,125 +3188,40 @@ function AdminScreen({
                 }`}
                 title="Publicar todas as alterações no site"
               >
-                {saveStatus['global'] ? <CheckCircle size={14} /> : <Send size={14} />}
+                {saveStatus['global'] ? <CheckCircle size={18} /> : <Send size={18} />}
                 <span>{saveStatus['global'] ? 'Publicado!' : 'Publicar Alterações'}</span>
               </button>
 
-              {/* Sair Button */}
               <button 
-                onClick={onLogout}
-                className="px-4 py-2.5 bg-white border border-outline rounded-xl hover:bg-accent/10 hover:text-accent hover:border-accent/30 transition-all duration-200 text-accent flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest cursor-pointer"
-                title="Sair"
+                onClick={async () => {
+                  if (confirm("Deseja sincronizar os dados com o servidor? Isso irá recarregar as informações mais recentes e descartar qualquer alteração não salva localmente.")) {
+                    const btn = document.getElementById('sync-btn');
+                    if (btn) btn.classList.add('animate-spin');
+                    await forceResetFirebase();
+                  }
+                }}
+                id="sync-btn"
+                className="p-3 bg-secondary/10 text-secondary rounded-2xl shadow-sm hover:shadow-md hover:bg-secondary hover:text-white transition-all flex items-center gap-2 group"
+                title="Sincronizar com o Servidor (Limpar Cache)"
               >
-                <LogOut size={14} />
-                <span>Sair</span>
+                <RefreshCw size={20} className="group-hover:rotate-180 transition-transform duration-700" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Sincronizar</span>
               </button>
             </div>
-          </div>
-
-          {/* Bottom Row: Category Tabs Navigation */}
-          <div className="w-full overflow-x-auto pb-1 scrollbar-thin">
-            <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 min-w-max gap-1">
-              {(['home', 'corpo', 'abordagens', 'psicoeducacao', 'sublocacao', 'marketing'] as const).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 cursor-pointer ${
-                    activeTab === tab 
-                      ? 'bg-white text-primary shadow-sm font-bold' 
-                      : 'text-slate-600 hover:text-primary hover:bg-white/50'
-                  }`}
-                >
-                  {tab === 'home' && 'Página Inicial'}
-                  {tab === 'corpo' && 'Especialistas'}
-                  {tab === 'abordagens' && 'Abordagens'}
-                  {tab === 'psicoeducacao' && 'Psicoeducação'}
-                  {tab === 'sublocacao' && 'Sublocação'}
-                  {tab === 'marketing' && 'Marketing'}
-                </button>
-              ))}
-            </div>
+            <button 
+              onClick={onLogout}
+              className="p-3 bg-white border border-outline rounded-2xl shadow-sm hover:bg-accent hover:text-white transition-all text-accent flex items-center gap-2"
+              title="Sair"
+            >
+              <LogOut size={20} />
+              <span className="text-[10px] font-bold uppercase tracking-widest">Sair</span>
+            </button>
           </div>
         </div>
 
         <div className="bg-white rounded-[2.5rem] modern-shadow border border-outline p-10">
           {activeTab === 'home' && (
             <div className="space-y-8">
-              {/* Painel de Sincronização Geral na Página Inicial do Painel */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-[2rem] p-6 sm:p-8 space-y-6 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-black uppercase text-indigo-900 tracking-wider flex items-center gap-2">
-                      <RefreshCw size={16} className={`text-indigo-600 ${isSyncingAll ? 'animate-spin' : ''}`} />
-                      Sincronização em Massa de Agendas
-                    </h3>
-                    <p className="text-xs text-indigo-700 font-medium">
-                      Atualize instantaneamente a agenda de todas as psicólogas que possuem URL do Google Sheets vinculada.
-                    </p>
-                  </div>
-                  <button
-                    disabled={isSyncingAll || isQuotaLocked}
-                    onClick={syncAllSchedules}
-                    className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm shrink-0 cursor-pointer ${
-                      isQuotaLocked
-                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300'
-                        : isSyncingAll
-                        ? 'bg-indigo-200 text-indigo-700 cursor-wait'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-200 hover:scale-[1.02] active:scale-95'
-                    }`}
-                  >
-                    {isSyncingAll ? (
-                      <>
-                        <RefreshCw size={14} className="animate-spin" />
-                        Sincronizando...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw size={14} />
-                        Sincronizar Todas as Agendas
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Status e Resultados da Sincronização */}
-                {(isSyncingAll || syncStatusAll || syncResultsAll.length > 0) && (
-                  <div className="bg-white rounded-2xl p-5 border border-indigo-100/50 space-y-4">
-                    {/* Status Text */}
-                    {syncStatusAll && (
-                      <div className="flex items-center gap-3">
-                        {isSyncingAll && <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />}
-                        <p className="text-xs font-semibold text-indigo-950 uppercase tracking-wide">
-                          {syncStatusAll}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Individual Results */}
-                    {syncResultsAll.length > 0 && (
-                      <div className="space-y-2 border-t border-indigo-50 pt-3">
-                        <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Relatório de Resultados:</p>
-                        <div className="max-h-60 overflow-y-auto divide-y divide-gray-50 pr-2">
-                          {syncResultsAll.map((res, index) => (
-                            <div key={index} className="py-2.5 flex items-start justify-between gap-3 text-xs">
-                              <span className="font-bold text-gray-800 shrink-0">{res.name}</span>
-                              <div className="flex items-center gap-2 text-right">
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                                  res.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                                }`}>
-                                  {res.status === 'success' ? 'Sucesso' : 'Erro'}
-                                </span>
-                                <span className="text-gray-600 font-medium text-[11px]">{res.message}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
                <div className="pb-8 border-b border-outline">
                 <h2 className="text-2xl font-display font-black text-primary mb-6">Informações da Clínica</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -4172,26 +3441,6 @@ function AdminScreen({
                   {isQuotaLocked ? 'Banco de Dados Esgotado' : saveStatus['settings'] ? 'Site Atualizado!' : 'Atualizar Dados do Site'}
                 </button>
               </div>
-            </div>
-          )}
-
-          {activeTab === 'sublocacao' && (
-            <div className="space-y-6">
-              <div className="pb-4 border-b border-outline">
-                <h2 className="text-2xl font-display font-black text-primary mb-2">Administração do Sistema de Sublocação</h2>
-                <p className="text-on-surface-variant text-sm">Gerencie salas, reservas, configurações gerais e aprovações de profissionais parceiros de sublocação.</p>
-              </div>
-              <AdminDashboardView 
-                adminSettings={subleaseAdminSettings || INITIAL_ADMIN_SETTINGS}
-                bookings={subleaseBookingsList}
-                rooms={subleaseRoomsList}
-                onUpdateSettings={onUpdateSubleaseSettings}
-                onCancelBooking={onCancelSubleaseBooking}
-                onUpdateRooms={onUpdateSubleaseRoomsList}
-                registeredUsers={subleaseUsersList}
-                onUpdateUsers={onUpdateSubleaseUsersList}
-                setView={() => {}}
-              />
             </div>
           )}
 
@@ -4528,42 +3777,6 @@ function AdminScreen({
                             </button>
                           ))}
                         </div>
-
-                        <p className="text-[10px] uppercase font-bold tracking-widest text-primary pt-2">Convênios Atendidos</p>
-                        {localInsurancePlans && localInsurancePlans.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {localInsurancePlans.map(plan => {
-                              const current = s.insurancePlans || [];
-                              const isSelected = current.includes(plan.id);
-                              return (
-                                <button 
-                                  key={plan.id}
-                                  type="button"
-                                  onClick={() => {
-                                    const updated = isSelected 
-                                      ? current.filter(id => id !== plan.id) 
-                                      : [...current, plan.id];
-                                    updateSpecialist(s.id, { insurancePlans: updated });
-                                  }}
-                                  className={`px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all flex items-center gap-2 ${
-                                    isSelected 
-                                      ? 'bg-secondary text-white border-secondary shadow-sm' 
-                                      : 'bg-surface text-on-surface-variant border-outline hover:border-secondary/40'
-                                  }`}
-                                >
-                                  {plan.logo ? (
-                                    <img src={plan.logo} className="h-4 w-auto object-contain max-w-[40px] select-none" alt="" />
-                                  ) : (
-                                    <div className="w-1.5 h-1.5 rounded-full bg-current" />
-                                  )}
-                                  <span>{plan.name}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="text-[10px] text-on-surface-variant/60 italic ml-1">Nenhum convênio cadastrado no site. Cadastre convênios na aba "Configurações".</p>
-                        )}
                         
                         {!s.googleAppsScriptUrl && (
                           <>
@@ -4752,305 +3965,6 @@ function AdminScreen({
               </div>
             </div>
           )}
-
-          {activeTab === 'psicoeducacao' && (
-            <div className="space-y-8">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-on-surface-variant text-sm">Gerencie os artigos de Psicoeducação exibidos no site.</p>
-                  <p className="text-[10px] text-on-surface-variant/50 mt-1">Use <strong>## Título</strong>, <strong>### Subtítulo</strong>, <strong>**negrito**</strong> e <strong>- item</strong> para formatar o conteúdo.</p>
-                </div>
-                <button
-                  onClick={() => {
-                    const now = Date.now();
-                    const newArticle: PsicoeducacaoArticle = {
-                      id: now.toString(),
-                      title: 'Novo Artigo',
-                      subtitle: '',
-                      content: '## Introdução\n\nEscreva aqui o conteúdo do artigo...\n\n### Subtópico\n\n- Ponto importante\n- **Palavra em destaque**',
-                      createdAt: now,
-                      updatedAt: now
-                    };
-                    setLocalArticles([newArticle, ...localArticles]);
-                    setEditingArticle(newArticle);
-                  }}
-                  className="flex items-center gap-2 bg-primary/10 text-primary px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all"
-                >
-                  <Add size={16} /> Novo Artigo
-                </button>
-              </div>
-
-              {/* Lista de artigos ou editor */}
-              {editingArticle ? (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                  <div className="flex items-center gap-4 pb-4 border-b border-outline">
-                    <button
-                      onClick={() => setEditingArticle(null)}
-                      className="flex items-center gap-2 text-primary font-bold text-sm hover:underline group"
-                    >
-                      <ArrowForward size={16} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
-                      Voltar à lista
-                    </button>
-                    <h2 className="text-xl font-bold text-primary">
-                      {localArticles.find(a => a.id === editingArticle.id)?.title || 'Artigo'}
-                    </h2>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Título do Artigo *</label>
-                      <input
-                        className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
-                        value={editingArticle.title}
-                        onChange={e => setEditingArticle({ ...editingArticle, title: e.target.value })}
-                        placeholder="Ex: Ansiedade, TDAH, Depressão..."
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Subtítulo / Descrição curta</label>
-                      <input
-                        className="w-full border-b-2 border-outline focus:border-primary outline-none py-2 text-on-surface-variant"
-                        value={editingArticle.subtitle || ''}
-                        onChange={e => setEditingArticle({ ...editingArticle, subtitle: e.target.value })}
-                        placeholder="Ex: O que é, sintomas e como tratar"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Conteúdo do Artigo</label>
-                      <span className={`text-xs font-mono font-bold px-3 py-1 rounded-full ${
-                        editingArticle.content.length < 4000 ? 'bg-accent/10 text-accent'
-                        : editingArticle.content.length > 8000 ? 'bg-accent/10 text-accent'
-                        : 'bg-green-100 text-green-700'
-                      }`}>
-                        {editingArticle.content.length} caracteres
-                        {editingArticle.content.length >= 4000 && editingArticle.content.length <= 8000 && ' ✓'}
-                      </span>
-                    </div>
-                    <textarea
-                      className="w-full p-6 border-2 border-outline rounded-[1.5rem] focus:border-primary outline-none text-sm leading-relaxed font-mono resize-y min-h-[400px] transition-colors"
-                      value={editingArticle.content}
-                      onChange={e => setEditingArticle({ ...editingArticle, content: e.target.value })}
-                      placeholder="## O que é Ansiedade?&#10;&#10;A **ansiedade** é uma resposta natural do organismo...&#10;&#10;### Sintomas Comuns&#10;&#10;- Coração acelerado&#10;- **Dificuldade de concentração**&#10;- Tensão muscular"
-                      spellCheck={false}
-                    />
-                    <p className="text-xs text-on-surface-variant/50">
-                      <strong>## Título H2</strong> · <strong>### Subtítulo H3</strong> · <strong>**negrito**</strong> · <strong>- bullet</strong>
-                    </p>
-                  </div>
-
-                  <div className="flex gap-4 pt-4">
-                    <button
-                      disabled={isQuotaLocked}
-                      onClick={async () => {
-                        const updated = localArticles.map(a =>
-                          a.id === editingArticle.id
-                            ? { ...editingArticle, updatedAt: Date.now() }
-                            : a
-                        );
-                        setLocalArticles(updated);
-                        setSaveStatus({ ...saveStatus, [`article-${editingArticle.id}`]: true });
-                        await onUpdatePsicoeducacaoArticles(updated);
-                        setTimeout(() => setSaveStatus(prev => ({ ...prev, [`article-${editingArticle.id}`]: false })), 2000);
-                        setEditingArticle(null);
-                      }}
-                      className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
-                        isQuotaLocked
-                          ? 'bg-outline-variant text-primary/30 cursor-not-allowed'
-                          : saveStatus[`article-${editingArticle.id}`]
-                            ? 'bg-green-500 text-white'
-                            : 'bg-primary text-white hover:bg-primary-light'
-                      }`}
-                    >
-                      {saveStatus[`article-${editingArticle.id}`] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
-                      {saveStatus[`article-${editingArticle.id}`] ? 'Salvo!' : 'Salvar Artigo'}
-                    </button>
-                    <button
-                      onClick={() => setEditingArticle(null)}
-                      className="px-6 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest border border-outline text-on-surface-variant hover:bg-surface transition-all"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </motion.div>
-              ) : (
-                <div className="space-y-4">
-                  {localArticles.length === 0 && (
-                    <div className="text-center py-16 bg-surface-container-low rounded-[2.5rem] border-2 border-dashed border-outline-alt/40">
-                      <Brain size={40} className="mx-auto text-primary/20 mb-3" />
-                      <p className="text-on-surface-variant font-medium">Nenhum artigo criado ainda.</p>
-                      <p className="text-xs text-on-surface-variant/50 mt-1">Clique em "Novo Artigo" para começar.</p>
-                    </div>
-                  )}
-                  {localArticles.map(article => (
-                    <div key={article.id} className="group flex items-center justify-between p-6 bg-surface-container/40 rounded-[1.5rem] border border-outline/30 hover:border-primary/30 transition-all">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-primary text-base truncate">{article.title}</h4>
-                        {article.subtitle && <p className="text-xs text-on-surface-variant/60 italic truncate mt-0.5">{article.subtitle}</p>}
-                        <p className="text-[10px] text-on-surface-variant/40 mt-1">{article.content.length} caracteres · atualizado {new Date(article.updatedAt).toLocaleDateString('pt-BR')}</p>
-                      </div>
-                      <div className="flex items-center gap-2 ml-4 shrink-0">
-                        <button
-                          onClick={() => setEditingArticle(article)}
-                          className="p-2.5 bg-primary/5 text-primary rounded-xl hover:bg-primary hover:text-white transition-all"
-                          title="Editar"
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (confirm(`Deseja excluir o artigo "${article.title}"?`)) {
-                              const updated = localArticles.filter(a => a.id !== article.id);
-                              setLocalArticles(updated);
-                              await onUpdatePsicoeducacaoArticles(updated);
-                            }
-                          }}
-                          className="p-2.5 bg-accent/5 text-accent rounded-xl hover:bg-accent hover:text-white transition-all opacity-0 group-hover:opacity-100"
-                          title="Excluir"
-                        >
-                          <Delete size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'marketing' && (
-            <div className="space-y-8">
-              <div>
-                <h2 className="text-2xl font-display font-black text-primary mb-2">Integrações de Marketing</h2>
-                <p className="text-on-surface-variant text-sm">
-                  Insira seus IDs de rastreamento para conectar ferramentas de análise de tráfego e campanhas de anúncios (Google Ads, Meta Ads).
-                </p>
-                <p className="text-[10px] text-accent font-semibold mt-1">
-                  Nota: Os scripts serão injetados dinamicamente no cabeçalho (&lt;head&gt;) do site de forma automática apenas quando os campos estiverem preenchidos.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {/* Google Tag Manager */}
-                <div className="bg-surface-container/20 p-6 rounded-[1.5rem] border border-outline/30 flex flex-col justify-between">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center text-primary">
-                        <Code size={20} />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-primary text-sm">Google Tag Manager</h4>
-                        <p className="text-[10px] text-on-surface-variant/60 font-medium">Recomendado</p>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary block">ID do GTM</label>
-                      <input
-                        className="w-full text-base font-bold border-b border-outline focus:border-primary outline-none py-1.5 bg-transparent"
-                        value={localSettings.gtmId || ''}
-                        onChange={e => setLocalSettings({ ...localSettings, gtmId: e.target.value })}
-                        placeholder="Ex: GTM-XXXXXXX"
-                      />
-                    </div>
-                    <p className="text-xs text-on-surface-variant/60 leading-relaxed">
-                      Centraliza o gerenciamento de todas as tags de marketing (Pixel, Analytics, etc.) sem precisar mexer no código do site.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Google Analytics 4 */}
-                <div className="bg-surface-container/20 p-6 rounded-[1.5rem] border border-outline/30 flex flex-col justify-between">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center text-primary">
-                        <AssignmentTurnedIn size={20} />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-primary text-sm">Google Analytics 4</h4>
-                        <p className="text-[10px] text-on-surface-variant/60 font-medium">Análise de Tráfego</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary block">ID do GA4</label>
-                      <input
-                        className="w-full text-base font-bold border-b border-outline focus:border-primary outline-none py-1.5 bg-transparent"
-                        value={localSettings.ga4Id || ''}
-                        onChange={e => setLocalSettings({ ...localSettings, ga4Id: e.target.value })}
-                        placeholder="Ex: G-XXXXXXXXXX"
-                      />
-                    </div>
-                    <p className="text-xs text-on-surface-variant/60 leading-relaxed">
-                      Mede visitas, comportamento dos usuários, fontes de tráfego e visualizações de página de maneira profunda e detalhada.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Meta Pixel */}
-                <div className="bg-surface-container/20 p-6 rounded-[1.5rem] border border-outline/30 flex flex-col justify-between">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center text-primary">
-                        <Target size={20} />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-primary text-sm">Meta Pixel</h4>
-                        <p className="text-[10px] text-on-surface-variant/60 font-medium">Facebook &amp; Instagram Ads</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary block">ID do Pixel da Meta</label>
-                      <input
-                        className="w-full text-base font-bold border-b border-outline focus:border-primary outline-none py-1.5 bg-transparent"
-                        value={localSettings.metaPixelId || ''}
-                        onChange={e => setLocalSettings({ ...localSettings, metaPixelId: e.target.value })}
-                        placeholder="Ex: 123456789012345"
-                      />
-                    </div>
-                    <p className="text-xs text-on-surface-variant/60 leading-relaxed">
-                      Crucial para criar públicos-alvo, fazer remarketing e rastrear conversões vindas de anúncios patrocinados no Facebook/Instagram.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-amber-400/10 p-5 rounded-2xl border border-amber-400/20 text-xs text-amber-800 leading-relaxed space-y-2">
-                <p className="font-bold">💡 Dica de Rastreamento Automático de Conversões (GTM):</p>
-                <p>
-                  Todos os botões principais do site (como <strong>Agendar Consulta</strong>, <strong>WhatsApp</strong> e envios de formulário) já foram configurados com atributos semânticos especiais, como <code>data-event="agendamento"</code>, para que você possa facilmente configurar os disparadores de conversões no painel do Google Tag Manager sem precisar alterar o código do site novamente.
-                </p>
-              </div>
-
-              <div className="flex justify-start">
-                <button
-                  disabled={isQuotaLocked}
-                  onClick={async () => {
-                    try {
-                      setSaveStatus({ ...saveStatus, marketing: true });
-                      await onUpdateSettings(localSettings);
-                      setTimeout(() => setSaveStatus(prev => ({ ...prev, marketing: false })), 2000);
-                    } catch (e) {
-                      alert("Erro ao salvar integrações de marketing.");
-                    }
-                  }}
-                  className={`flex items-center gap-2 px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
-                    isQuotaLocked
-                      ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none'
-                      : saveStatus['marketing']
-                        ? 'bg-green-500 text-white'
-                        : 'bg-primary text-white hover:bg-primary-light'
-                  }`}
-                >
-                  {saveStatus['marketing'] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
-                  {saveStatus['marketing'] ? 'Integrações Salvas!' : 'Salvar Integrações'}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Global Cropper Modal */}
@@ -5132,4 +4046,3 @@ function AdminScreen({
     </div>
   );
 }
-
