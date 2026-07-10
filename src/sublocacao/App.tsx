@@ -3561,7 +3561,7 @@ function AdminScreen({
                       </div>
                       <div className="space-y-1">
                         <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Tags (separadas por vírgula)</label>
-                        <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={s.tags.join(', ')} onChange={e => updateSpecialist(s.id, { tags: e.target.value.split(',').map(t => t.trim()) })} placeholder="Tags" />
+                        <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={(s.tags || []).join(', ')} onChange={e => updateSpecialist(s.id, { tags: e.target.value.split(',').map(t => t.trim()) })} placeholder="Tags" />
                       </div>
                       <div className="md:col-span-2 space-y-1">
                         <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Minibiografia</label>
