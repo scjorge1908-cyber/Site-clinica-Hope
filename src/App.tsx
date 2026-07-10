@@ -2542,8 +2542,8 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
   // incluídos corretamente ao filtrar por turno (manhã, tarde ou noite).
   // ─────────────────────────────────────────────────────────────────────────
   const { exactMatches, alternativeMatches } = useMemo(() => {
-    const perfect = specialists.filter(s => {
-      const matchAgeGroup = !selectedAge || s.ageGroups.includes(selectedAge);
+    const perfect = (specialists || []).filter(s => {
+      const matchAgeGroup = !selectedAge || (s.ageGroups || []).includes(selectedAge);
       const matchSpecificAge = selectedSpecificAges.length === 0 ||
         (s.attendedAges && selectedSpecificAges.some(age => s.attendedAges?.includes(age)));
 
@@ -2554,8 +2554,8 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
       return matchAgeGroup && matchSpecificAge && matchShift;
     });
 
-    const alternatives = perfect.length === 0 ? specialists.filter(s => {
-      const matchAgeGroup = !selectedAge || s.ageGroups.includes(selectedAge);
+    const alternatives = perfect.length === 0 ? (specialists || []).filter(s => {
+      const matchAgeGroup = !selectedAge || (s.ageGroups || []).includes(selectedAge);
       const matchSpecificAge = selectedSpecificAges.length === 0 ||
         (s.attendedAges && selectedSpecificAges.some(age => s.attendedAges?.includes(age)));
 
