@@ -963,21 +963,31 @@ export default function App() {
 
   const sortedSpecialists = useMemo(() => {
     if (!specialists) return [];
+
+    // Helper to check if a specialist has actual schedule times/slots defined
+    const hasActualScheduleTimes = (spec: Specialist) => {
+      if (!spec.schedule) return false;
+      return Object.values(spec.schedule).some(dayData => {
+        if (!dayData || !dayData.periods) return false;
+        return Object.values(dayData.periods).some(times => Array.isArray(times) && times.length > 0);
+      });
+    };
+
     const specsCopy = [...specialists];
     return specsCopy.sort((a, b) => {
       const slugA = (a.slug || '').toLowerCase().trim();
       const slugB = (b.slug || '').toLowerCase().trim();
       
+      const isBeatrizA = slugA === 'beatriz-santiago' || (a.name || '').toLowerCase().includes('beatriz santiago');
+      const isBeatrizB = slugB === 'beatriz-santiago' || (b.name || '').toLowerCase().includes('beatriz santiago');
+
       // Rule 1: beatriz-santiago is ALWAYS first
-      if (slugA === 'beatriz-santiago') return -1;
-      if (slugB === 'beatriz-santiago') return 1;
+      if (isBeatrizA && !isBeatrizB) return -1;
+      if (!isBeatrizA && isBeatrizB) return 1;
       
-      // Rule 2: Order by availability (having active shifts/slots)
-      const activeShiftsA = getActiveShifts(a);
-      const activeShiftsB = getActiveShifts(b);
-      
-      const hasAvailabilityA = activeShiftsA.length > 0;
-      const hasAvailabilityB = activeShiftsB.length > 0;
+      // Rule 2: Order by availability (having actual slots/hours in schedule)
+      const hasAvailabilityA = hasActualScheduleTimes(a);
+      const hasAvailabilityB = hasActualScheduleTimes(b);
       
       if (hasAvailabilityA && !hasAvailabilityB) return -1;
       if (!hasAvailabilityA && hasAvailabilityB) return 1;
