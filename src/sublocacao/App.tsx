@@ -1583,9 +1583,11 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
           src={spec.img} 
           className={`w-full h-full object-cover transition-transform duration-1000 ${isTouched ? 'scale-105' : 'group-hover:scale-105'}`} 
         />
-        <div className="absolute top-6 right-6 bg-white/90 backdrop-blur px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-primary border border-white">
-          CRP {spec.crp}
-        </div>
+        {!spec.noCouncil && spec.crp && (
+          <div className="absolute top-6 right-6 bg-white/90 backdrop-blur px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-primary border border-white">
+            {spec.councilType === 'Outro' ? (spec.customCouncil || 'Registro') : (spec.councilType || 'CRP')} {spec.crp}
+          </div>
+        )}
       </div>
       <div className="p-8 space-y-6 flex-grow flex flex-col justify-between">
         <div className="space-y-4">
@@ -3555,9 +3557,64 @@ function AdminScreen({
                         <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Especialidade Principal</label>
                         <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={s.spec} onChange={e => updateSpecialist(s.id, { spec: e.target.value })} placeholder="Especialidade" />
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Registro (CRP)</label>
-                        <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={s.crp} onChange={e => updateSpecialist(s.id, { crp: e.target.value })} placeholder="CRP" />
+                      <div className="space-y-3 bg-slate-50/50 p-4 rounded-2xl border border-slate-100/80">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <label className="text-[10px] font-black uppercase text-secondary tracking-widest ml-1">Conselho / Registro</label>
+                          <label className="flex items-center gap-2 text-xs font-semibold text-primary cursor-pointer select-none">
+                            <input 
+                              type="checkbox" 
+                              checked={!!s.noCouncil} 
+                              onChange={e => updateSpecialist(s.id, { noCouncil: e.target.checked })}
+                              className="rounded border-outline text-primary focus:ring-primary h-4 w-4"
+                            />
+                            Sem registro profissional
+                          </label>
+                        </div>
+                        
+                        {!s.noCouncil ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-black uppercase text-primary/60 ml-1">Tipo de Conselho</label>
+                              <select 
+                                className="w-full p-2 bg-white border border-outline rounded-xl focus:border-primary outline-none font-semibold text-xs shadow-sm transition-all"
+                                value={s.councilType || 'CRP'} 
+                                onChange={e => updateSpecialist(s.id, { councilType: e.target.value })}
+                              >
+                                <option value="CRP">CRP (Psicologia)</option>
+                                <option value="CRM">CRM (Medicina)</option>
+                                <option value="CREFITO">CREFITO (Fisioterapia / TO)</option>
+                                <option value="CRFa">CRFa (Fonoaudiologia)</option>
+                                <option value="COREN">COREN (Enfermagem)</option>
+                                <option value="CRN">CRN (Nutrição)</option>
+                                <option value="Outro">Outro (Personalizado)</option>
+                              </select>
+                            </div>
+
+                            {s.councilType === 'Outro' ? (
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-black uppercase text-primary/60 ml-1">Sigla do Conselho</label>
+                                <input 
+                                  className="w-full p-2 bg-white border border-outline rounded-xl focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
+                                  value={s.customCouncil || ''} 
+                                  onChange={e => updateSpecialist(s.id, { customCouncil: e.target.value })} 
+                                  placeholder="Ex: CRBM, OAB" 
+                                />
+                              </div>
+                            ) : null}
+
+                            <div className={`space-y-1 ${s.councilType === 'Outro' ? 'sm:col-span-2' : ''}`}>
+                              <label className="text-[9px] font-black uppercase text-primary/60 ml-1">Número do Registro</label>
+                              <input 
+                                className="w-full p-2 bg-white border border-outline rounded-xl focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
+                                value={s.crp} 
+                                onChange={e => updateSpecialist(s.id, { crp: e.target.value })} 
+                                placeholder={s.councilType === 'Outro' ? 'Número' : `${s.councilType || 'CRP'} --/-----`} 
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-primary/50 italic px-1">O profissional será exibido sem sigla ou número de conselho (ideal para profissionais com diploma e sem conselho ativo).</p>
+                        )}
                       </div>
                       <div className="space-y-1">
                         <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Tags (separadas por vírgula)</label>

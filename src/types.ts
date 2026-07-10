@@ -84,6 +84,9 @@ export interface Specialist {
   id: string;
   name: string;
   crp: string;
+  councilType?: string;
+  customCouncil?: string;
+  noCouncil?: boolean;
   spec: string;
   tags: string[];
   desc: string;
