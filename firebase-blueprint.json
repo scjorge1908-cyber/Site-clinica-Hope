@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "Specialist": {
+      "title": "Specialist",
+      "description": "Healthcare specialist at the clinic",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "crp": { "type": "string" },
+        "img": { "type": "string" },
+        "specialty": { "type": "string" },
+        "focus": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string" },
+        "instagram": { "type": "string" },
+        "plans": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "Approach": {
+      "title": "Approach",
+      "description": "Clinical psychological approach",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "iconName": { "type": "string" }
+      }
+    },
+    "HomeSettings": {
+      "title": "Home Settings",
+      "description": "Global settings for the home page",
+      "type": "object",
+      "properties": {
+        "heroTitle": { "type": "string" },
+        "heroSubtitle": { "type": "string" },
+        "clinicName": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "whatsappNumber": { "type": "string" },
+        "address": { "type": "string" }
+      }
+    },
+    "SubleaseRoom": {
+      "title": "Sublease Room",
+      "description": "Room available for sublease",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "amenities": { "type": "array", "items": { "type": "string" } },
+        "photos": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 }
+      }
+    },
+    "SubleaseBooking": {
+      "title": "Sublease Booking",
+      "description": "Booking request for a sublease room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "day": { "type": "string" },
+        "periodId": { "type": "string" },
+        "periodLabel": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled"] },
+        "createdAt": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "specialists/{docId}": {
+      "schema": "Specialist",
+      "description": "Collection of specialists"
+    },
+    "approaches/{docId}": {
+      "schema": "Approach",
+      "description": "Collection of clinical approaches"
+    },
+    "settings/{docId}": {
+      "schema": "HomeSettings",
+      "description": "Clinic settings"
+    },
+    "sublease_rooms/{docId}": {
+      "schema": "SubleaseRoom",
+      "description": "Rooms for sublease"
+    },
+    "sublease_bookings/{docId}": {
+      "schema": "SubleaseBooking",
+      "description": "Room booking requests"
+    }
+  }
+}

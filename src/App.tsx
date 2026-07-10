@@ -1,0 +1,5317 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Psychology, 
+  LocationOn, 
+  ArrowForward, 
+  VerifiedUser, 
+  MoodBad, 
+  ChildCare, 
+  SentimentVeryDissatisfied, 
+  Chat, 
+  CalendarMonth, 
+  Spa, 
+  CheckCircle,
+  Share,
+  Star,
+  PhotoCamera,
+  PinDrop,
+  Send,
+  Home as HomeIcon,
+  MedicalServices,
+  Group,
+  Favorite,
+  Verified,
+  Settings,
+  Public,
+  Add,
+  Delete,
+  Edit,
+  Close,
+  Info,
+  AssignmentTurnedIn,
+  MenuIcon,
+  ArrowBack,
+  AccessTime
+} from './components/Icons';
+import { 
+  Instagram, 
+  Facebook, 
+  Linkedin as LinkedIn, 
+  Wifi, 
+  ConciergeBell, 
+  Volume2, 
+  Snowflake, 
+  ShieldCheck,
+  Accessibility,
+  LogOut,
+  LogIn,
+  User,
+  Baby,
+  Heart,
+  Brain,
+  Briefcase,
+  Users,
+  ParkingCircle,
+  Stethoscope,
+  GraduationCap,
+  Sun,
+  Cloud,
+  CloudSun,
+  Moon,
+  Trash2,
+  Edit2,
+  RefreshCw,
+  CreditCard,
+  AlertTriangle,
+  Code,
+  Target,
+  Check,
+  AlertCircle,
+  Clock
+} from 'lucide-react';
+import FloatingWhatsApp from './components/FloatingWhatsApp';
+import Cropper from 'react-easy-crop';
+import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan, SubleaseRoom, SubleaseBooking, PsicoeducacaoArticle } from './types';
+import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL, DEFAULT_SUBLEASE_ROOMS } from './constants';
+import { 
+  getHomeSettings, 
+  saveHomeSettings, 
+  getSpecialists, 
+  saveSpecialists, 
+  getApproaches, 
+  saveApproaches, 
+  getInsurancePlans, 
+  saveInsurancePlans,
+  getSubleaseRooms,
+  saveSubleaseRooms,
+  getSubleaseBookings,
+  saveSubleaseBooking,
+  updateSubleaseBookingStatus,
+  updateSpecialistSchedule,
+  loginWithGoogle,
+  logout as firebaseLogout,
+  forceResetFirebase,
+  auth,
+  COLLECTIONS,
+  DOCS,
+  db,
+  getPsicoeducacaoArticles,
+  savePsicoeducacaoArticles
+} from './lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit } from './analytics';
+// Placeholder/Fallback components for Sublocação since it might not be deployed yet in all environments
+const SublocacaoSystemWrapper = ({ onNavigate }: any) => {
+  return (
+    <div className="min-h-[50vh] flex flex-col items-center justify-center p-8 text-center max-w-md mx-auto">
+      <h2 className="text-2xl font-black text-primary mb-4">Em Breve</h2>
+      <p className="text-on-surface-variant text-sm mb-6">O sistema de sublocação de salas está sendo preparado. Em breve, você poderá agendar e gerenciar salas diretamente pelo nosso site.</p>
+      <button onClick={() => onNavigate(Screen.Home)} className="bg-primary text-white text-sm font-bold px-6 py-2.5 rounded-full hover:shadow-xl transition-all">
+        Voltar ao Início
+      </button>
+    </div>
+  );
+};
+
+const AdminDashboardView = ({ adminSettings, bookings, rooms, onUpdateSettings, onCancelBooking, onUpdateRooms, registeredUsers, onUpdateUsers, setView }: any) => {
+  return (
+    <div className="p-8 border border-outline rounded-[2rem] text-center bg-surface-container-low max-w-lg mx-auto">
+      <h3 className="text-lg font-bold text-primary mb-2">Painel de Sublocação Desativado</h3>
+      <p className="text-sm text-on-surface-variant">O módulo de sublocação não está ativado ou os arquivos correspondentes não foram localizados no repositório.</p>
+    </div>
+  );
+};
+
+const INITIAL_ADMIN_SETTINGS = {
+  maxBookingsPerProfessional: 3,
+  advanceBookingDays: 30,
+  cancelationHoursLimit: 24,
+  autoApproveProfessionals: false
+};
+// Helper for Local Storage
+const LS_KEYS = {
+  SETTINGS: 'clinica_hope_settings',
+  SPECIALISTS: 'clinica_hope_specialists',
+  APPROACHES: 'clinica_hope_approaches',
+  INSURANCE: 'clinica_hope_insurance',
+  AUTH: 'clinica_hope_auth'
+};
+
+const saveToLS = (key: string, data: any) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.warn("Save to LS failed:", e);
+  }
+};
+
+const loadFromLS = (key: string, defaultValue: any) => {
+  try {
+    const saved = localStorage.getItem(key);
+    if (!saved) return defaultValue;
+    return JSON.parse(saved);
+  } catch (e) {
+    console.warn("Load from LS failed:", e);
+    return defaultValue;
+  }
+};
+
+const createImage = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener('load', () => resolve(image));
+    image.addEventListener('error', (error) => reject(error));
+    image.setAttribute('crossOrigin', 'anonymous');
+    image.src = url;
+  });
+
+const getCroppedImg = async (
+  imageSrc: string,
+  pixelCrop: { x: number; y: number; width: number; height: number }
+): Promise<string> => {
+  const image = await createImage(imageSrc);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) return '';
+
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
+    0, 0, pixelCrop.width, pixelCrop.height
+  );
+
+  return canvas.toDataURL('image/jpeg', 0.8);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CORREÇÃO: Deriva os turnos reais de um especialista a partir da agenda salva.
+// Isso resolve o bug em que especialistas com agenda via Google Sheets não
+// apareciam no filtro de turno, pois o campo `shifts` (manual) não era
+// atualizado automaticamente quando a planilha era sincronizada.
+// ─────────────────────────────────────────────────────────────────────────────
+function getActiveShifts(spec: Specialist): Shift[] {
+  const schedule = spec.schedule;
+
+  // Sem agenda real → usa o campo manual como fallback
+  if (!schedule || Object.keys(schedule).length === 0) {
+    return spec.shifts || [];
+  }
+
+  const shiftSet = new Set<Shift>();
+
+  Object.values(schedule).forEach((dayData: any) => {
+    const periods = dayData?.periods;
+    if (!periods) return;
+
+    if (Array.isArray(periods)) {
+      // Formato SubleaseRoom: array de objetos com { id: 'manha' | 'tarde' | 'noite' }
+      periods.forEach((p: any) => {
+        if (p.id === 'manha') shiftSet.add(Shift.Morning);
+        else if (p.id === 'tarde') shiftSet.add(Shift.Afternoon);
+        else if (p.id === 'noite') shiftSet.add(Shift.Night);
+      });
+    } else {
+      // Formato Specialist: { [Shift.Morning]: ['08:00', ...], ... }
+      Object.entries(periods).forEach(([shift, times]: [string, any]) => {
+        if (Array.isArray(times) && times.length > 0) {
+          shiftSet.add(shift as Shift);
+        }
+      });
+    }
+  });
+
+  // Se a agenda existe mas nenhum turno foi identificado, cai no campo manual
+  return shiftSet.size > 0 ? Array.from(shiftSet) : (spec.shifts || []);
+}
+
+export default function App() {
+  const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.Home);
+  const [direction, setDirection] = useState<number>(0);
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Data State
+  const [homeSettings, setHomeSettings] = useState<HomeSettings | null>(null);
+  const [specialists, setSpecialists] = useState<Specialist[] | null>(null);
+  const [approaches, setApproaches] = useState<Approach[] | null>(null);
+  const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[] | null>(null);
+  const [subleaseRooms, setSubleaseRooms] = useState<SubleaseRoom[] | null>(null);
+  const [subleaseBookings, setSubleaseBookings] = useState<SubleaseBooking[] | null>(null);
+  const [psicoeducacaoArticles, setPsicoeducacaoArticles] = useState<PsicoeducacaoArticle[]>([]);
+  const [isDataInitialized, setIsDataInitialized] = useState(false);
+  const [user, setUser] = useState<any>(null);
+
+  // Sublease state for main admin integration
+  const [subleaseAdminSettings, setSubleaseAdminSettings] = useState<any>(null);
+  const [subleaseRoomsList, setSubleaseRoomsList] = useState<any[]>([]);
+  const [subleaseBookingsList, setSubleaseBookingsList] = useState<any[]>([]);
+  const [subleaseUsersList, setSubleaseUsersList] = useState<any[]>([]);
+
+  // Dynamic Marketing & Analytics Script Injection
+  useEffect(() => {
+    if (!homeSettings) return;
+
+    const { gtmId, ga4Id, metaPixelId } = homeSettings;
+    const addedElements: HTMLElement[] = [];
+
+    // Clear existing marketing injection elements if any (to prevent multiple copies on state updates)
+    const existingScripts = document.querySelectorAll('.dynamic-marketing-script');
+    existingScripts.forEach(el => el.remove());
+
+    const injectScript = (id: string, code: string, isHead = true, isNoscript = false) => {
+      const el = document.createElement(isNoscript ? 'noscript' : 'script');
+      el.className = 'dynamic-marketing-script';
+      el.innerHTML = code;
+      if (isHead) {
+        document.head.appendChild(el);
+      } else {
+        document.body.appendChild(el);
+      }
+      addedElements.push(el);
+    };
+
+    const isValidId = (id: string | null | undefined): boolean => {
+      if (!id) return false;
+      const t = id.trim();
+      if (!t || t.length < 3) return false;
+      if (t.includes('<') || t.includes('>') || t.includes('SEU_') || t.includes('YOUR_') || t.includes('XXXXXX') || t.includes('[') || t.includes(']')) {
+        return false;
+      }
+      return true;
+    };
+
+    // 1. Google Tag Manager (GTM)
+    if (gtmId && isValidId(gtmId)) {
+      const cleanGtm = gtmId.trim();
+      const gtmHeadCode = `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+      'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+      })(window,document,'script','dataLayer','${cleanGtm}');`;
+      injectScript('gtm-head', gtmHeadCode, true, false);
+
+      const gtmBodyCode = `<iframe src="https://www.googletagmanager.com/ns.html?id=${cleanGtm}"
+      height="0" width="0" style="display:none;visibility:hidden"></iframe>`;
+      injectScript('gtm-body', gtmBodyCode, false, true);
+    }
+
+    // 2. Google Analytics 4 (GA4)
+    if (ga4Id && isValidId(ga4Id)) {
+      const cleanGa4 = ga4Id.trim();
+      const ga4Lib = document.createElement('script');
+      ga4Lib.className = 'dynamic-marketing-script';
+      ga4Lib.async = true;
+      ga4Lib.src = `https://www.googletagmanager.com/gtag/js?id=${cleanGa4}`;
+      document.head.appendChild(ga4Lib);
+      addedElements.push(ga4Lib);
+
+      const ga4ConfigCode = `window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', '${cleanGa4}');`;
+      injectScript('ga4-config', ga4ConfigCode, true, false);
+    }
+
+    // 3. Meta Pixel (Facebook Pixel)
+    if (metaPixelId && isValidId(metaPixelId)) {
+      const cleanPixel = metaPixelId.trim();
+      const pixelHeadCode = `!function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', '${cleanPixel}');
+      fbq('track', 'PageView');`;
+      injectScript('pixel-head', pixelHeadCode, true, false);
+
+      const pixelBodyCode = `<img height="1" width="1" style="display:none"
+      src="https://www.facebook.com/tr?id=${cleanPixel}&ev=PageView&noscript=1" />`;
+      injectScript('pixel-body', pixelBodyCode, false, true);
+    }
+
+    return () => {
+      addedElements.forEach(el => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      });
+    };
+  }, [homeSettings]);
+  
+  const [scrollIntent, setScrollIntent] = useState(false);
+
+  const [syncingSpecs, setSyncingSpecs] = useState<Record<string, boolean>>({});
+
+  const syncSpecialist = async (specId: string, force: boolean = false) => {
+    if (syncingSpecs[specId]) return;
+
+    const spec = (specialists || []).find(s => s.id === specId);
+    if (!spec || (!spec.googleAppsScriptUrl && !spec.googleSheetsId)) return;
+
+    const twoHoursMs = 2 * 60 * 60 * 1000;
+    const isExpired = !spec.lastSync || (Date.now() - new Date(spec.lastSync).getTime() > twoHoursMs);
+
+    if (!isExpired && !force) {
+      console.log(`[Cache Ativo] Agenda de ${spec.name} está dentro das 2h válidas.`);
+      return;
+    }
+
+    console.log(`[Lazy Sync] Sincronizando agenda de ${spec.name}...`);
+    setSyncingSpecs(prev => ({ ...prev, [specId]: true }));
+
+    try {
+      let baseUrl = (spec.googleAppsScriptUrl || '').trim();
+      if (baseUrl && !baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
+
+      let newSchedule: any = null;
+      let foundData = false;
+
+      if (baseUrl && baseUrl.toLowerCase().includes('script.google.com') && baseUrl.includes('/exec')) {
+        const jsonpUrl = baseUrl.includes('?') 
+          ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` 
+          : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
+        
+        const jsonpData = await new Promise<any>((resolve) => {
+          const callbackName = `bg_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+          const script = document.createElement('script');
+          
+          let scriptResolved = false;
+          const cleanup = () => {
+            if (scriptResolved) return;
+            scriptResolved = true;
+            if (script.parentNode) script.parentNode.removeChild(script);
+            (window as any)[callbackName] = () => {};
+          };
+
+          script.src = `${jsonpUrl}&callback=${callbackName}`;
+          script.onerror = () => {
+            cleanup();
+            resolve(null);
+          };
+
+          (window as any)[callbackName] = (res: any) => {
+            cleanup();
+            resolve(res);
+          };
+
+          setTimeout(() => {
+            cleanup();
+            resolve(null);
+          }, 25000);
+
+          document.body.appendChild(script);
+        });
+
+        if (jsonpData) {
+          newSchedule = parseSheetScheduleData(jsonpData);
+          if (newSchedule && Object.keys(newSchedule).length > 0) {
+            foundData = true;
+          }
+        }
+      }
+
+      if (!foundData && spec.googleSheetsId) {
+        let sheetId = spec.googleSheetsId;
+        if (sheetId.includes('/d/')) {
+          const parts = sheetId.split('/d/');
+          if (parts.length > 1) sheetId = parts[1].split('/')[0];
+        }
+        const tabName = spec.googleSheetsTab || 'Agenda';
+        const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}&t=${Date.now()}`;
+        
+        const response = await fetch(url).catch(() => null);
+        if (response && response.ok) {
+          const csvText = await response.text();
+          const rows = csvText.split(/\r?\n/).map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim())).filter(row => row.length >= 3);
+          
+          const newCsvSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
+          rows.slice(1).forEach(row => {
+            const [dayRaw, timeRaw, statusRaw] = row;
+            const status = (statusRaw || '').toLowerCase().trim();
+            const isAvailable = status.includes('💚') || status.includes('livre');
+
+            if (dayRaw && timeRaw && isAvailable) {
+              const dayMap: Record<string, string> = {
+                'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'seg': 'Segunda',
+                'terca': 'Terça', 'terca-feira': 'Terça', 'ter': 'Terça',
+                'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'qua': 'Quarta',
+                'quinta': 'Quinta', 'quinta-feira': 'Quinta', 'qui': 'Quinta',
+                'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sex': 'Sexta',
+                'sabado': 'Sábado', 'sábado': 'Sábado', 'sab': 'Sábado'
+              };
+              const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
+              
+              if (!newCsvSchedule[day]) newCsvSchedule[day] = { periods: {} as any };
+              const hourMatch = timeRaw.match(/(\d{1,2})/);
+              if (hourMatch) {
+                const hour = parseInt(hourMatch[1]);
+                const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
+                if (!newCsvSchedule[day].periods[shift]) newCsvSchedule[day].periods[shift] = [];
+                const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
+                const processedTime = timeMatch ? timeMatch[1] : timeRaw;
+                if (!newCsvSchedule[day].periods[shift]?.includes(processedTime)) newCsvSchedule[day].periods[shift]?.push(processedTime);
+              }
+            }
+          });
+
+          if (Object.keys(newCsvSchedule).length > 0) {
+            newSchedule = newCsvSchedule;
+            foundData = true;
+          }
+        }
+      }
+
+      if (foundData && newSchedule) {
+        await updateSpecialistSchedule(specId, newSchedule);
+        setSpecialists(prev => (prev || []).map(s => s.id === specId ? {
+          ...s,
+          schedule: newSchedule,
+          lastSync: new Date().toISOString()
+        } : s));
+        console.log(`[Lazy Sync Sucesso] Agenda de ${spec.name} atualizada no Firestore.`);
+      }
+    } catch (e) {
+      console.error(`[Lazy Sync Erro] Falha ao sincronizar agenda de ${spec.name}:`, e);
+    } finally {
+      setSyncingSpecs(prev => ({ ...prev, [specId]: false }));
+    }
+  };
+
+  const syncAllExpiredSpecialists = async (targetId: string) => {
+    if (!specialists || specialists.length === 0) return;
+
+    const twoHoursMs = 2 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const expiredSpecs = specialists.filter(s => {
+      if (!s.googleAppsScriptUrl && !s.googleSheetsId) return false;
+      const isExpired = !s.lastSync || (now - new Date(s.lastSync).getTime() > twoHoursMs);
+      return isExpired || s.id === targetId;
+    });
+
+    if (expiredSpecs.length === 0) return;
+
+    console.log(`[Lazy Sync Geral] Sincronizando agendas expiradas (${expiredSpecs.length} psicólogos)...`);
+    await Promise.all(expiredSpecs.map(s => syncSpecialist(s.id, s.id === targetId)));
+  };
+
+  // Initial Load from Firebase (Real-time Sync) and Auth check
+  useEffect(() => {
+    let unsubSpecs = () => {};
+
+    const startSpecsListener = () => {
+      unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
+        setSpecialists(data.length > 0 ? data : []);
+        specsLoaded = true;
+        checkAllLoaded();
+      }, (error) => {
+        console.error("Erro no listener de especialistas:", error);
+        setSpecialists([]);
+        specsLoaded = true;
+        checkAllLoaded();
+      });
+    };
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (authUser) => {
+      setUser(authUser);
+      if (authUser) {
+        console.log("Usuário logado:", authUser.email);
+        if (authUser.email === 'scjorge1908@gmail.com') {
+          setIsAdminUnlocked(true);
+          console.log("Admin detectado. Ativando sincronização em tempo real de especialistas...");
+          unsubSpecs();
+          startSpecsListener();
+        } else {
+          setIsAdminUnlocked(false);
+        }
+      } else {
+        console.log("Usuário não logado");
+        setIsAdminUnlocked(false);
+        unsubSpecs();
+        unsubSpecs = () => {};
+      }
+    });
+
+    let homeLoaded = false;
+    let specsLoaded = false;
+    let approachesLoaded = false;
+    let insuranceLoaded = false;
+    let roomsLoaded = false;
+    let bookingsLoaded = false;
+
+    const checkAllLoaded = () => {
+      if (homeLoaded && specsLoaded && approachesLoaded && insuranceLoaded && roomsLoaded && bookingsLoaded) {
+        setIsDataInitialized(true);
+        setIsLoading(false);
+      }
+    };
+
+    // Fail-safe: loading timeout
+    const loadingTimeout = setTimeout(() => {
+      if (isLoading) {
+        console.warn("Loading timeout reached. Showing available data.");
+        setIsDataInitialized(true);
+        setIsLoading(false);
+        setHomeSettings(prev => prev || DEFAULT_HOME_SETTINGS);
+        setSpecialists(prev => prev || []);
+        setApproaches(prev => prev || []);
+        setInsurancePlans(prev => prev || []);
+        setSubleaseRooms(prev => prev || []);
+        setSubleaseBookings(prev => prev || []);
+      }
+    }, 4000);
+
+    // Real-time listeners
+    const unsubHome = onSnapshot(doc(db, COLLECTIONS.SETTINGS, DOCS.HOME_SETTINGS), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data() as HomeSettings;
+        setHomeSettings(data);
+      } else {
+        setHomeSettings(DEFAULT_HOME_SETTINGS);
+      }
+      homeLoaded = true;
+      checkAllLoaded();
+    }, (error) => {
+      console.error("Erro no listener de HomeSettings:", error);
+      setHomeSettings(DEFAULT_HOME_SETTINGS);
+      homeLoaded = true;
+      checkAllLoaded();
+    });
+
+    // For public users (default on load), load specialists once instead of real-time listener
+    getDocs(collection(db, COLLECTIONS.SPECIALISTS)).then((snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
+      setSpecialists(data.length > 0 ? data : []);
+      specsLoaded = true;
+      checkAllLoaded();
+    }).catch((error) => {
+      console.error("Erro ao carregar especialistas uma vez:", error);
+      setSpecialists([]);
+      specsLoaded = true;
+      checkAllLoaded();
+    });
+
+    const unsubApproaches = onSnapshot(collection(db, COLLECTIONS.APPROACHES), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Approach[];
+      setApproaches(data.length > 0 ? data : []);
+      approachesLoaded = true;
+      checkAllLoaded();
+    }, (error) => {
+      console.error("Erro no listener de abordagens:", error);
+      setApproaches([]);
+      approachesLoaded = true;
+      checkAllLoaded();
+    });
+
+    const unsubInsurance = onSnapshot(collection(db, COLLECTIONS.INSURANCE), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InsurancePlan[];
+      setInsurancePlans(data.length > 0 ? data : []);
+      insuranceLoaded = true;
+      checkAllLoaded();
+    }, (error) => {
+      console.error("Erro no listener de convênios:", error);
+      setInsurancePlans([]);
+      insuranceLoaded = true;
+      checkAllLoaded();
+    });
+
+    const unsubRooms = onSnapshot(collection(db, COLLECTIONS.SUBLEASE_ROOMS), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as SubleaseRoom[];
+      setSubleaseRooms(data.length > 0 ? data : DEFAULT_SUBLEASE_ROOMS);
+      roomsLoaded = true;
+      checkAllLoaded();
+    }, (error) => {
+      if (error.message.toLowerCase().includes('permission')) {
+        console.warn("Acesso restrito a salas (comum para não-admins):", error.message);
+      } else {
+        console.error("Erro no listener de salas:", error);
+      }
+      setSubleaseRooms([]);
+      roomsLoaded = true;
+      checkAllLoaded();
+    });
+
+    // Psicoeducação Articles — não bloqueia o loading
+    const unsubArticles = onSnapshot(collection(db, COLLECTIONS.PSICOEDUCACAO_ARTICLES), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PsicoeducacaoArticle[];
+      setPsicoeducacaoArticles(data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+    }, (error) => {
+      console.warn("Erro no listener de artigos:", error);
+      setPsicoeducacaoArticles([]);
+    });
+
+    bookingsLoaded = true;
+    checkAllLoaded();
+
+    return () => {
+      clearTimeout(loadingTimeout);
+      unsubscribeAuth();
+      unsubHome();
+      unsubSpecs();
+      unsubApproaches();
+      unsubInsurance();
+      unsubRooms();
+      unsubArticles();
+    };
+  }, []);
+
+  // Separate effect for bookings and sublease collections listener (Admins only)
+  useEffect(() => {
+    if (!isAdminUnlocked) {
+      setSubleaseBookings([]);
+      setSubleaseAdminSettings(null);
+      setSubleaseRoomsList([]);
+      setSubleaseBookingsList([]);
+      setSubleaseUsersList([]);
+      return;
+    }
+
+    // Settings
+    const unsubSettings = onSnapshot(doc(db, 'sublease_settings', 'config'), (snapshot) => {
+      if (snapshot.exists()) {
+        setSubleaseAdminSettings(snapshot.data());
+      } else {
+        setSubleaseAdminSettings(INITIAL_ADMIN_SETTINGS);
+      }
+    }, (error) => {
+      console.warn("Erro no listener de sublease_settings (AppAdmin):", error);
+      setSubleaseAdminSettings(INITIAL_ADMIN_SETTINGS);
+    });
+
+    // Rooms
+    const unsubRooms = onSnapshot(collection(db, 'sublease_rooms'), (snapshot) => {
+      const loadedRooms = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setSubleaseRoomsList(loadedRooms);
+    }, (error) => {
+      console.warn("Erro no listener de sublease_rooms (AppAdmin):", error);
+    });
+
+    // Bookings (legacy)
+    const unsubBookingsLegacy = onSnapshot(collection(db, COLLECTIONS.SUBLEASE_BOOKINGS), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as SubleaseBooking[];
+      setSubleaseBookings(data);
+    }, (error) => {
+      console.error("Erro no listener de reservas (Admin):", error);
+      setSubleaseBookings([]);
+    });
+
+    // Bookings (new)
+    const unsubBookings = onSnapshot(collection(db, 'sublease_bookings'), (snapshot) => {
+      const loadedBookings = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setSubleaseBookingsList(loadedBookings);
+    }, (error) => {
+      console.warn("Erro no listener de sublease_bookings (AppAdmin):", error);
+      setSubleaseBookingsList([]);
+    });
+
+    // Users
+    const unsubUsers = onSnapshot(collection(db, 'sublease_users'), (snapshot) => {
+      const loadedUsers = snapshot.docs.map(d => d.data());
+      setSubleaseUsersList(loadedUsers);
+    }, (error) => {
+      console.warn("Erro no listener de sublease_users (AppAdmin):", error);
+      setSubleaseUsersList([]);
+    });
+
+    return () => {
+      unsubSettings();
+      unsubRooms();
+      unsubBookingsLegacy();
+      unsubBookings();
+      unsubUsers();
+    };
+  }, [isAdminUnlocked]);
+
+  const checkQuotaLock = () => {
+    try {
+      const lock = localStorage.getItem('firestore_quota_exhausted');
+      if (lock) {
+        const lockTime = parseInt(lock);
+        if (Date.now() - lockTime < 12 * 60 * 60 * 1000) return true;
+        localStorage.removeItem('firestore_quota_exhausted');
+      }
+    } catch (e) {
+      console.warn("Quota lock check failed:", e);
+    }
+    return false;
+  };
+
+  const updateSettings = async (newSettings: HomeSettings) => {
+    const { insurancePlans: _, ...cleanSettings } = newSettings;
+    setHomeSettings(cleanSettings as HomeSettings);
+    if (checkQuotaLock()) return;
+    try {
+      await saveHomeSettings(cleanSettings);
+    } catch (e) {
+      console.error("Erro ao salvar configurações:", e);
+    }
+  };
+
+  const updateSpecialists = async (newSpecialists: Specialist[]) => {
+    setSpecialists(newSpecialists);
+    if (checkQuotaLock()) return;
+    try {
+      await saveSpecialists(newSpecialists);
+    } catch (e) {
+      console.error("Erro ao salvar especialistas:", e);
+    }
+  };
+
+  const updateApproaches = async (newApproaches: Approach[]) => {
+    setApproaches(newApproaches);
+    if (checkQuotaLock()) return;
+    try {
+      await saveApproaches(newApproaches);
+    } catch (e) {
+      console.error("Erro ao salvar abordagens:", e);
+    }
+  };
+
+  const updateInsurancePlans = async (newPlans: InsurancePlan[]) => {
+    setInsurancePlans(newPlans);
+    if (checkQuotaLock()) return;
+    try {
+      await saveInsurancePlans(newPlans);
+    } catch (e) {
+      console.error("Erro ao salvar planos de saúde:", e);
+    }
+  };
+
+  const updateSubleaseRooms = async (newRooms: SubleaseRoom[]) => {
+    setSubleaseRooms(newRooms);
+    try {
+      await saveSubleaseRooms(newRooms);
+    } catch (e) {
+      console.error("Erro ao salvar salas de sublocação:", e);
+    }
+  };
+
+  const handleUpdateSubleaseSettings = async (newSettings: any) => {
+    try {
+      await setDoc(doc(db, 'sublease_settings', 'config'), newSettings);
+      setSubleaseAdminSettings(newSettings);
+    } catch (err) {
+      console.error('Error updating admin settings:', err);
+    }
+  };
+
+  const handleCancelSubleaseBooking = async (bookingId: string) => {
+    try {
+      await setDoc(doc(db, 'sublease_bookings', bookingId), { status: 'Cancelado' }, { merge: true });
+    } catch (err) {
+      console.error('Error cancelling booking:', err);
+    }
+  };
+
+  const handleUpdateSubleaseRoomsList = async (updatedRooms: any[]) => {
+    try {
+      for (const r of updatedRooms) {
+        await setDoc(doc(db, 'sublease_rooms', r.id), r);
+      }
+    } catch (err) {
+      console.error('Error updating rooms:', err);
+    }
+  };
+
+  const handleUpdateSubleaseUsersList = async (updatedUsers: any[]) => {
+    try {
+      for (const u of updatedUsers) {
+        await setDoc(doc(db, 'sublease_users', u.email), u);
+      }
+    } catch (err) {
+      console.error('Error updating users:', err);
+    }
+  };
+
+  const updatePsicoeducacaoArticles = async (newArticles: PsicoeducacaoArticle[]) => {
+    setPsicoeducacaoArticles(newArticles);
+    if (checkQuotaLock()) return;
+    try {
+      await savePsicoeducacaoArticles(newArticles);
+    } catch (e) {
+      console.error("Erro ao salvar artigos de psicoeducação:", e);
+    }
+  };
+
+  const handleLogout = async () => {
+    await firebaseLogout();
+    setIsAdminUnlocked(false);
+    navigateTo(Screen.Home, 'push_back');
+  };
+
+  const navigateTo = (screen: Screen, transition: TransitionType = 'none', scroll: boolean = false) => {
+    setScrollIntent(scroll);
+    if (screen === Screen.Admin && !isAdminUnlocked) {
+      setCurrentScreen(Screen.Login);
+      setDirection(1);
+      return;
+    }
+    if (transition === 'push') setDirection(1);
+    else if (transition === 'push_back') setDirection(-1);
+    else setDirection(0);
+    setCurrentScreen(screen);
+  };
+
+  const variants = {
+    enter: (dir: number) => ({
+      x: dir > 0 ? '100%' : dir < 0 ? '-100%' : 0,
+      opacity: dir === 0 ? 0 : 1,
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+    },
+    exit: (dir: number) => ({
+      x: dir > 0 ? '-100%' : dir < 0 ? '100%' : 0,
+      opacity: dir === 0 ? 0 : 1,
+    }),
+  };
+
+  if (isLoading || !homeSettings || !specialists || !approaches || !insurancePlans) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center">
+        <div className="relative">
+          <motion.div 
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+            className="w-16 h-16 border-2 border-primary/10 border-t-primary rounded-full"
+          />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-2 h-2 bg-secondary rounded-full animate-pulse" />
+          </div>
+        </div>
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-8 flex flex-col items-center gap-2"
+        >
+          <p className="text-primary font-medium tracking-widest uppercase text-xs">Clínica Hope</p>
+          <div className="h-0.5 w-12 bg-primary/10 overflow-hidden rounded-full">
+            <motion.div 
+              animate={{ x: [-48, 48] }}
+              transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
+              className="h-full w-full bg-secondary"
+            />
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  const safeSettings = { ...homeSettings, insurancePlans };
+
+  return (
+    <div className="relative overflow-hidden min-h-screen">
+      <AnimatePresence initial={false} custom={direction} mode="wait">
+        <motion.div
+          key={currentScreen}
+          custom={direction}
+          variants={variants}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          transition={{
+            x: { type: 'spring', stiffness: 300, damping: 30 },
+            opacity: { duration: 0.2 }
+          }}
+          className="min-h-screen"
+        >
+          {currentScreen === Screen.Home && (
+            <HomeScreen 
+              onNavigate={navigateTo} 
+              settings={safeSettings} 
+              approaches={approaches}
+              specialists={specialists}
+              isAdminUnlocked={isAdminUnlocked}
+              syncingSpecs={syncingSpecs}
+              onSyncRequest={syncAllExpiredSpecialists}
+            />
+          )}
+          {currentScreen === Screen.SEO && <SEOScreen onNavigate={navigateTo} settings={homeSettings} />}
+          {currentScreen === Screen.CorpoClinico && (
+            <CorpoClinicoScreen 
+              onNavigate={navigateTo} 
+              specialists={specialists} 
+              approaches={approaches}
+              settings={safeSettings}
+              isAdminUnlocked={isAdminUnlocked}
+              shouldScrollToList={scrollIntent}
+              syncingSpecs={syncingSpecs}
+              onSyncRequest={syncAllExpiredSpecialists}
+            />
+          )}
+          {currentScreen === Screen.Agendamento && <AgendamentoScreen onNavigate={navigateTo} settings={homeSettings} />}
+          {currentScreen === Screen.Abordagens && <AbordagensScreen onNavigate={navigateTo} approaches={approaches} settings={homeSettings} />}
+          {currentScreen === Screen.Psicoeducacao && <PsicoeducacaoScreen onNavigate={navigateTo} settings={homeSettings} articles={psicoeducacaoArticles} />}
+          {currentScreen === Screen.Sublocacao && (
+            <SublocacaoSystemWrapper onNavigate={navigateTo} />
+          )}
+
+          {currentScreen === Screen.Login && (
+            <LoginScreen 
+              onNavigate={navigateTo} 
+              onUnlock={() => setIsAdminUnlocked(true)} 
+              settings={homeSettings}
+            />
+          )}
+          {currentScreen === Screen.Admin && (
+            <AdminScreen 
+              onNavigate={navigateTo}
+              settings={safeSettings}
+              onUpdateSettings={updateSettings}
+              specialists={specialists || []}
+              onUpdateSpecialists={updateSpecialists}
+              approaches={approaches || []}
+              onUpdateApproaches={updateApproaches}
+              onLogout={handleLogout}
+              insurancePlans={insurancePlans || []}
+              onUpdateInsurance={updateInsurancePlans}
+              subleaseRooms={subleaseRooms || []}
+              onUpdateSubleaseRooms={updateSubleaseRooms}
+              subleaseBookings={subleaseBookings || []}
+              onUpdateSubleaseBookingStatus={async (id, status) => {
+                try {
+                  await updateSubleaseBookingStatus(id, status);
+                } catch (e) {
+                  alert('Erro ao atualizar status da reserva.');
+                }
+              }}
+              psicoeducacaoArticles={psicoeducacaoArticles}
+              onUpdatePsicoeducacaoArticles={updatePsicoeducacaoArticles}
+              isDataLoaded={isDataInitialized}
+              subleaseAdminSettings={subleaseAdminSettings || INITIAL_ADMIN_SETTINGS}
+              subleaseRoomsList={subleaseRoomsList}
+              subleaseBookingsList={subleaseBookingsList}
+              subleaseUsersList={subleaseUsersList}
+              onUpdateSubleaseSettings={handleUpdateSubleaseSettings}
+              onCancelSubleaseBooking={handleCancelSubleaseBooking}
+              onUpdateSubleaseRoomsList={handleUpdateSubleaseRoomsList}
+              onUpdateSubleaseUsersList={handleUpdateSubleaseUsersList}
+            />
+          )}
+        </motion.div>
+      </AnimatePresence>
+      <FloatingWhatsApp />
+    </div>
+  );
+}
+
+// --- Layout Components ---
+
+interface LayoutProps {
+  children: React.ReactNode;
+  activeScreen: Screen;
+  onNavigate: (screen: Screen, transition?: TransitionType) => void;
+  settings?: HomeSettings;
+}
+
+function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const navItems = [
+    { id: Screen.Home, label: 'Início' },
+    { id: Screen.Sublocacao, label: 'Sublocação' },
+    { id: Screen.SEO, label: 'A Clínica' },
+    { id: Screen.Abordagens, label: 'Abordagens' },
+    { id: Screen.CorpoClinico, label: 'Especialistas' },
+    { id: Screen.Psicoeducacao, label: 'Psicoeducação' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col font-sans selection:bg-secondary-container selection:text-on-secondary-container overflow-x-hidden">
+      {/* Material 3 TopAppBar */}
+      <header className={`fixed top-0 w-full z-50 transition-all duration-300 ${isScrolled ? 'glass-nav py-2 shadow-lg' : 'bg-transparent py-4'}`}>
+        <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
+          <button 
+            onClick={() => { onNavigate(Screen.Home, 'push_back'); setMenuOpen(false); }}
+            className="flex items-center gap-4 group shrink-0"
+          >
+            <div className="shrink-0 transition-transform duration-300 group-hover:scale-110">
+              {settings?.logoUrl ? (
+                <img src={settings.logoUrl} className="h-16 md:h-20 w-auto object-contain" alt="Logo" />
+              ) : (
+                <Spa size={48} className="text-primary" />
+              )}
+            </div>
+            <span className="text-2xl font-black tracking-tight text-primary hidden sm:block leading-none">
+              {settings?.clinicName || 'Clínica Hope'}
+            </span>
+          </button>
+          
+          <nav className="hidden lg:flex gap-8 items-center">
+            {navItems.map(item => {
+              const isSublocacao = item.id === Screen.Sublocacao;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onNavigate(item.id, activeScreen === Screen.Home ? 'push' : 'none')}
+                  className={
+                    isSublocacao
+                      ? `text-sm transition-all relative flex items-center gap-1 py-1 cursor-pointer`
+                      : `text-sm font-bold transition-all hover:text-primary tracking-tight ${
+                          activeScreen === item.id 
+                            ? 'text-primary' 
+                            : 'text-on-surface-variant/70'
+                        }`
+                  }
+                >
+                  {isSublocacao ? (
+                    <span className="font-sans font-black tracking-tight text-base flex items-center hover:opacity-95 transition-opacity">
+                      <span className="text-primary">Subloca</span>
+                      <span className="text-secondary">Hope</span>
+                      <span className={`absolute -bottom-1 left-0 right-0 h-0.5 bg-secondary rounded-full transition-all duration-300 ${
+                        activeScreen === item.id ? 'w-full' : 'w-0'
+                      }`} />
+                    </span>
+                  ) : (
+                    item.label
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
+              id="header-cta-agendar"
+              data-event="inicio_agendamento"
+              className="hidden md:block bg-primary text-white text-sm font-bold px-7 py-3 rounded-full hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-primary/20"
+            >
+              Agendar Consulta
+            </button>
+            
+            <button 
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="lg:hidden p-3 rounded-2xl bg-surface-container-high text-primary hover:bg-primary hover:text-white transition-all active:scale-90"
+              aria-label="Menu"
+            >
+              {menuOpen ? <Close size={24} /> : <MenuIcon size={24} />}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Mobile & Tablet Drawer Menu */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] lg:hidden mt-20"
+          >
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="absolute right-0 top-0 h-[calc(100vh-5rem)] w-full sm:w-80 bg-white shadow-2xl border-l border-outline-alt/30 flex flex-col p-8 overflow-y-auto"
+            >
+              <div className="flex flex-col gap-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-secondary/60 mb-2">Navegação</p>
+                {navItems.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => { onNavigate(item.id); setMenuOpen(false); }}
+                    className={`flex items-center p-5 rounded-3xl text-lg font-bold transition-all ${
+                      activeScreen === item.id 
+                      ? 'bg-primary text-white shadow-lg' 
+                      : 'bg-surface-container-low text-primary hover:bg-surface-container'
+                    }`}
+                  >
+                    {item.id === Screen.Sublocacao ? (
+                      <span className="flex items-center">
+                        <span className={activeScreen === item.id ? 'text-white' : 'text-primary'}>Subloca</span>
+                        <span className={activeScreen === item.id ? 'text-white/90' : 'text-secondary'}>Hope</span>
+                      </span>
+                    ) : (
+                      item.label
+                    )}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="mt-auto pt-10 space-y-6">
+                <button 
+                  onClick={() => { onNavigate(Screen.CorpoClinico, 'push', true); setMenuOpen(false); }}
+                  id="mobile-menu-cta-agendar"
+                  data-event="inicio_agendamento"
+                  className="w-full bg-secondary text-white py-5 rounded-[2rem] font-bold text-lg shadow-xl shadow-secondary/20 flex items-center justify-center gap-3"
+                >
+                  <CalendarMonth size={24} />
+                  Agendar Agora
+                </button>
+                
+                <div className="flex justify-center gap-6 text-primary/40">
+                  <Instagram size={20} />
+                  <Facebook size={20} />
+                  <LinkedIn size={20} />
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <main className="flex-grow">{children}</main>
+
+      {activeScreen !== Screen.Sublocacao && (
+        <footer className="py-20 border-t border-outline-alt/30 bg-[#fdfdff]">
+          <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+            <div className="flex flex-col gap-8">
+              <div className="flex items-center gap-4">
+                <div className="shrink-0">
+                {settings?.logoUrl ? (
+                  <img src={settings.logoUrl} className="h-12 w-auto object-contain" alt="Logo" />
+                ) : (
+                  <Spa size={32} className="text-primary" />
+                )}
+              </div>
+              <span className="font-black text-primary text-2xl tracking-tight leading-none">{settings?.clinicName || 'Clínica Hope'}</span>
+            </div>
+            <div className="flex flex-wrap gap-6 text-on-surface-variant text-sm font-medium">
+              {navItems.map(item => (
+                <button key={item.id} onClick={() => onNavigate(item.id)} className="hover:text-primary hover:underline transition-all">
+                  {item.id === Screen.Sublocacao ? (
+                    <span className="font-bold">
+                      <span className="text-primary">Subloca</span>
+                      <span className="text-secondary">Hope</span>
+                    </span>
+                  ) : (
+                    item.label
+                  )}
+                </button>
+              ))}
+              <button 
+                onClick={() => onNavigate(Screen.Admin, 'push')}
+                className="hover:text-primary transition-colors italic opacity-50"
+              >
+                Painel Admin
+              </button>
+            </div>
+            
+            {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
+              <div className="bg-[#fdfdff] p-6 rounded-3xl border border-outline-alt/20 shadow-sm">
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/40 mb-4">Convênios Parceiros</p>
+                <div className="flex flex-wrap gap-6 items-center">
+                  {settings.insurancePlans.map(plan => (
+                    <div key={plan.id} className="flex flex-col items-center gap-1 group">
+                      <img 
+                        src={plan.logo} 
+                        alt={plan.name} 
+                        className="h-7 md:h-9 w-auto object-contain transition-all group-hover:scale-105" 
+                        title={plan.name}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="md:text-right space-y-4">
+            <p className="text-on-surface-variant text-sm">{settings?.footerRights || '© 2022 Clínica Hope. Todos os direitos reservados.'}</p>
+            <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/40">{settings?.address || 'Pagani, Palhoça – SC'}</p>
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto px-6 mt-12 pt-8 border-t border-outline-alt/10">
+          <p className="text-[11px] text-on-surface-variant/50 text-center max-w-5xl mx-auto leading-relaxed">
+            Todos os profissionais atuam de forma autônoma e independente, sendo responsáveis por seus próprios atendimentos, conduzidos em conformidade com o Código de Ética Profissional do Psicólogo e com respeito ao sigilo profissional.
+            A responsabilidade técnica e ética pelos atendimentos é exclusiva de cada profissional, não cabendo à clínica ingerência sobre a condução dos casos.
+          </p>
+        </div>
+      </footer>
+      )}
+    </div>
+  );
+}
+
+
+// ---
+interface ScreenProps {
+  onNavigate: (screen: Screen, transition?: TransitionType, scroll?: boolean) => void;
+}
+
+interface HomeProps extends ScreenProps {
+  settings: HomeSettings;
+  approaches: Approach[];
+  isAdminUnlocked: boolean;
+  syncingSpecs?: Record<string, boolean>;
+  onSyncRequest?: (specId: string) => void;
+}
+
+function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlocked, syncingSpecs, onSyncRequest }: HomeProps & { specialists: Specialist[] }) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (specialists.length === 0) {
+      setIndex(0);
+      return;
+    }
+    
+    setIndex(prev => (prev >= specialists.length ? 0 : prev));
+
+    const timer = setInterval(() => {
+      setIndex((prev) => {
+        if (specialists.length === 0) return 0;
+        return (prev + 1) % specialists.length;
+      });
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [specialists.length]);
+
+  return (
+    <Layout activeScreen={Screen.Home} onNavigate={onNavigate} settings={settings}>
+      {/* Modern Hero Section */}
+      <section className="relative px-6 py-12 md:py-24 lg:py-32 overflow-hidden bg-background">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <motion.div 
+            initial={{ opacity: 0, x: -30 }} 
+            animate={{ opacity: 1, x: 0 }}
+            className="z-10 space-y-8"
+          >
+            <span className="inline-block px-4 py-1.5 rounded-full bg-secondary-container text-on-secondary-container text-xs font-bold uppercase tracking-widest shadow-sm">
+              {settings.heroSubtitle}
+            </span>
+            <h1 className="text-5xl md:text-7xl font-extrabold text-primary leading-[1.1] tracking-tight">
+              {settings.heroTitle}
+            </h1>
+            <p className="text-lg md:text-xl text-on-surface-variant font-medium leading-relaxed max-w-lg">
+              {settings.heroText}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 pt-4">
+              <button 
+                onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
+                id="hero-cta-agendar"
+                data-event="inicio_agendamento"
+                className="btn-primary shadow-xl"
+              >
+                Agendar Consulta
+              </button>
+              <button 
+                onClick={() => onNavigate(Screen.Abordagens, 'push')}
+                className="btn-secondary"
+              >
+                Abordagens
+              </button>
+            </div>
+
+            {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
+              <div className="pt-12 border-t border-outline-alt/30">
+                <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-on-surface-variant/50 mb-6 font-mono">Convênios que aceitamos</p>
+                <div className="flex flex-wrap gap-x-12 gap-y-8 items-center transition-all duration-500">
+                  {settings.insurancePlans.map(plan => (
+                    <div key={plan.id} className="flex items-center justify-center">
+                      <img 
+                        src={plan.logo} 
+                        alt={plan.name} 
+                        className="h-10 md:h-12 w-auto object-contain transition-all duration-300" 
+                        title={plan.name} 
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </motion.div>
+          
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative"
+          >
+            <div className="aspect-square rounded-[4rem] overflow-hidden soft-shadow relative z-10 border border-outline-alt/30">
+              <img 
+                src={settings.heroImageUrl} 
+                className="w-full h-full object-cover transition-transform duration-[5s] hover:scale-105"
+                alt="Clínica Interior"
+              />
+            </div>
+            <div className="absolute -bottom-10 -right-10 w-64 h-64 bg-secondary-container rounded-full -z-10 opacity-40 blur-3xl"></div>
+            <div className="absolute -top-10 -left-10 w-48 h-48 bg-primary-container rounded-full -z-10 opacity-30 blur-2xl"></div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Simplified Approaches Section */}
+      <section className="section-padding bg-white">
+        <div className="max-w-7xl mx-auto space-y-20">
+          <div className="flex flex-col md:flex-row justify-between items-end gap-8">
+            <div className="space-y-4">
+              <h2 className="text-4xl font-bold text-primary tracking-tight">Abordagens</h2>
+              <p className="text-on-surface-variant max-w-xl font-medium">Diferentes perspectivas clínicas para atender à sua complexidade individual.</p>
+            </div>
+            <button 
+              onClick={() => onNavigate(Screen.Abordagens, 'push')}
+              className="text-primary font-bold flex items-center gap-2 hover:underline transition-all"
+            >
+              Ver todas fundamentações <ArrowForward size={20} />
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {approaches.slice(0, 4).map((app, idx) => (
+              <div 
+                key={app.id} 
+                className="bg-surface-container p-8 rounded-[2.5rem] group hover:bg-white hover:soft-shadow hover:translate-y-[-8px] transition-all duration-500 border border-transparent hover:border-outline-alt/30"
+              >
+                <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-primary mb-8 group-hover:bg-secondary-container transition-colors">
+                  {idx === 0 && <Psychology size={28} />}
+                  {idx === 1 && <Group size={28} />}
+                  {idx === 2 && <Favorite size={28} />}
+                  {idx === 3 && <Spa size={28} />}
+                </div>
+                <h4 className="text-xl font-bold text-primary mb-4">{app.title}</h4>
+                <p className="text-on-surface-variant font-medium text-sm leading-relaxed mb-6 italic opacity-60">
+                   {app.desc}
+                </p>
+                <ArrowForward size={18} className="text-primary opacity-0 group-hover:opacity-100 transition-all" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Compact Equipe Section - Carousel */}
+      <section className="section-padding bg-surface-container-low border-y border-outline-alt/30 overflow-hidden">
+        <div className="max-w-7xl mx-auto space-y-16">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div>
+              <h2 className="text-4xl font-bold text-primary tracking-tight">Especialistas</h2>
+            </div>
+            
+            <button 
+              onClick={() => onNavigate(Screen.CorpoClinico)}
+              id="specialists-list-cta-agendar"
+              data-event="inicio_agendamento"
+              className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center md:self-end"
+            >
+              Agendar Terapia 
+              <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+          
+          <div className="relative">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <AnimatePresence mode="popLayout" initial={false}>
+                {(() => {
+                  if (specialists.length === 0) return null;
+                  
+                  const displayCount = 3; 
+                  const visibleSpecs = [];
+                  const total = specialists.length;
+                  const countToRender = Math.min(total, displayCount);
+                  
+                  for (let i = 0; i < countToRender; i++) {
+                    const specIndex = (index + i) % total;
+                    visibleSpecs.push(specialists[specIndex]);
+                  }
+
+                  return visibleSpecs.map((spec, i) => {
+                    if (!spec) return null;
+                    return (
+                      <motion.div
+                        key={`${spec.id}-${index}`}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        transition={{ duration: 0.4, delay: i * 0.1 }}
+                        className={`${i > 0 ? 'hidden md:block' : 'block'}`}
+                      >
+                        <SpecialistCard 
+                          spec={spec} 
+                          insurancePlans={settings.insurancePlans || []}
+                          isAdminUnlocked={isAdminUnlocked}
+                          isCarousel={true}
+                          onNavigate={onNavigate}
+                          isSyncing={!!syncingSpecs?.[spec.id]}
+                          onSyncRequest={() => onSyncRequest?.(spec.id)}
+                        />
+                      </motion.div>
+                    );
+                  });
+                })()}
+              </AnimatePresence>
+            </div>
+
+            {/* Navigation Dots */}
+            <div className="flex justify-center gap-3 mt-10">
+              {specialists.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setIndex(i)}
+                  className={`h-1.5 rounded-full transition-all duration-500 ${
+                    index === i ? 'bg-primary w-8' : 'bg-outline-alt w-2'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      {/* Testimonials (Google My Business Style) */}
+      <section className="section-padding bg-white overflow-hidden">
+        <div className="max-w-7xl mx-auto space-y-12">
+          <div className="text-center space-y-4">
+            <div className="flex justify-center items-center gap-2 mb-4">
+              <div className="flex text-[#FBBC05]">
+                {[...Array(5)].map((_, i) => <Star key={i} size={20} fill="currentColor" />)}
+              </div>
+              <span className="font-bold text-on-surface-variant">5.0</span>
+            </div>
+            <h2 className="text-4xl font-bold text-primary tracking-tight">O que dizem nossos pacientes</h2>
+            <p className="text-on-surface-variant/70 font-medium">Avaliações reais compartilhadas no Google</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {DEFAULT_TESTIMONIALS.map(item => (
+              <div key={item.id} className="bg-surface-container-low p-8 rounded-[2.5rem] border border-outline-alt/30 flex flex-col justify-between hover:soft-shadow transition-all group">
+                <div className="space-y-6">
+                  <div className="flex justify-between items-start">
+                    <div className="flex gap-1 text-[#FBBC05]">
+                      {[...Array(item.rating)].map((_, i) => <Star key={i} size={14} fill="currentColor" />)}
+                    </div>
+                    <div className="w-5 h-5 opacity-40 group-hover:opacity-100 transition-opacity">
+                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/></svg>
+                    </div>
+                  </div>
+                  <p className="text-on-surface-variant font-medium leading-relaxed italic text-sm">"{item.text}"</p>
+                </div>
+                <div className="flex items-center gap-4 mt-8 pt-6 border-t border-outline-alt/10">
+                  <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-xs">
+                    {item.avatar}
+                  </div>
+                  <div>
+                    <h5 className="text-sm font-bold text-primary">{item.author}</h5>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-center pt-8">
+            <a 
+              href="https://maps.app.goo.gl/qnU86jo4xeY7dz7V8" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-3 text-sm font-bold text-primary hover:underline group"
+            >
+              Ver todas as avaliações no Google <ArrowForward size={16} className="group-hover:translate-x-1 transition-transform" />
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* Material CTA */}
+      <section className="section-padding bg-[#f9f9ff]">
+        <div className="max-w-5xl mx-auto bg-primary text-white rounded-[3rem] md:rounded-[3.5rem] p-8 sm:p-12 md:p-20 relative overflow-hidden shadow-2xl text-center group">
+          <div className="relative z-10 space-y-8">
+            <h2 className="text-3xl md:text-6xl font-bold tracking-tight">Pronto para dar o próximo passo?</h2>
+            <p className="text-lg md:text-xl text-on-primary-container/80 max-w-2xl mx-auto font-medium">
+               A jornada do equilíbrio começa com um acolhimento respeitoso. Agende sua consulta e dê o seu primeiro passo!
+            </p>
+            <button 
+              onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
+              id="mid-page-cta-agendar"
+              data-event="inicio_agendamento"
+              className="bg-white text-primary px-12 py-6 rounded-2xl font-bold text-lg hover:shadow-2xl transition-all active:scale-95 group-hover:scale-105"
+            >
+              Agendar agora!
+            </button>
+          </div>
+          <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-[80px]"></div>
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary-container/10 rounded-full translate-y-1/2 -translate-x-1/2 blur-[60px]"></div>
+        </div>
+      </section>
+    </Layout>
+  );
+}
+
+function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (screen: Screen, transition?: TransitionType) => void; approaches: Approach[]; settings: HomeSettings }) {
+  return (
+    <Layout activeScreen={Screen.Abordagens} onNavigate={onNavigate} settings={settings}>
+      <header className="section-padding bg-background pt-32">
+        <div className="max-w-7xl mx-auto text-center space-y-6">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <span className="inline-block px-4 py-1.5 rounded-full bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest shadow-sm">
+              Tipos de Terapia
+            </span>
+            <h1 className="text-5xl md:text-7xl font-extrabold text-primary tracking-tight mt-8">Ciência & <span className="text-secondary italic">Acolhimento</span></h1>
+            <p className="text-lg md:text-xl text-on-surface-variant font-medium max-w-2xl mx-auto mt-8 leading-relaxed">
+              Entenda as principais abordagens da psicologia, como funcionam e para quais situações cada uma pode ser mais indicada.
+            </p>
+          </motion.div>
+        </div>
+      </header>
+
+      <section className="section-padding">
+        <div className="max-w-7xl mx-auto space-y-32">
+          {approaches.map((app, idx) => (
+            <motion.div 
+              key={app.id} 
+              initial={{ opacity: 0, scale: 0.98 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              className={`flex flex-col ${idx % 2 === 0 ? 'lg:flex-row' : 'lg:flex-row-reverse'} gap-16 items-center`}
+            >
+              <div className="flex-1 space-y-8">
+                <div className="space-y-4">
+                  <span className="text-xs font-mono font-bold text-secondary uppercase tracking-widest">Abordagem {idx + 1}</span>
+                  <h3 className="text-4xl md:text-5xl font-bold text-primary tracking-tight">{app.title}</h3>
+                  <p className="text-xl font-medium text-secondary italic leading-relaxed py-4 border-l-4 border-secondary/20 pl-6">
+                    {app.desc}
+                  </p>
+                </div>
+                <div className="p-8 bg-surface-container rounded-[2.5rem] border border-outline-alt/30 space-y-6">
+                  <p className="text-on-surface-variant font-medium leading-loose">
+                    {app.details}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex-1 w-full flex justify-center">
+                 <div className="w-full max-w-[500px] aspect-square rounded-[4rem] bg-secondary-container/20 flex items-center justify-center relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-secondary/5 group-hover:opacity-0 transition-opacity"></div>
+                    {idx % 4 === 0 && <Psychology size={180} className="text-primary/10 group-hover:text-primary/20 transition-colors" />}
+                    {idx % 4 === 1 && <Group size={180} className="text-primary/10 group-hover:text-primary/20 transition-colors" />}
+                    {idx % 4 === 2 && <Favorite size={180} className="text-primary/10 group-hover:text-primary/20 transition-colors" />}
+                    {idx % 4 === 3 && <Spa size={180} className="text-primary/10 group-hover:text-primary/20 transition-colors" />}
+                    
+                    <div className="absolute bottom-10 left-10 right-10 p-6 bg-white/80 backdrop-blur-md rounded-3xl border border-white/50 text-center font-bold text-primary shadow-xl">
+                      Prática Baseada em Evidências
+                    </div>
+                 </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      <section className="section-padding bg-primary text-white">
+        <div className="max-w-5xl mx-auto text-center space-y-12">
+           <h3 className="text-4xl md:text-5xl font-bold tracking-tight italic">"O segredo da mudança é a construção do novo."</h3>
+           <div className="w-16 h-1.5 bg-secondary mx-auto rounded-full"></div>
+           <button onClick={() => onNavigate(Screen.CorpoClinico, 'push')} className="btn-secondary !bg-white !text-primary transform hover:scale-105">Iniciar Jornada</button>
+        </div>
+      </section>
+    </Layout>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PSICOEDUCAÇÃO SCREEN — Lista de artigos + visualização individual
+// ─────────────────────────────────────────────────────────────────────────────
+function PsicoeducacaoScreen({ onNavigate, settings, articles }: ScreenProps & { settings: HomeSettings; articles: PsicoeducacaoArticle[] }) {
+  const [openArticle, setOpenArticle] = useState<PsicoeducacaoArticle | null>(null);
+
+  const renderContent = (rawText: string) => {
+    if (!rawText.trim()) return null;
+    const lines = rawText.split('\n');
+    const elements: React.ReactNode[] = [];
+    let bulletBuffer: string[] = [];
+
+    const flushBullets = (key: string) => {
+      if (bulletBuffer.length > 0) {
+        elements.push(
+          <ul key={`ul-${key}`} className="list-disc list-inside space-y-2 pl-2 my-4">
+            {bulletBuffer.map((b, i) => (
+              <li key={i} className="text-on-surface-variant leading-relaxed text-base md:text-lg"
+                dangerouslySetInnerHTML={{ __html: b.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />
+            ))}
+          </ul>
+        );
+        bulletBuffer = [];
+      }
+    };
+
+    lines.forEach((line, i) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('### ')) {
+        flushBullets(String(i));
+        elements.push(<h3 key={i} className="text-xl md:text-2xl font-bold text-primary mt-8 mb-3 tracking-tight">{trimmed.slice(4)}</h3>);
+      } else if (trimmed.startsWith('## ')) {
+        flushBullets(String(i));
+        elements.push(<h2 key={i} className="text-2xl md:text-3xl font-extrabold text-primary mt-10 mb-4 tracking-tight border-l-4 border-secondary pl-4">{trimmed.slice(3)}</h2>);
+      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        bulletBuffer.push(trimmed.slice(2));
+      } else if (trimmed === '') {
+        flushBullets(String(i));
+      } else {
+        flushBullets(String(i));
+        elements.push(<p key={i} className="text-on-surface-variant leading-loose text-base md:text-lg mb-4"
+          dangerouslySetInnerHTML={{ __html: trimmed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />);
+      }
+    });
+    flushBullets('end');
+    return elements;
+  };
+
+  return (
+    <Layout activeScreen={Screen.Psicoeducacao} onNavigate={onNavigate} settings={settings}>
+      <header className="section-padding bg-background pt-32 pb-12">
+        <div className="max-w-4xl mx-auto px-6 space-y-6">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <span className="inline-block px-4 py-1.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-widest shadow-sm">
+              Educação em Saúde Mental
+            </span>
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold text-primary tracking-tight mt-8">
+              Psicoeducação
+            </h1>
+            <p className="text-base md:text-lg text-on-surface-variant font-medium max-w-2xl mt-6 leading-relaxed">
+              Conteúdo educativo para ampliar seu autoconhecimento e apoiar sua jornada terapêutica.
+            </p>
+          </motion.div>
+        </div>
+      </header>
+
+      <section className="px-6 pb-24">
+        <div className="max-w-4xl mx-auto space-y-6">
+
+          {/* Lista de artigos */}
+          {!openArticle && (
+            <>
+              {articles.length === 0 ? (
+                <div className="text-center py-20 bg-surface-container-low rounded-[3rem] border-2 border-dashed border-outline-alt/40">
+                  <Brain size={48} className="mx-auto text-primary/20 mb-4" />
+                  <p className="text-on-surface-variant font-medium italic">Nenhum artigo publicado ainda.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {articles.map((article, idx) => (
+                    <motion.button
+                      key={article.id}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.07 }}
+                      onClick={() => setOpenArticle(article)}
+                      className="group text-left bg-white rounded-[2.5rem] border border-outline-alt/30 p-8 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col gap-4"
+                    >
+                      <div className="w-12 h-12 bg-secondary-container/50 rounded-2xl flex items-center justify-center text-secondary group-hover:bg-secondary group-hover:text-white transition-colors">
+                        <Brain size={22} />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-xl font-extrabold text-primary tracking-tight group-hover:text-secondary transition-colors">
+                          {article.title}
+                        </h3>
+                        {article.subtitle && (
+                          <p className="text-sm text-on-surface-variant/70 mt-1 font-medium italic line-clamp-2">{article.subtitle}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-secondary font-bold text-xs uppercase tracking-widest">
+                        Ler artigo <ArrowForward size={14} className="group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Artigo aberto */}
+          {openArticle && (
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+              <button
+                onClick={() => setOpenArticle(null)}
+                className="flex items-center gap-2 text-primary font-bold text-sm mb-8 hover:underline group"
+              >
+                <ArrowForward size={16} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
+                Voltar para Psicoeducação
+              </button>
+              <div className="bg-white rounded-[3rem] shadow-xl border border-outline-alt/30 p-8 md:p-16 text-left">
+                <h2 className="text-3xl md:text-5xl font-extrabold text-primary tracking-tight mb-2">{openArticle.title}</h2>
+                {openArticle.subtitle && (
+                  <p className="text-lg text-secondary italic font-medium mb-8 border-l-4 border-secondary/30 pl-4">{openArticle.subtitle}</p>
+                )}
+                <div className="mt-8">{renderContent(openArticle.content)}</div>
+              </div>
+            </motion.div>
+          )}
+
+          {!openArticle && (
+            <div className="max-w-4xl mx-auto mt-12 text-center">
+              <button 
+                onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)} 
+                id="psicoeducacao-footer-cta-agendar"
+                data-event="inicio_agendamento"
+                className="btn-primary shadow-xl"
+              >
+                Agendar Consulta
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+    </Layout>
+  );
+}
+
+function SEOScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSettings }) {
+  return (
+    <Layout activeScreen={Screen.SEO} onNavigate={onNavigate} settings={settings}>
+      <header className="px-6 py-16 md:py-40 bg-surface-container-low overflow-hidden relative">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 lg:gap-20 items-center relative z-10">
+          <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} className="space-y-10">
+            <span className="inline-block px-4 py-1.5 rounded-full bg-secondary-container text-on-secondary-container text-xs font-bold uppercase tracking-widest">
+              Psicologia em Palhoça
+            </span>
+            <h1 className="text-5xl md:text-8xl font-black text-primary leading-tight tracking-tighter">
+              {settings.seoTitle || 'Um ambiente pensado para o cuidado com você'}
+            </h1>
+            <p className="text-xl text-on-surface-variant font-medium leading-relaxed max-w-xl">
+              {settings.seoText || 'Localizada no Pagani, a Clínica Hope oferece um espaço acolhedor, reservado e cuidadosamente preparado para atendimentos psicológicos, proporcionando conforto, privacidade e uma experiência tranquila desde a chegada.'}
+            </p>
+            <div className="flex flex-wrap gap-4">
+               {[
+                 { icon: <Wifi size={20} />, label: 'Wi-Fi' },
+                 { icon: <ConciergeBell size={20} />, label: 'Recepção' },
+                 { icon: <Volume2 size={20} />, label: 'Isolamento Acústico' },
+                 { icon: <Snowflake size={20} />, label: 'Ar Condicionado' },
+                 { icon: <ParkingCircle size={20} />, label: 'Estacionamento' },
+                 { icon: <ShieldCheck size={20} />, label: 'Portaria 24h' }
+               ].map((item, index) => (
+                 <div key={index} className="group relative">
+                   <div className="p-4 bg-white rounded-2xl shadow-sm border border-outline-alt/30 text-primary hover:bg-secondary/10 hover:text-secondary transition-all duration-300">
+                     {item.icon}
+                   </div>
+                   <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                     {item.label}
+                   </span>
+                 </div>
+               ))}
+            </div>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="relative">
+             <div className="aspect-[4/5] rounded-[3rem] md:rounded-[4rem] overflow-hidden soft-shadow border-4 border-white">
+                <img src={settings.heroImageUrl || "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=2069"} className="w-full h-full object-cover" alt="Clinica Interior" />
+             </div>
+             <div className="absolute -bottom-6 -right-2 md:-right-6 bg-primary text-white p-6 md:p-8 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl space-y-2">
+                <p className="text-[10px] md:text-xs font-bold uppercase tracking-widest opacity-60">Endereço</p>
+                <p className="text-base md:text-lg font-bold">{settings.address || 'Bairro Pagani, Palhoça/SC'}</p>
+             </div>
+          </motion.div>
+        </div>
+      </header>
+
+      <section className="section-padding bg-white">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-3 gap-8">
+           {[
+             { title: 'Localização Estratégica', desc: 'Situada no Pagani, ponto de fácil acesso para moradores de toda a Grande Florianópolis.', icon: <LocationOn size={32} /> },
+             { title: 'Conforto Sensorial', desc: 'Salas projetadas para minimizar estímulos ansiosos e promover a introspecção.', icon: <Spa size={32} /> },
+             { title: 'Privacidade Total', desc: 'Fluxo planejado para garantir a máxima discrição em sua chegada e saída.', icon: <VerifiedUser size={32} /> }
+           ].map((item, i) => (
+             <div key={i} className="p-10 bg-surface-container rounded-[3rem] space-y-6 hover:bg-secondary-container transition-colors group">
+                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-primary group-hover:scale-110 transition-transform shadow-sm">
+                  {item.icon}
+                </div>
+                <h3 className="text-2xl font-bold text-primary">{item.title}</h3>
+                <p className="text-on-surface-variant font-medium leading-relaxed">{item.desc}</p>
+             </div>
+           ))}
+        </div>
+      </section>
+
+      <section className="section-padding bg-surface-container-low border-t border-outline-alt/30">
+        <div className="max-w-7xl mx-auto space-y-16">
+          <div className="text-center space-y-4">
+            <h2 className="text-4xl font-bold text-primary tracking-tight">O que dizem sobre nós</h2>
+            <p className="text-on-surface-variant font-medium">Experiências reais compartilhas no Google</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {DEFAULT_TESTIMONIALS.map(item => (
+              <div key={item.id} className="bg-white p-8 rounded-[2.5rem] border border-outline-alt/30 flex flex-col justify-between hover:soft-shadow transition-all group">
+                <div className="space-y-6">
+                  <div className="flex gap-1 text-secondary">
+                    {[...Array(item.rating)].map((_, i) => <Star key={i} size={16} fill="currentColor" />)}
+                  </div>
+                  <p className="text-on-surface-variant font-medium leading-relaxed italic text-sm">"{item.text}"</p>
+                </div>
+                <div className="flex items-center gap-4 mt-8 pt-6 border-t border-outline-alt/10">
+                  <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-xs">
+                    {item.avatar}
+                  </div>
+                  <div>
+                    <h5 className="text-sm font-bold text-primary">{item.author}</h5>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-center pt-8">
+            <a 
+              href="https://maps.app.goo.gl/qnU86jo4xeY7dz7V8" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white border border-outline-alt/50 rounded-2xl text-primary font-bold text-sm hover:soft-shadow transition-all group"
+            >
+              Ver todas as avaliações no Google
+              <ArrowForward size={16} className="group-hover:translate-x-1 transition-transform" />
+            </a>
+          </div>
+        </div>
+      </section>
+
+    </Layout>
+  );
+}
+
+interface CorpoClinicoProps extends ScreenProps {
+  specialists: Specialist[];
+  approaches: Approach[];
+  settings: HomeSettings;
+  isAdminUnlocked: boolean;
+  shouldScrollToList?: boolean;
+  syncingSpecs?: Record<string, boolean>;
+  onSyncRequest?: (specId: string) => void;
+}
+
+interface SpecialistCardProps {
+  spec: Specialist;
+  insurancePlans: InsurancePlan[];
+  isAdminUnlocked?: boolean;
+  isCarousel?: boolean;
+  onNavigate?: (screen: Screen, transition?: TransitionType, scroll?: boolean) => void;
+  isSyncing?: boolean;
+  onSyncRequest?: () => void;
+}
+
+function sortKeys(obj: any): any {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sortKeys);
+  return Object.keys(obj).sort().reduce((result: any, key) => {
+    result[key] = sortKeys(obj[key]);
+    return result;
+  }, {});
+}
+
+// Helper to parse Sheet Data
+function parseSheetScheduleData(jsonpData: any): Record<string, { periods: Record<Shift, string[]> }> {
+  if (!jsonpData) return {};
+  const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
+  const newSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
+  
+  if (Array.isArray(appointments) && appointments.length > 0) {
+    appointments.forEach((row: any) => {
+      try {
+        const statusValue = (row.status || row.paciente || '').toString().toLowerCase();
+        const isAvailable = statusValue.includes('💚') || statusValue.includes('livre');
+        if (row && isAvailable) {
+          const dayRaw = row.dia || row.day || '';
+          const timeRaw = row.horario || row.time || '';
+          
+          if (dayRaw && timeRaw && typeof dayRaw === 'string' && typeof timeRaw === 'string') {
+            const dayMap: Record<string, string> = {
+              'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'seg': 'Segunda',
+              'terca': 'Terça', 'terca-feira': 'Terça', 'ter': 'Terça',
+              'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'qua': 'Quarta',
+              'quinta': 'Quinta', 'quinta-feira': 'Quinta', 'qui': 'Quinta',
+              'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sex': 'Sexta',
+              'sabado': 'Sábado', 'sábado': 'Sábado', 'sab': 'Sábado'
+            };
+            const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const day = dayMap[dayKey] || (dayRaw.length > 0 ? (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase()) : '');
+            
+            if (day) {
+              if (!newSchedule[day]) newSchedule[day] = { periods: {} as any };
+              const hourMatch = timeRaw.match(/(\d{1,2})/);
+              if (hourMatch) {
+                const hour = parseInt(hourMatch[1]);
+                const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
+                if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
+                const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
+                const processedTime = timeMatch ? timeMatch[1] : timeRaw;
+                if (!newSchedule[day].periods[shift]?.includes(processedTime)) newSchedule[day].periods[shift]?.push(processedTime);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Erro ao processar linha da planilha:", e);
+      }
+    });
+
+    Object.keys(newSchedule).forEach(day => {
+      Object.keys(newSchedule[day].periods).forEach(period => {
+        const p = period as Shift;
+        if (newSchedule[day].periods[p]) {
+          newSchedule[day].periods[p].sort((a, b) => a.localeCompare(b));
+        }
+      });
+    });
+  }
+  return newSchedule;
+}
+
+function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate, isSyncing, onSyncRequest }: SpecialistCardProps) {
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(spec.schedule || null);
+  
+  const particularPlan = insurancePlans?.find(p => p.name.toLowerCase() === 'particular');
+  
+  useEffect(() => {
+    setSheetSchedule(spec.schedule || null);
+  }, [spec.schedule]);
+
+  useEffect(() => {
+    if (!isAdminUnlocked && (spec.googleAppsScriptUrl || spec.googleSheetsId)) {
+      const twoHoursMs = 2 * 60 * 60 * 1000;
+      const isExpired = !spec.lastSync || (Date.now() - new Date(spec.lastSync).getTime() > twoHoursMs);
+      if (isExpired && onSyncRequest) {
+        onSyncRequest();
+      }
+    }
+  }, [spec.lastSync, isAdminUnlocked, spec.googleAppsScriptUrl, spec.googleSheetsId]);
+
+  const [isLoadingSheet, setIsLoadingSheet] = useState(false);
+  const [sheetError, setSheetError] = useState<string | null>(null);
+  const [isDescExpanded, setIsDescExpanded] = useState(false);
+  const [isTouched, setIsTouched] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isAdminUnlocked) return;
+
+    if (spec.googleAppsScriptUrl || spec.googleSheetsId) {
+      const fetchSheetData = async () => {
+        if (isLoadingSheet) return;
+        
+        try {
+          const lock = localStorage.getItem('firestore_quota_exhausted');
+          if (lock) {
+            const lockTime = parseInt(lock);
+            if (Date.now() - lockTime < 4 * 60 * 60 * 1000) return;
+          }
+        } catch (e) {}
+
+        setIsLoadingSheet(true);
+        setSheetError(null);
+        try {
+          let baseUrl = (spec.googleAppsScriptUrl || '').trim();
+          if (baseUrl && !baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
+          
+          let newSchedule: NonNullable<Specialist['schedule']> = {};
+          let foundData = false;
+          
+          if (baseUrl && baseUrl.toLowerCase().includes('script.google.com') && baseUrl.includes('/exec')) {
+            const jsonpUrl = baseUrl.includes('?') ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
+            const jsonpData = await new Promise<any>((resolve) => {
+              const callbackName = `bg_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+              const script = document.createElement('script');
+              
+              let scriptResolved = false;
+              const cleanup = () => {
+                if (scriptResolved) return;
+                scriptResolved = true;
+                if (script.parentNode) script.parentNode.removeChild(script);
+                (window as any)[callbackName] = () => {};
+              };
+
+              script.src = `${jsonpUrl}&callback=${callbackName}`;
+              script.onerror = () => {
+                cleanup();
+                resolve(null);
+              };
+
+              (window as any)[callbackName] = (res: any) => {
+                cleanup();
+                resolve(res);
+              };
+
+              setTimeout(() => {
+                cleanup();
+                resolve(null);
+              }, 45000);
+
+              document.body.appendChild(script);
+            });
+            if (jsonpData) {
+              newSchedule = parseSheetScheduleData(jsonpData);
+              if (Object.keys(newSchedule).length > 0) {
+                foundData = true;
+                setSheetSchedule(newSchedule);
+              }
+            }
+          }
+
+          if (!foundData && spec.googleSheetsId) {
+            let sheetId = spec.googleSheetsId;
+            if (sheetId.includes('/d/')) {
+              const parts = sheetId.split('/d/');
+              if (parts.length > 1) sheetId = parts[1].split('/')[0];
+            }
+            const tabName = spec.googleSheetsTab || 'Agenda';
+            const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}&t=${Date.now()}`;
+            const response = await fetch(url).catch(() => null);
+            if (response && response.ok) {
+              const csvText = await response.text();
+              const rows = csvText.split(/\r?\n/).map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim())).filter(row => row.length >= 3);
+              
+              const newCsvSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
+              rows.slice(1).forEach(row => {
+                const [dayRaw, timeRaw, statusRaw] = row;
+                const status = (statusRaw || '').toLowerCase().trim();
+                const isAvailable = status.includes('💚') || status.includes('livre');
+
+                if (dayRaw && timeRaw && isAvailable) {
+                   const dayMap: Record<string, string> = {
+                    'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'seg': 'Segunda',
+                    'terca': 'Terça', 'terca-feira': 'Terça', 'ter': 'Terça',
+                    'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'qua': 'Quarta',
+                    'quinta': 'Quinta', 'quinta-feira': 'Quinta', 'qui': 'Quinta',
+                    'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sex': 'Sexta',
+                    'sabado': 'Sábado', 'sábado': 'Sábado', 'sab': 'Sábado'
+                  };
+                  const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                  const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
+                  
+                  if (!newCsvSchedule[day]) newCsvSchedule[day] = { periods: {} as any };
+                  const hourMatch = timeRaw.match(/(\d{1,2})/);
+                  if (hourMatch) {
+                    const hour = parseInt(hourMatch[1]);
+                    const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
+                    if (!newCsvSchedule[day].periods[shift]) newCsvSchedule[day].periods[shift] = [];
+                    const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
+                    const processedTime = timeMatch ? timeMatch[1] : timeRaw;
+                    if (!newCsvSchedule[day].periods[shift]?.includes(processedTime)) newCsvSchedule[day].periods[shift]?.push(processedTime);
+                  }
+                }
+              });
+
+              if (Object.keys(newCsvSchedule).length > 0) {
+                setSheetSchedule(newCsvSchedule);
+              }
+            }
+          }
+        } catch (e) { 
+          console.error("Erro fetch:", e); 
+        } finally {
+          setIsLoadingSheet(false);
+        }
+      };
+
+      fetchSheetData();
+      const interval = setInterval(fetchSheetData, 120000);
+      
+      const handleForceSync = (e: any) => {
+        if (e.detail?.specId === spec.id) {
+          fetchSheetData();
+        }
+      };
+      window.addEventListener('force-sheet-sync', handleForceSync);
+
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('force-sheet-sync', handleForceSync);
+      };
+    }
+  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.id]);
+
+  const activeSchedule = useMemo(() => {
+    if (sheetSchedule && Object.keys(sheetSchedule).length > 0) return sheetSchedule;
+    return spec.schedule || null;
+  }, [sheetSchedule, spec.schedule]);
+
+  const hasAnySchedule = activeSchedule && Object.keys(activeSchedule).length > 0;
+  const isSyncComplete = !isLoadingSheet;
+  const isAgendaFull = isSyncComplete && !hasAnySchedule && (spec.googleAppsScriptUrl || spec.googleSheetsId);
+  const showAgendaSection = hasAnySchedule || isAgendaFull;
+  const displayAgenda = isAdminUnlocked ? (isSyncComplete || !!sheetError) : showAgendaSection;
+
+  const canBook = selectedDay && selectedTime && selectedPlan;
+
+  const getSpecialtyIcon = (specialty: string) => {
+    const s = specialty.toLowerCase();
+    if (s.includes('infant') || s.includes('criança') || s.includes('baby')) return <Baby size={14} />;
+    if (s.includes('casal') || s.includes('família') || s.includes('relacionamento')) return <Heart size={14} />;
+    if (s.includes('neuro') || s.includes('cognitiva') || s.includes('tcc') || s.includes('psicanálise')) return <Brain size={14} />;
+    if (s.includes('organizacional') || s.includes('trabalho') || s.includes('carreira')) return <Briefcase size={14} />;
+    if (s.includes('pedagogia') || s.includes('escolar') || s.includes('aprendizagem')) return <GraduationCap size={14} />;
+    if (s.includes('clínica') || s.includes('hospitalar') || s.includes('saúde')) return <Stethoscope size={14} />;
+    return <User size={14} />;
+  };
+
+  const handleWhatsAppClick = () => {
+    if (!canBook) return;
+    trackWhatsAppClick('specialist_card');
+    trackScheduleClick(spec.name);
+    const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
+    window.open(`https://wa.me/5548999549041?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  return (
+    <motion.div 
+      ref={cardRef}
+      layout
+      onTouchStart={() => setIsTouched(true)}
+      onTouchEnd={() => setIsTouched(false)}
+      className="bg-white rounded-[3rem] overflow-hidden soft-shadow border border-outline-alt/30 flex flex-col group h-full"
+    >
+      <div className={`h-96 relative overflow-hidden transition-all duration-700 ${isTouched ? 'grayscale-0' : 'grayscale group-hover:grayscale-0'}`}>
+        <img 
+          src={spec.img} 
+          className={`w-full h-full object-cover transition-transform duration-1000 ${isTouched ? 'scale-105' : 'group-hover:scale-105'}`} 
+        />
+        <div className="absolute top-6 right-6 bg-white/90 backdrop-blur px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-primary border border-white">
+          CRP {spec.crp}
+        </div>
+      </div>
+      <div className="p-8 space-y-6 flex-grow flex flex-col justify-between">
+        <div className="space-y-4">
+          <div className="flex justify-between items-start">
+            <div className="flex flex-col">
+              <h4 className="text-2xl font-bold text-primary">{spec.name}</h4>
+              <button 
+                onClick={() => {
+                  let scheduleSummary = '';
+                  try {
+                    if (spec.schedule) {
+                      const daysOrder = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                      const dayEntries = daysOrder.map(day => {
+                        const dayData = spec.schedule![day];
+                        if (dayData && dayData.periods) {
+                          const periodsValues = Object.values(dayData.periods);
+                          const times = (periodsValues as any[]).reduce((acc: string[], val) => {
+                            if (Array.isArray(val)) return acc.concat(val);
+                            return acc;
+                          }, []).filter(Boolean);
+                          
+                          if (times && times.length > 0) {
+                            return `${day}: ${times.slice(0, 3).join(', ')}${times.length > 3 ? '...' : ''}`;
+                          }
+                        }
+                        return null;
+                      }).filter(Boolean);
+                      
+                      if (dayEntries.length > 0) {
+                        scheduleSummary = dayEntries.join(' | ');
+                      }
+                    }
+                  } catch (e) {
+                    console.warn("Failed to generate schedule summary:", e);
+                  }
+
+                  const message = `Ola veja a disponibilidade: ${spec.name}. Veja horários disponíveis: ${scheduleSummary || 'sob consulta'}. Caso não encontre um horário ideal voce pode ficar na lista de espera veja o site: www.clinicahopebrasil.com.br`;
+                  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+                  window.open(whatsappUrl, '_blank');
+                }}
+                className="group flex items-center gap-2 text-green-700 hover:text-green-800 transition-all text-[9px] font-black uppercase tracking-[0.1em] mt-1.5 w-fit"
+              >
+                <div className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                  <Share size={10} className="text-green-700" />
+                </div>
+                Compartilhar
+              </button>
+            </div>
+            <Verified size={20} className="text-secondary" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest rounded-full">
+              {getSpecialtyIcon(spec.spec)}
+              {spec.spec}
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <p className={`text-on-surface-variant text-sm font-medium leading-relaxed italic ${!isDescExpanded ? 'line-clamp-3' : ''}`}>
+              "{spec.desc}"
+            </p>
+            {spec.desc && spec.desc.length > 120 && (
+              <button 
+                onClick={() => setIsDescExpanded(!isDescExpanded)}
+                className="text-secondary text-[10px] font-black uppercase tracking-widest hover:underline flex items-center gap-1"
+              >
+                {isDescExpanded ? 'Ler menos' : 'Ler mais'}
+                <ArrowForward size={10} className={isDescExpanded ? '-rotate-90' : 'rotate-90'} />
+              </button>
+            )}
+          </div>
+        </div>
+        
+        <div className="space-y-6">
+          {!isCarousel && (
+            <div className="flex flex-wrap gap-2">
+              {spec.ageGroups.map(g => (
+                <span key={g} className="inline-flex items-center gap-1.5 bg-surface-container text-on-surface-variant px-3 py-1 rounded-full text-[10px] font-bold uppercase">
+                  {g.toLowerCase().includes('criança') && <Baby size={12} />}
+                  {g.toLowerCase().includes('adolescente') && <Users size={12} />}
+                  {g.toLowerCase().includes('adulto') && <User size={12} />}
+                  {g.toLowerCase().includes('idoso') && <Users size={12} />}
+                  {g}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {isCarousel ? (
+            <div className="pt-4">
+              <button 
+                onClick={() => onNavigate?.(Screen.CorpoClinico, 'push')}
+                className="w-full py-4 rounded-2xl font-bold bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2"
+              >
+                <CalendarMonth size={18} />
+                Ver Disponibilidade
+              </button>
+            </div>
+          ) : (
+            displayAgenda && (
+              <div className={`pt-6 border-t border-outline-alt/30 space-y-4 relative transition-opacity duration-300 ${!isAdminUnlocked && isSyncing ? 'opacity-60 pointer-events-none' : 'opacity-100'}`}>
+                {!isAdminUnlocked && isSyncing && (
+                  <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-amber-50 rounded-lg w-fit border border-amber-200/50 animate-pulse">
+                    <RefreshCw size={12} className="text-amber-600 animate-spin" />
+                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">
+                      Verificando...
+                    </p>
+                  </div>
+                )}
+                {spec.attendedAges && spec.attendedAges.length > 0 && (
+                  <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                    <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
+                      <VerifiedUser size={12} className="text-white" />
+                    </div>
+                    <p className="text-[11px] font-bold text-primary/90">
+                      Atendimento especializado a partir de <span className="text-secondary font-black underline underline-offset-4 decoration-secondary/30">{Math.min(...spec.attendedAges)}</span> anos
+                    </p>
+                  </div>
+                )}
+                {isAdminUnlocked && (spec.googleSheetsId || spec.googleAppsScriptUrl) && (
+                  <div className="flex items-center gap-2 mb-2 px-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${isLoadingSheet ? 'bg-amber-500 animate-pulse' : (sheetError ? 'bg-red-500' : 'bg-green-500')}`} />
+                    <p className={`text-[9px] font-bold uppercase tracking-widest ${sheetError ? 'text-red-500/80' : 'text-on-surface-variant/60'}`}>
+                      {isLoadingSheet ? 'Sincronizando Agenda...' : (sheetError ? `Aviso Admin: ${sheetError}` : (spec.googleAppsScriptUrl ? 'Agenda Conectada (Web App)' : 'Planilha Conectada'))}
+                    </p>
+                  </div>
+                )}
+
+                {sheetError && isAdminUnlocked ? (
+                  <div className="p-4 bg-red-50 rounded-2xl border border-red-100 animate-in fade-in duration-500">
+                    <p className="text-[10px] text-red-600 font-bold uppercase mb-1">Erro Admin Sincronização:</p>
+                    <p className="text-xs text-red-500 leading-tight mb-2">{sheetError}</p>
+                    <p className="text-[9px] text-red-400 italic">Este aviso não aparece para o público. O público não vê a agenda se houver erro.</p>
+                  </div>
+                ) : isAgendaFull ? (
+                  <div className="pt-2 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <div className="flex flex-col items-center text-center space-y-4 py-8 px-6 bg-secondary/5 rounded-3xl border border-secondary/10 relative group/agenda">
+                      {isLoadingSheet && (
+                        <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center rounded-3xl z-10 animate-in fade-in">
+                          <div className="flex flex-col items-center gap-2">
+                            <RefreshCw size={24} className="text-primary animate-spin" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-primary">Sincronizando...</p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="w-14 h-14 bg-secondary/10 flex items-center justify-center rounded-full text-secondary">
+                        <CalendarMonth size={28} />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-black text-secondary text-xs uppercase tracking-widest">Agenda Completa</p>
+                        <p className="text-[11px] font-medium text-primary/70 leading-relaxed max-w-[200px]">No momento, esta especialista não possui horários disponíveis para agendamento imediato.</p>
+                      </div>
+                      
+                      <a 
+                        href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
+                      >
+                        <Chat size={20} />
+                        Lista de Espera
+                      </a>
+
+                      {/* Botão "Recarregar Planilha (Admin)" removido */}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Agendar Horário</p>
+                    
+                    <div className="space-y-4 pt-4">
+                      <div className="flex flex-wrap gap-2">
+                        {Object.keys(activeSchedule || {})
+                          .sort((a, b) => {
+                            const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                            return days.indexOf(a) - days.indexOf(b);
+                          })
+                          .map(day => (
+                            <button
+                              key={day}
+                              onClick={() => {
+                                setSelectedDay(day === selectedDay ? null : day);
+                                setSelectedTime(null);
+                              }}
+                              className={`px-4 py-2.5 rounded-xl text-[10px] font-bold transition-all border ${
+                                selectedDay === day 
+                                ? 'bg-primary text-white border-primary shadow-md' 
+                                : 'bg-surface-container text-primary border-outline-variant/30 hover:border-primary/50'
+                              }`}
+                            >
+                              {day}
+                            </button>
+                          ))}
+                      </div>
+
+                      {selectedDay && activeSchedule?.[selectedDay] && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }} 
+                          animate={{ opacity: 1, y: 0 }}
+                          className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-alt/20 space-y-3"
+                        >
+                          {selectedDay && !selectedTime && (
+                            <div className="flex items-center gap-2 mb-2 animate-pulse">
+                              <ArrowForward size={14} className="text-amber-500 animate-bounce" />
+                              <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Selecione o horário</p>
+                            </div>
+                          )}
+                          {(Object.entries(activeSchedule![selectedDay].periods) as [Shift, string[]][])
+                            .sort(([a], [b]) => {
+                              const periods = [Shift.Morning as string, Shift.Afternoon as string, Shift.Night as string];
+                              return periods.indexOf(a) - periods.indexOf(b);
+                            })
+                            .map(([period, times]) => times && times.length > 0 && (
+                              <div key={period} className="space-y-1.5">
+                                <p className="text-[8px] font-black uppercase text-on-surface-variant/60">{period}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {times.map(time => (
+                                    <button
+                                      key={time}
+                                      onClick={() => setSelectedTime(time === selectedTime ? null : time)}
+                                      className={`px-3 py-2 rounded-lg text-[10px] font-medium transition-all ${
+                                        selectedTime === time
+                                        ? 'bg-secondary text-white shadow-sm'
+                                        : 'bg-white text-primary border border-outline-variant/10 hover:border-secondary/30'
+                                      }`}
+                                    >
+                                      {time}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                        </motion.div>
+                      )}
+
+                      <div className="space-y-4">
+                        <div className={`space-y-2 p-3 rounded-3xl transition-all duration-500 ${selectedTime && !selectedPlan ? 'bg-amber-400/10 ring-4 ring-amber-400/20 animate-pulse' : ''}`}>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Selecione seu Convênio</p>
+                            {selectedTime && !selectedPlan && (
+                              <p className="text-[9px] font-black uppercase text-amber-500 animate-pulse">Selecione o convênio</p>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            {(!spec.insurancePlans || (particularPlan && spec.insurancePlans.includes(particularPlan.id))) && (
+                              <button
+                                onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
+                                className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
+                                  selectedPlan === 'Particular'
+                                  ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
+                                  : 'bg-transparent text-primary hover:bg-secondary/5'
+                                }`}
+                              >
+                                <div className="w-12 h-10 flex items-center justify-center">
+                                  <CreditCard size={28} className="text-secondary" />
+                                </div>
+                                <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
+                              </button>
+                            )}
+                            {insurancePlans
+                              .filter(p => p.name.toLowerCase() !== 'particular')
+                              .filter(plan => {
+                                if (spec.insurancePlans) {
+                                  return spec.insurancePlans.includes(plan.id);
+                                }
+                                return true;
+                              })
+                              .map(plan => (
+                              <button
+                                key={plan.id}
+                                onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
+                                className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
+                                  selectedPlan === plan.name
+                                  ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
+                                  : 'bg-transparent text-primary hover:bg-secondary/5'
+                                }`}
+                              >
+                                {plan.logo ? (
+                                  <img 
+                                    src={plan.logo} 
+                                    alt={plan.name} 
+                                    className="h-10 w-auto object-contain transition-all"
+                                  />
+                                ) : (
+                                  <div className="w-12 h-10 flex items-center justify-center">
+                                    <Verified size={28} className="text-secondary/40" />
+                                  </div>
+                                )}
+                                <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === plan.name ? 'text-secondary' : 'text-primary/70'}`}>{plan.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          )}
+        </div>
+
+        {!isAgendaFull && !isCarousel && (
+          <button 
+            disabled={!canBook}
+            onClick={handleWhatsAppClick}
+            id="btn-enviar-solicitacao"
+            data-event="agendamento"
+            className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
+              !canBook 
+              ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
+              : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2 shadow-2xl ring-4 ring-primary/20 animate-pulse'
+            }`}
+          >
+            <Chat size={18} />
+            {canBook ? 'Enviar sua solicitação' : 'Selecione dia, hora e plano'}
+          </button>
+        )}
+
+        {!isCarousel && (
+          <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
+            <div className="space-y-3">
+              <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
+                <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
+              </p>
+              <div className="text-[10px] bg-white/40 p-4 rounded-xl border border-secondary/5 text-primary/80 leading-relaxed space-y-3">
+                <p>
+                  💡 <span className="font-bold">Dica:</span> Verifique se o seu plano oferece telemedicina. Em muitos casos, o atendimento é imediato e funciona 24 horas.
+                </p>
+                <p>
+                  Na consulta, solicite ao médico uma guia de encaminhamento para psicoterapia com o CID do tratamento. Esse é um documento obrigatório para a autorização das sessões pelo plano de saúde.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isAdminUnlocked, shouldScrollToList, syncingSpecs, onSyncRequest }: CorpoClinicoProps) {
+  useEffect(() => {
+    if (shouldScrollToList) {
+      const element = document.getElementById('topo-especialistas');
+      if (element) {
+        setTimeout(() => {
+          const offset = 100;
+          const elementPosition = element.getBoundingClientRect().top;
+          const offsetPosition = (elementPosition || 0) + window.pageYOffset - offset;
+          window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
+        }, 300);
+      }
+    } else {
+      window.scrollTo(0, 0);
+    }
+  }, [shouldScrollToList]);
+
+  const [selectedAge, setSelectedAge] = useState<AgeGroup | null>(null);
+  const [selectedSpecificAges, setSelectedSpecificAges] = useState<number[]>([]);
+  const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
+  const [step, setStep] = useState<number>(1);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CORREÇÃO APLICADA: usa getActiveShifts() em vez de s.shifts diretamente.
+  // Isso garante que especialistas com agenda via Google Sheets sejam
+  // incluídos corretamente ao filtrar por turno (manhã, tarde ou noite).
+  // ─────────────────────────────────────────────────────────────────────────
+  const { exactMatches, alternativeMatches } = useMemo(() => {
+    const perfect = specialists.filter(s => {
+      const matchAgeGroup = !selectedAge || s.ageGroups.includes(selectedAge);
+      const matchSpecificAge = selectedSpecificAges.length === 0 ||
+        (s.attendedAges && selectedSpecificAges.some(age => s.attendedAges?.includes(age)));
+
+      const activeShifts = getActiveShifts(s);
+      const matchShift = selectedShifts.length === 0 ||
+        selectedShifts.some(shift => activeShifts.includes(shift));
+
+      return matchAgeGroup && matchSpecificAge && matchShift;
+    });
+
+    const alternatives = perfect.length === 0 ? specialists.filter(s => {
+      const matchAgeGroup = !selectedAge || s.ageGroups.includes(selectedAge);
+      const matchSpecificAge = selectedSpecificAges.length === 0 ||
+        (s.attendedAges && selectedSpecificAges.some(age => s.attendedAges?.includes(age)));
+
+      const activeShifts = getActiveShifts(s);
+      const hasDifferentShift = selectedShifts.length > 0 &&
+        !selectedShifts.some(shift => activeShifts.includes(shift));
+
+      return matchAgeGroup && matchSpecificAge && hasDifferentShift;
+    }) : [];
+
+    return { exactMatches: perfect, alternativeMatches: alternatives };
+  }, [specialists, selectedAge, selectedSpecificAges, selectedShifts]);
+
+  const hasResults = exactMatches.length > 0;
+  const specialistsToShow = hasResults ? exactMatches : alternativeMatches;
+
+  const toggleShift = (shift: Shift) => {
+    setSelectedShifts(prev => 
+      prev.includes(shift) ? prev.filter(s => s !== shift) : [...prev, shift]
+    );
+  };
+
+  const toggleSpecificAge = (age: number) => {
+    setSelectedSpecificAges(prev => 
+      prev.includes(age) ? prev.filter(a => a !== age) : [...prev, age]
+    );
+  };
+
+  const resetFilters = () => {
+    setSelectedAge(null);
+    setSelectedSpecificAges([]);
+    setSelectedShifts([]);
+    setStep(1);
+  };
+
+  const handleAgeGroupSelect = (age: AgeGroup) => {
+    setSelectedAge(age);
+    if (age === AgeGroup.Children || age === AgeGroup.Teens) setStep(1.5);
+    else setStep(3);
+  };
+
+  return (
+    <Layout activeScreen={Screen.CorpoClinico} onNavigate={onNavigate} settings={settings}>
+      <header id="topo-especialistas" className="section-padding bg-background pt-32 pb-12">
+        <div className="max-w-7xl mx-auto text-center px-6 space-y-6">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <span className="inline-block px-4 py-1.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-widest shadow-sm">
+              Encontre o especialista certo
+            </span>
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold text-primary tracking-tight mt-8">Especialistas</h1>
+            <p className="text-base md:text-lg text-on-surface-variant font-medium max-w-2xl mx-auto mt-6 leading-relaxed">
+              Especialistas dedicados ao acolhimento singular e ético.
+            </p>
+          </motion.div>
+        </div>
+      </header>
+
+      {/* Guide Stepper */}
+      <section className="px-6 pb-20">
+        <div className="max-w-4xl mx-auto bg-white rounded-[3.5rem] shadow-xl border border-outline-alt/30 overflow-hidden">
+          <div className="h-2 bg-surface-container">
+            <motion.div 
+              className="h-full bg-primary"
+              animate={{ width: `${(step / 3) * 100}%` }}
+            />
+          </div>
+          
+          <div className="p-8 md:p-16 space-y-12">
+            <div className="text-center space-y-4">
+              <span className="text-xs font-bold text-secondary uppercase tracking-[0.3em]">Passo {Math.floor(step)} de 3</span>
+              <h2 className="text-3xl font-bold text-primary">
+                {step === 1 && "Para quem você busca atendimento?"}
+                {step === 1.5 && "Qual a idade do paciente?"}
+                {step === 3 && "Preferência de horário?"}
+              </h2>
+            </div>
+
+            <AnimatePresence mode="wait">
+              {step === 1 && (
+                <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {Object.values(AgeGroup).map(age => (
+                    <button 
+                      key={age} 
+                      onClick={() => handleAgeGroupSelect(age)} 
+                      className={`p-8 rounded-[2rem] border-2 flex flex-col items-center gap-4 font-bold text-xl transition-all ${
+                        selectedAge === age ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-outline-alt/50 text-primary hover:border-primary'
+                      }`}
+                    >
+                      <div className={`p-4 rounded-2xl ${selectedAge === age ? 'bg-white/20' : 'bg-primary/5'}`}>
+                        {age.toLowerCase().includes('criança') && <Baby size={32} />}
+                        {age.toLowerCase().includes('adolescente') && <Users size={32} />}
+                        {age.toLowerCase().includes('adulto') && <User size={32} />}
+                        {age.toLowerCase().includes('idoso') && <Users size={32} />}
+                      </div>
+                      {age}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+
+              {step === 1.5 && (
+                <motion.div key="s15" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
+                  <div className="flex flex-wrap gap-3 justify-center">
+                    {Array.from({ length: 17 }, (_, i) => i + 1).map(age => (
+                      <button 
+                        key={age} 
+                        onClick={() => toggleSpecificAge(age)} 
+                        className={`w-12 h-12 rounded-full border-2 font-bold transition-all ${
+                          selectedSpecificAges.includes(age) ? 'bg-primary text-white border-primary shadow-md scale-110' : 'bg-white border-outline-alt/50 text-primary'
+                        }`}
+                      >
+                        {age}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex justify-center">
+                    <button onClick={() => setStep(3)} className="btn-primary">Continuar</button>
+                  </div>
+                </motion.div>
+              )}
+
+              {step === 3 && (
+                <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-10">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {Object.values(Shift).map(shift => (
+                      <button 
+                        key={shift} 
+                        onClick={() => toggleShift(shift)} 
+                        className={`p-8 rounded-[2rem] border-2 flex flex-col items-center gap-4 font-bold transition-all ${
+                          selectedShifts.includes(shift) ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-outline-alt/50 text-primary hover:border-primary'
+                        }`}
+                      >
+                        <div className={`p-4 rounded-2xl ${selectedShifts.includes(shift) ? 'bg-white/20' : 'bg-primary/5'}`}>
+                          {shift.toLowerCase().includes('manhã') || shift.toLowerCase().includes('matutino') ? <Sun size={32} /> : null}
+                          {shift.toLowerCase().includes('tarde') || shift.toLowerCase().includes('vespertino') ? <CloudSun size={32} /> : null}
+                          {shift.toLowerCase().includes('noite') || shift.toLowerCase().includes('noturno') ? <Moon size={32} /> : null}
+                        </div>
+                        {shift}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex justify-center flex-col sm:flex-row gap-4">
+                     <button onClick={resetFilters} className="btn-secondary">Recomeçar</button>
+                     <button onClick={() => setStep(4)} className="btn-primary">Ver Resultados</button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Results List */}
+        <div id="lista-especialistas" className="max-w-7xl mx-auto mt-32 space-y-20">
+          <div className="flex justify-between items-end border-b border-outline-alt/50 pb-8">
+            <h2 className="text-4xl font-bold text-primary tracking-tight">Especialistas Recomendados</h2>
+            <button onClick={resetFilters} className="text-secondary font-bold text-sm underline">Limpar filtros</button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+             {specialistsToShow.map(spec => (
+               <div key={spec.id}>
+                 <SpecialistCard 
+                   spec={spec} 
+                   insurancePlans={settings.insurancePlans || []} 
+                   isAdminUnlocked={isAdminUnlocked}
+                   isSyncing={!!syncingSpecs?.[spec.id]}
+                   onSyncRequest={() => onSyncRequest?.(spec.id)}
+                 />
+               </div>
+             ))}
+          </div>
+
+          {specialistsToShow.length === 0 && (
+            <div className="text-center py-20 bg-surface-container-low rounded-[4rem] border-2 border-dashed border-outline-alt/50">
+               <SentimentVeryDissatisfied size={64} className="mx-auto text-on-surface-variant/30" />
+               <p className="text-xl font-bold text-primary mt-6">Nenhum especialista atende a todos os critérios.</p>
+               <button onClick={resetFilters} className="btn-primary mt-8">Tentar outra busca</button>
+            </div>
+          )}
+        </div>
+      </section>
+    </Layout>
+  );
+}
+
+function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: HomeSettings }) {
+  return (
+    <Layout activeScreen={Screen.Agendamento} onNavigate={onNavigate} settings={settings}>
+      <header className="section-padding bg-background pt-32">
+        <div className="max-w-7xl mx-auto text-center space-y-6">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <span className="inline-block px-4 py-1.5 rounded-full bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest shadow-sm">
+              Inicie sua Jornada
+            </span>
+            <h1 className="text-5xl md:text-7xl font-extrabold text-primary tracking-tight mt-8">Agende sua <span className="text-secondary italic">Consulta</span></h1>
+            <p className="text-lg text-on-surface-variant font-medium max-w-2xl mx-auto mt-8 leading-relaxed">
+              O primeiro passo para o equilíbrio emocional começa aqui. Escolha o canal que mais lhe agrada.
+            </p>
+          </motion.div>
+        </div>
+      </header>
+
+      <section className="px-6 pb-20">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-8 lg:gap-12 items-start">
+          {/* Direct Contact Card */}
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="bg-primary text-white p-8 sm:p-12 md:p-20 rounded-[3rem] sm:rounded-[4rem] shadow-2xl relative overflow-hidden group">
+             <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-[100px] group-hover:scale-110 transition-transform duration-700"></div>
+             <div className="relative z-10 space-y-8">
+                <h3 className="text-4xl font-bold tracking-tight">Atendimento <br/><span className="text-secondary italic">Via WhatsApp</span></h3>
+                <p className="text-lg opacity-80 font-medium leading-relaxed">
+                  Para agendamentos rápidos, dúvidas sobre convênios ou horários disponíveis, fale diretamente com nossa recepção.
+                </p>
+                <div className="pt-4">
+                  <a 
+                    href="https://wa.me/5548999549041" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    onClick={() => trackWhatsAppClick('contato_section')}
+                    id="btn-whatsapp-contato-section"
+                    data-event="contato_whatsapp"
+                    className="inline-flex items-center gap-4 bg-white text-primary px-10 py-5 rounded-2xl font-bold text-lg hover:shadow-2xl transition-all active:scale-95"
+                  >
+                    <Chat size={24} /> Conversar Agora
+                  </a>
+                </div>
+                <div className="pt-8 space-y-4">
+                   <div className="flex items-center gap-4 text-sm font-bold opacity-60">
+                      <Verified size={20} /> Retorno em até 24h úteis
+                   </div>
+                   <div className="flex items-center gap-4 text-sm font-bold opacity-60">
+                      <CalendarMonth size={20} /> Diversas opções de horários
+                   </div>
+                </div>
+             </div>
+          </motion.div>
+
+          {/* Form Card */}
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-white p-8 sm:p-12 md:p-20 rounded-[3rem] sm:rounded-[4rem] border border-outline-alt/30 soft-shadow">
+             <div className="space-y-12">
+                <div className="space-y-2">
+                   <h3 className="text-3xl font-bold text-primary">Envie uma Mensagem</h3>
+                   <p className="text-on-surface-variant font-medium">Nós entraremos em contato com você.</p>
+                </div>
+                
+                <form className="space-y-8" onSubmit={(e) => e.preventDefault()}>
+                   <div className="grid md:grid-cols-2 gap-8">
+                      <div className="space-y-2">
+                         <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">Seu Nome</label>
+                         <input type="text" className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary shadow-sm" placeholder="Ex: Maria Silva" />
+                      </div>
+                      <div className="space-y-2">
+                         <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">Seu WhatsApp</label>
+                         <input type="tel" className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary shadow-sm" placeholder="Ex: (48) 99999-9999" />
+                      </div>
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-xs font-bold text-secondary uppercase tracking-widest pl-1">Mensagem (Opcional)</label>
+                      <textarea rows={4} className="w-full bg-surface-container-low border-2 border-transparent focus:border-primary focus:bg-white rounded-2xl p-5 outline-none transition-all font-medium text-primary shadow-sm resize-none" placeholder="Conte-nos brevemente como podemos ajudar..."></textarea>
+                   </div>
+                   <button className="w-full py-5 bg-secondary text-on-secondary font-bold text-lg rounded-2xl hover:shadow-xl transition-all active:scale-95" onClick={() => trackFormSubmit('contato')} id="btn-enviar-mensagem-contato" data-event="contato_form">
+                      Enviar Solicitação
+                   </button>
+                </form>
+             </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Insurance Requirement Disclaimer */}
+      <section className="px-6 pb-20 -mt-10">
+        <div className="max-w-7xl mx-auto">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="bg-secondary-container/30 border border-secondary/20 p-8 md:p-12 rounded-[3rem] relative overflow-hidden group"
+          >
+            <div className="absolute top-0 right-0 p-12 opacity-10 text-secondary group-hover:scale-110 transition-transform">
+              <Info size={120} />
+            </div>
+            <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
+              <div className="bg-white p-4 rounded-2xl shadow-sm text-secondary shrink-0">
+                <AssignmentTurnedIn size={32} />
+              </div>
+              <div className="space-y-4">
+                <h4 className="text-xl font-bold text-primary tracking-tight italic">Informação importante para quem for agendar pelo plano de saúde</h4>
+                <p className="text-on-surface-variant font-medium leading-relaxed max-w-4xl">
+                  Para agendamentos via <span className="text-secondary font-bold">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="text-secondary font-bold">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos. 
+                  <span className="block mt-4 text-sm bg-white/50 p-4 rounded-xl border border-outline-alt/30">
+                    💡 <span className="font-bold">Dica:</span> Se você não tiver o encaminhamento, verifique no aplicativo do seu plano se existe a opção de <span className="font-bold underline">teleatendimento</span>. É um processo rápido que pode auxiliar você neste momento de decisão.
+                  </span>
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Trust Section */}
+      <section className="section-padding bg-surface-container-low">
+        <div className="max-w-7xl mx-auto space-y-16">
+           <div className="text-center space-y-4">
+              <h2 className="text-3xl font-bold text-primary">Compromisso com o Bem-estar</h2>
+              <p className="text-on-surface-variant max-w-xl mx-auto font-medium">Na Clínica Hope, cada agendamento é o início de uma relação pautada no respeito e na ética profissional.</p>
+           </div>
+           
+           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              {[
+                { title: 'Sigilo Absoluto', icon: <VerifiedUser /> },
+                { title: 'Profissionais CRP', icon: <Verified /> },
+                { title: 'Localização Central', icon: <LocationOn /> },
+                { title: 'Preço Justo', icon: <Favorite /> }
+              ].map((item, i) => (
+                <div key={i} className="bg-white p-8 rounded-[2.5rem] flex flex-col items-center text-center space-y-4 border border-outline-variant/30">
+                   <div className="text-secondary">{item.icon}</div>
+                   <h4 className="font-bold text-primary tracking-tight">{item.title}</h4>
+                </div>
+              ))}
+           </div>
+        </div>
+      </section>
+    </Layout>
+  );
+}
+
+// --- Componente de Tela de Login (Versão Gmail v2) ---
+function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: Screen, transition?: TransitionType) => void; onUnlock: () => void; settings: HomeSettings }) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const user = await loginWithGoogle();
+      if (user.email === 'scjorge1908@gmail.com') {
+        onUnlock();
+        onNavigate(Screen.Admin, 'push');
+      } else {
+        setError('Acesso negado. Apenas o administrador scjorge1908@gmail.com pode acessar o painel.');
+      }
+    } catch (err: any) {
+      if (err.message?.includes('popup-closed-by-user')) {
+        setError('O login foi cancelado.');
+      } else {
+        setError('Houve um erro ao tentar fazer login com Google.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Layout activeScreen={Screen.Admin} onNavigate={onNavigate} settings={settings}>
+      <div className="min-h-[70vh] flex items-center justify-center px-6">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full bg-white rounded-[3rem] p-10 md:p-16 soft-shadow border border-outline-alt/30 space-y-10"
+        >
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mx-auto mb-6">
+              <VerifiedUser size={32} />
+            </div>
+            <h1 className="text-3xl font-bold text-primary tracking-tight">Área Restrita</h1>
+            <p className="text-on-surface-variant font-medium">Acesso exclusivo para administradores da Clínica Hope.</p>
+          </div>
+
+          <div className="space-y-6">
+            <button 
+              onClick={handleGoogleLogin}
+              disabled={isLoading}
+              className="w-full py-5 bg-white border border-outline-alt/30 text-primary rounded-2xl font-bold text-lg hover:bg-surface-container-low transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50 shadow-sm"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              {isLoading ? 'Conectando...' : 'Entrar com Gmail'}
+            </button>
+
+            {error && (
+              <p className="text-red-500 text-sm font-bold text-center italic">{error}</p>
+            )}
+            
+            <p className="text-[10px] text-center text-on-surface-variant/40 uppercase font-black tracking-widest">
+              Acesso exclusivo para: scjorge1908@gmail.com
+            </p>
+          </div>
+
+          <button 
+            onClick={() => onNavigate(Screen.Home, 'push_back')}
+            className="w-full text-center text-sm font-bold text-on-surface-variant/60 hover:text-primary transition-colors underline"
+          >
+            Voltar para o site
+          </button>
+        </motion.div>
+      </div>
+    </Layout>
+  );
+}
+
+interface AgendaSyncMonitorProps {
+  specialists: Specialist[];
+  isSyncingAll: boolean;
+  isQuotaLocked: boolean;
+  syncStatusAll: string;
+  syncResultsAll: { name: string; status: 'success' | 'error'; message: string }[];
+  onSyncAll: () => Promise<void>;
+  onSyncSingle: (s: Specialist) => Promise<void>;
+  syncingId: string | null;
+}
+
+function AgendaSyncMonitor({
+  specialists,
+  isSyncingAll,
+  isQuotaLocked,
+  syncStatusAll,
+  syncResultsAll,
+  onSyncAll,
+  onSyncSingle,
+  syncingId
+}: AgendaSyncMonitorProps) {
+  // Filter specialists with integration configured
+  const integratedSpecialists = useMemo(() => {
+    return specialists.filter(s => s.googleAppsScriptUrl && s.googleAppsScriptUrl.trim() !== '');
+  }, [specialists]);
+
+  // Statistics
+  const stats = useMemo(() => {
+    const total = integratedSpecialists.length;
+    const successes = integratedSpecialists.filter(s => s.syncStatus === 'success').length;
+    const failures = integratedSpecialists.filter(s => s.syncStatus === 'error').length;
+    const pending = total - successes - failures;
+    return { total, successes, failures, pending };
+  }, [integratedSpecialists]);
+
+  // If there are failures, show a prominent banner
+  const hasFailures = stats.failures > 0;
+
+  return (
+    <div className="bg-gradient-to-b from-slate-50 to-white border border-slate-200/80 rounded-[2rem] p-6 sm:p-8 space-y-6 shadow-sm">
+      {/* Header and Sync All Button */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+        <div className="space-y-1">
+          <h3 className="text-lg font-black uppercase text-slate-950 tracking-wider flex items-center gap-2">
+            <RefreshCw size={18} className={`text-indigo-600 ${isSyncingAll ? 'animate-spin' : ''}`} />
+            Monitor de Sincronização de Agendas
+          </h3>
+          <p className="text-xs text-slate-500 font-medium">
+            Monitore e sincronize as agendas de integração do Google Sheets com o site clínico.
+          </p>
+        </div>
+        
+        <button
+          disabled={isSyncingAll || !!syncingId || isQuotaLocked}
+          onClick={onSyncAll}
+          className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm shrink-0 cursor-pointer ${
+            isQuotaLocked
+              ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300'
+              : isSyncingAll
+              ? 'bg-indigo-200 text-indigo-700 cursor-wait'
+              : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-200 hover:scale-[1.02] active:scale-95'
+          }`}
+        >
+          {isSyncingAll ? (
+            <>
+              <RefreshCw size={14} className="animate-spin" />
+              Sincronizando Tudo...
+            </>
+          ) : (
+            <>
+              <RefreshCw size={14} />
+              Sincronizar Todas as Agendas
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Summary Bento Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl flex flex-col justify-between">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Integradas</span>
+          <span className="text-2xl font-black text-slate-950 mt-1">{stats.total}</span>
+        </div>
+        <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-2xl flex flex-col justify-between">
+          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Sucessos</span>
+          <span className="text-2xl font-black text-emerald-700 mt-1">{stats.successes}</span>
+        </div>
+        <div className={`p-4 rounded-2xl flex flex-col justify-between border transition-all ${
+          hasFailures 
+            ? 'bg-rose-50 border-rose-200/60 animate-pulse' 
+            : 'bg-slate-50/50 border-slate-100'
+        }`}>
+          <span className={`text-[10px] font-bold uppercase tracking-wider ${hasFailures ? 'text-rose-600' : 'text-slate-500'}`}>Falhas</span>
+          <span className={`text-2xl font-black mt-1 ${hasFailures ? 'text-rose-700' : 'text-slate-950'}`}>{stats.failures}</span>
+        </div>
+        <div className="bg-slate-50/50 border border-slate-100 p-4 rounded-2xl flex flex-col justify-between">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sem Sincronização</span>
+          <span className="text-2xl font-black text-slate-950 mt-1">{stats.pending}</span>
+        </div>
+      </div>
+
+      {/* Prominent Failure Alert Banner */}
+      {hasFailures && (
+        <div className="bg-rose-50 border border-rose-200/50 rounded-2xl p-5 flex items-start gap-4">
+          <div className="w-10 h-10 bg-rose-600 text-white rounded-xl flex items-center justify-center shrink-0 shadow-md shadow-rose-200">
+            <AlertTriangle size={20} />
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-black uppercase text-rose-800 tracking-wider">Falha de Sincronização Detectada!</p>
+            <p className="text-xs text-rose-700 font-medium leading-relaxed">
+              Algumas agendas de especialistas falharam ao sincronizar. Verifique se as URLs dos scripts estão corretas, se foram publicadas como "Qualquer pessoa" e se o banco de dados não atingiu a cota diária de escrita.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Running Sync Feedback */}
+      {(isSyncingAll && syncStatusAll) && (
+        <div className="bg-indigo-50 border border-indigo-100/50 rounded-2xl p-4 flex items-center gap-3">
+          <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />
+          <p className="text-xs font-semibold text-indigo-950 uppercase tracking-wide">
+            {syncStatusAll}
+          </p>
+        </div>
+      )}
+
+      {/* Detailed List */}
+      <div className="space-y-3">
+        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Acompanhamento por Especialista:</p>
+        
+        {integratedSpecialists.length === 0 ? (
+          <div className="text-center py-10 bg-slate-50/50 border border-dashed border-slate-200 rounded-2xl space-y-2">
+            <p className="text-sm font-bold text-slate-600">Nenhuma especialista integrada</p>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+              Não há nenhuma especialista configurada com uma URL do Google Apps Script ainda. Adicione as URLs de integração nas fichas dos profissionais na aba <strong>Especialistas</strong>.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-inner-sm">
+            {integratedSpecialists.map((s) => {
+              const isSyncingThis = syncingId === s.id;
+              return (
+                <div key={s.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
+                  {/* Specialist info */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img src={s.img} alt={s.name} className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-100 shadow-sm" />
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-950 text-sm truncate">{s.name}</p>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide mt-0.5">{s.crp}</p>
+                    </div>
+                  </div>
+
+                  {/* Sync status and message */}
+                  <div className="flex-1 flex flex-col sm:items-end gap-1.5 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      {/* Last Sync Timestamp */}
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        Ult. Sinc: {s.lastSync ? new Date(s.lastSync).toLocaleString('pt-BR') : 'Nunca'}
+                      </span>
+                      
+                      {/* Status Badge */}
+                      {s.syncStatus === 'success' ? (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50">
+                          <Check size={10} className="stroke-[3]" />
+                          Sucesso
+                        </span>
+                      ) : s.syncStatus === 'error' ? (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200/50">
+                          <AlertCircle size={10} className="stroke-[3]" />
+                          Falha
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider bg-slate-50 text-slate-500 border border-slate-200/50">
+                          <Clock size={10} />
+                          Pendente
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Detailed Message */}
+                    {s.syncMessage && (
+                      <p className={`text-[11px] font-medium leading-tight truncate max-w-md ${
+                        s.syncStatus === 'error' ? 'text-rose-600 font-bold' : 'text-slate-500'
+                      }`}>
+                        {s.syncMessage}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Sync button */}
+                  <div className="flex items-center shrink-0">
+                    <button
+                      disabled={isSyncingAll || !!syncingId || isQuotaLocked}
+                      onClick={() => onSyncSingle(s)}
+                      className={`p-2.5 rounded-xl border transition-all duration-200 cursor-pointer ${
+                        isSyncingThis
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-600 animate-spin cursor-wait'
+                          : s.syncStatus === 'error'
+                          ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100 hover:text-rose-700 hover:shadow-sm'
+                          : 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 hover:shadow-sm'
+                      }`}
+                      title="Sincronizar esta agenda individualmente"
+                    >
+                      <RefreshCw size={14} className={isSyncingThis ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface AdminScreenProps {
+  onNavigate: (screen: Screen, transition?: TransitionType) => void;
+  settings: HomeSettings;
+  onUpdateSettings: (settings: HomeSettings) => void;
+  specialists: Specialist[];
+  onUpdateSpecialists: (specialists: Specialist[]) => void;
+  approaches: Approach[];
+  onUpdateApproaches: (approaches: Approach[]) => void;
+  onLogout: () => void;
+  insurancePlans: InsurancePlan[];
+  onUpdateInsurance: (plans: InsurancePlan[]) => void;
+  subleaseRooms: SubleaseRoom[];
+  onUpdateSubleaseRooms: (rooms: SubleaseRoom[]) => void;
+  subleaseBookings: SubleaseBooking[];
+  onUpdateSubleaseBookingStatus: (id: string, status: 'confirmed' | 'cancelled') => void;
+  psicoeducacaoArticles: PsicoeducacaoArticle[];
+  onUpdatePsicoeducacaoArticles: (articles: PsicoeducacaoArticle[]) => void;
+  isDataLoaded: boolean;
+  subleaseAdminSettings?: any;
+  subleaseRoomsList?: any[];
+  subleaseBookingsList?: any[];
+  subleaseUsersList?: any[];
+  onUpdateSubleaseSettings?: (settings: any) => Promise<void>;
+  onCancelSubleaseBooking?: (bookingId: string) => Promise<void>;
+  onUpdateSubleaseRoomsList?: (rooms: any[]) => Promise<void>;
+  onUpdateSubleaseUsersList?: (users: any[]) => Promise<void>;
+}
+
+function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: { 
+  rooms: SubleaseRoom[], 
+  user: any, 
+  onBooking: (roomId: string, day: string, dayLabel: string, items: any[], totalPrice: number) => void,
+  onNavigate: (s: Screen) => void,
+  settings: HomeSettings
+}) {
+  const [selectedRoom, setSelectedRoom] = useState<SubleaseRoom | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [cart, setCart] = useState<{
+    type: 'block' | 'hour';
+    periodId: string;
+    slotId?: string;
+    label: string;
+    price: number;
+  }[]>([]);
+
+  const totalPrice = cart.reduce((sum, item) => sum + item.price, 0);
+
+  const toggleItem = (item: {
+    type: 'block' | 'hour';
+    periodId: string;
+    slotId?: string;
+    label: string;
+    price: number;
+  }) => {
+    const exists = cart.find(i => 
+      i.type === item.type && 
+      i.periodId === item.periodId && 
+      i.slotId === item.slotId
+    );
+    if (exists) {
+      setCart(cart.filter(i => i !== exists));
+    } else {
+      if (item.type === 'block') {
+        setCart([...cart.filter(i => !(i.type === 'hour' && i.periodId === item.periodId)), item]);
+      } else {
+        const blockSelected = cart.find(i => i.type === 'block' && i.periodId === item.periodId);
+        if (blockSelected) {
+          setCart([...cart.filter(i => i !== blockSelected), item]);
+        } else {
+          setCart([...cart, item]);
+        }
+      }
+    }
+  };
+
+  const handleBooking = () => {
+    if (!user) {
+      onNavigate(Screen.Login);
+      return;
+    }
+    if (!selectedRoom || !selectedDay || cart.length === 0) return;
+
+    onBooking(selectedRoom.id, '2026-05-10', selectedDay, cart, totalPrice);
+    setSelectedRoom(null);
+    setCart([]);
+    setSelectedDay(null);
+  };
+
+  if (selectedRoom) {
+    return (
+      <Layout activeScreen={Screen.Sublocacao} onNavigate={onNavigate} settings={settings}>
+        <div className="min-h-screen bg-background animate-fade-in pb-20 pt-28">
+          <div className="sticky top-20 z-40 bg-white/95 backdrop-blur-xl border-b border-outline/10 px-6 py-4 flex justify-between items-center shadow-md -mt-4 mb-8">
+            <button 
+              onClick={() => { setSelectedRoom(null); setCart([]); setSelectedDay(null); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container text-primary font-black uppercase text-[10px] tracking-widest hover:bg-primary hover:text-white transition-all group"
+            >
+              <ArrowBack size={14} className="group-hover:-translate-x-1 transition-transform" />
+              Ver Todas as Salas
+            </button>
+            <div className="hidden lg:flex items-center gap-4">
+               <h2 className="text-lg font-black text-primary italic font-serif tracking-tighter truncate max-w-xs">{selectedRoom.name}</h2>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="hidden md:flex flex-col items-end">
+                <span className="text-[8px] font-black text-on-surface-variant/40 uppercase tracking-widest">Total:</span>
+                <span className="text-lg font-black text-primary tracking-tighter">R$ {totalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <button 
+                onClick={handleBooking}
+                disabled={cart.length === 0}
+                className="px-6 py-3 bg-primary text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30"
+              >
+                Reservar Agora
+              </button>
+            </div>
+          </div>
+
+          <div className="max-w-[1600px] mx-auto px-6 md:px-8">
+            <div className="flex flex-col lg:flex-row gap-8">
+              <div className="lg:w-1/4 space-y-6">
+                <div className="space-y-4">
+                  <div className="aspect-[4/3] rounded-[2rem] overflow-hidden border border-outline/10 modern-shadow">
+                    <img src={selectedRoom.photos[0]} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="space-y-2">
+                    <span className="text-[9px] font-black text-secondary uppercase tracking-[0.2em] leading-none">Ambiente Clínico</span>
+                    <p className="text-on-surface-variant font-medium leading-normal italic text-sm opacity-80">"{selectedRoom.description}"</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedRoom.amenities.map(amenity => (
+                      <span key={amenity} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 text-primary text-[9px] font-black uppercase tracking-widest rounded-lg border border-primary/5 transition-colors hover:bg-primary/10">
+                        {amenity === 'WiFi' && <Wifi size={12} />}
+                        {amenity === 'Café' && <ConciergeBell size={12} />}
+                        {amenity === 'Ar-condicionado' && <Snowflake size={12} />}
+                        {amenity === 'Sala de espera' && <Users size={12} />}
+                        {amenity === 'Banheiro' && <Accessibility size={12} />}
+                        {amenity === 'Rádio' && <Volume2 size={12} />}
+                        {amenity === 'Portaria 24h' && <ShieldCheck size={12} />}
+                        {amenity}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-surface-container/40 border border-outline/5 p-6 rounded-[2rem] space-y-4">
+                  <div className="flex items-center gap-2 text-primary opacity-60">
+                    <Info size={16} />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Informações</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex gap-3">
+                      <div className="w-6 h-6 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+                        <span className="text-[8px] font-black text-primary">1</span>
+                      </div>
+                      <p className="text-[10px] font-medium text-on-surface-variant/70 leading-tight">Escolha hora avulsa ou blocos.</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="w-6 h-6 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+                        <span className="text-[8px] font-black text-primary">2</span>
+                      </div>
+                      <p className="text-[10px] font-medium text-on-surface-variant/70 leading-tight">Aprovação rápida via WhatsApp.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="lg:w-3/4 space-y-6">
+                <div className="bg-white rounded-[3rem] border border-outline-alt/20 modern-shadow p-6 md:p-10 space-y-8">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-secondary/10 rounded-xl flex items-center justify-center">
+                         <CalendarMonth size={20} className="text-secondary" />
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-black text-primary tracking-tighter italic font-serif leading-none">Dias Disponíveis</h4>
+                        <p className="text-[9px] font-bold text-on-surface-variant/40 uppercase tracking-widest mt-1">Selecione o dia da semana</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.keys(selectedRoom.schedule).map(day => (
+                        <button
+                          key={day}
+                          onClick={() => setSelectedDay(day)}
+                          className={`px-5 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${
+                            selectedDay === day 
+                              ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-105' 
+                              : 'bg-surface-container/50 text-primary hover:bg-white hover:border-outline-alt/30 border border-transparent'
+                          }`}
+                        >
+                          {day}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="h-px bg-outline/10 w-full" />
+
+                  {selectedDay ? (
+                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-fade-in">
+                      {selectedRoom.schedule[selectedDay].periods.map(period => (
+                        <div key={period.id} className="bg-surface-container/20 rounded-[2.5rem] p-6 border border-outline-alt/10 flex flex-col justify-between space-y-6">
+                           <div className="space-y-4">
+                             <div className="flex items-start justify-between">
+                               <div className="flex items-center gap-3">
+                                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                                   period.id === 'manha' ? 'bg-amber-50 text-amber-600' : 
+                                   period.id === 'tarde' ? 'bg-orange-50 text-orange-600' : 
+                                   'bg-indigo-50 text-indigo-600'
+                                 }`}>
+                                   {period.id === 'manha' ? <Sun size={16} /> : period.id === 'tarde' ? <CloudSun size={16} /> : <Cloud size={16} />}
+                                 </div>
+                                 <div>
+                                   <h5 className="text-[14px] font-black text-primary uppercase tracking-tighter italic font-serif leading-none">
+                                     {period.id === 'manha' ? 'Matutino' : period.id === 'tarde' ? 'Vespertino' : 'Noturno'}
+                                   </h5>
+                                   <p className="text-[8px] font-bold text-on-surface-variant/40 uppercase tracking-widest mt-1">{period.start} — {period.end}</p>
+                                 </div>
+                               </div>
+                             </div>
+                             <div className="grid grid-cols-4 gap-2">
+                               {period.slots.map(slot => {
+                                 const isSelected = cart.find(i => i.type === 'hour' && i.periodId === period.id && i.slotId === slot.id);
+                                 const isBlockSelected = cart.find(i => i.type === 'block' && i.periodId === period.id);
+                                 return (
+                                   <button
+                                     key={slot.id}
+                                     disabled={!slot.available || !!isBlockSelected}
+                                     onClick={() => toggleItem({ type: 'hour', periodId: period.id, slotId: slot.id, label: `${slot.start}`, price: period.priceHour ?? 0 })}
+                                     className={`relative flex flex-col items-center justify-center py-2.5 rounded-lg border transition-all duration-300 ${
+                                       isBlockSelected 
+                                         ? 'bg-secondary/5 border-secondary/10 text-secondary/30 grayscale opacity-40 scale-95 cursor-default' 
+                                         : isSelected
+                                           ? 'bg-primary text-white border-primary shadow-md z-10'
+                                           : 'bg-white border-outline-alt/10 text-primary hover:border-primary/40 hover:-translate-y-1'
+                                     }`}
+                                   >
+                                     <span className="text-[11px] font-black tracking-tighter">{slot.start}</span>
+                                     <div className={`absolute top-1 right-1 w-0.5 h-0.5 rounded-full ${isSelected || isBlockSelected ? 'bg-secondary' : 'bg-outline/10'}`} />
+                                   </button>
+                                 );
+                               })}
+                             </div>
+                           </div>
+                           <button
+                             onClick={() => toggleItem({ type: 'block', periodId: period.id, label: `Bloco ${period.id === 'manha' ? 'Manhã' : period.id === 'tarde' ? 'Tarde' : 'Noite'}`, price: period.priceBlock })}
+                             className={`w-full py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                               cart.find(i => i.type === 'block' && i.periodId === period.id)
+                                ? 'bg-secondary text-white border-secondary shadow-md'
+                                : 'bg-white text-secondary border-secondary/20 hover:border-secondary hover:bg-secondary/5'
+                             }`}
+                           >
+                             Reservar Bloco (R$ {(period.priceBlock ?? 0).toFixed(2)})
+                           </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-16 text-center space-y-4 max-w-sm mx-auto">
+                      <div className="w-16 h-16 bg-surface-container/50 rounded-full flex items-center justify-center mx-auto opacity-20">
+                        <CalendarMonth size={32} className="text-primary" />
+                      </div>
+                      <p className="text-[11px] font-medium text-on-surface-variant/50 uppercase tracking-widest italic">Selecione um dia acima</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout activeScreen={Screen.Sublocacao} onNavigate={onNavigate} settings={settings}>
+      <div className="min-h-screen bg-background pt-40 pb-24">
+        <div className="max-w-7xl mx-auto px-8">
+          <div className="text-center space-y-6 mb-24">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              className="inline-flex items-center gap-3 px-6 py-2 bg-secondary/10 text-secondary rounded-full text-xs font-black uppercase tracking-widest mb-4"
+            >
+              <div className="w-2 h-2 bg-secondary rounded-full animate-pulse" />
+              Infraestrutura Completa
+            </motion.div>
+            <h1 className="text-6xl md:text-8xl font-black text-primary tracking-tighter leading-none italic font-serif">
+              Sublocação <br/>
+              <span className="text-secondary drop-shadow-sm">de Salas</span>
+            </h1>
+            <p className="text-on-surface-variant max-w-2xl mx-auto text-lg font-medium leading-relaxed italic opacity-80">
+              Salas equipadas e confortáveis para atendimentos clínicos, pensadas para o seu bem-estar e dos seus pacientes.
+            </p>
+          </div>
+
+          {rooms.length === 0 ? (
+            <div className="text-center py-24 bg-surface-container rounded-[3rem] border-2 border-dashed border-outline-alt/30 max-w-2xl mx-auto space-y-4">
+              <div className="w-16 h-16 bg-primary/5 rounded-full flex items-center justify-center mx-auto">
+                <Info size={32} className="text-primary/40" />
+              </div>
+              <h3 className="text-xl font-bold text-primary">Nenhuma sala disponível</h3>
+              <p className="text-on-surface-variant font-medium text-sm">
+                No momento não temos salas disponíveis para sublocação. <br/>
+                Por favor, verifique novamente mais tarde ou entre em contato.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
+              {rooms.map(room => (
+                <motion.div 
+                  key={room.id}
+                  layout
+                  whileHover={{ y: -10 }}
+                  className="bg-white rounded-[4rem] overflow-hidden soft-shadow border border-outline-alt/20 flex flex-col group transition-all"
+                >
+                  <div className="h-80 relative overflow-hidden">
+                    <img src={room.photos[0]} alt={room.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+                    <div className="absolute top-8 left-8 bg-white/95 backdrop-blur px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest text-primary border border-white shadow-sm">
+                      Disponível para Reserva
+                    </div>
+                  </div>
+                  <div className="p-10 flex-grow space-y-8">
+                    <div className="space-y-4">
+                      <h3 className="text-3xl font-bold text-primary tracking-tight leading-none italic font-serif">{room.name}</h3>
+                      <p className="text-sm text-on-surface-variant/70 font-medium line-clamp-3 italic leading-relaxed">"{room.description}"</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {room.amenities.slice(0, 4).map(amenity => (
+                        <span key={amenity} className="inline-flex items-center gap-2 px-4 py-2 bg-surface-container text-primary text-[10px] font-black uppercase tracking-widest rounded-xl border border-outline/10">
+                          {amenity === 'WiFi' && <Wifi size={14} />}
+                          {amenity === 'Ar-condicionado' && <Snowflake size={14} />}
+                          {amenity}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="space-y-4 pt-8 border-t border-outline/10">
+                      <div className="flex items-center gap-3 text-secondary">
+                        <CalendarMonth size={18} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Atendimento Disponível</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.keys(room.schedule).map(day => (
+                          <span key={day} className="px-3 py-1.5 bg-secondary/5 text-secondary text-[9px] font-black uppercase rounded-xl border border-secondary/10">
+                            {day}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setSelectedRoom(room)}
+                      className="w-full py-6 bg-primary text-white rounded-[2rem] font-black text-sm hover:shadow-2xl hover:shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-4 group"
+                    >
+                      <AssignmentTurnedIn size={22} className="group-hover:rotate-12 transition-transform" />
+                      Explorar Ambientes e Horários
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Layout>
+  );
+}
+
+function AdminScreen({ 
+  onNavigate, 
+  settings, 
+  onUpdateSettings, 
+  specialists, 
+  onUpdateSpecialists, 
+  approaches, 
+  onUpdateApproaches, 
+  onLogout,
+  insurancePlans,
+  onUpdateInsurance,
+  subleaseRooms,
+  onUpdateSubleaseRooms,
+  subleaseBookings,
+  onUpdateSubleaseBookingStatus,
+  psicoeducacaoArticles,
+  onUpdatePsicoeducacaoArticles,
+  isDataLoaded,
+  subleaseAdminSettings,
+  subleaseRoomsList = [],
+  subleaseBookingsList = [],
+  subleaseUsersList = [],
+  onUpdateSubleaseSettings = async () => {},
+  onCancelSubleaseBooking = async () => {},
+  onUpdateSubleaseRoomsList = async () => {},
+  onUpdateSubleaseUsersList = async () => {}
+}: AdminScreenProps) {
+  const [localSettings, setLocalSettings] = useState<HomeSettings>(settings);
+  const [localSpecialists, setLocalSpecialists] = useState<Specialist[]>(specialists);
+  const [localApproaches, setLocalApproaches] = useState<Approach[]>(approaches);
+  const [localInsurancePlans, setLocalInsurancePlans] = useState<InsurancePlan[]>(insurancePlans);
+  const [localSubleaseRooms, setLocalSubleaseRooms] = useState<SubleaseRoom[]>(subleaseRooms);
+  const [localArticles, setLocalArticles] = useState<PsicoeducacaoArticle[]>(psicoeducacaoArticles);
+  const [editingArticle, setEditingArticle] = useState<PsicoeducacaoArticle | null>(null);
+
+  const [hasInitialized, setHasInitialized] = useState(false);
+  const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens' | 'psicoeducacao' | 'sublocacao' | 'reservas_sublocacao' | 'marketing'>('home');
+  const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
+
+  const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | 'sublease_1' | 'sublease_2' | null>(null);
+  const [croppingItemId, setCroppingItemId] = useState<string | null>(null);
+  const [cropImage, setCropImage] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [isQuotaLocked, setIsQuotaLocked] = useState(false);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [syncStatusAll, setSyncStatusAll] = useState('');
+  const [syncResultsAll, setSyncResultsAll] = useState<{name: string, status: 'success' | 'error', message: string}[]>([]);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const lock = localStorage.getItem('firestore_quota_exhausted');
+    if (lock) {
+      const lockTime = parseInt(lock);
+      if (Date.now() - lockTime < 12 * 60 * 60 * 1000) {
+        setIsQuotaLocked(true);
+      } else {
+        localStorage.removeItem('firestore_quota_exhausted');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isDataLoaded && !hasInitialized) {
+      setLocalSpecialists(specialists);
+      setLocalSettings(settings);
+      setLocalApproaches(approaches);
+      setLocalInsurancePlans(insurancePlans);
+      setLocalSubleaseRooms(subleaseRooms);
+      setLocalArticles(psicoeducacaoArticles);
+      setHasInitialized(true);
+    }
+  }, [isDataLoaded, specialists, settings, approaches, insurancePlans, subleaseRooms, psicoeducacaoArticles, hasInitialized]);
+
+  // Keep articles in sync with realtime updates
+  useEffect(() => {
+    if (hasInitialized) {
+      setLocalArticles(psicoeducacaoArticles);
+    }
+  }, [psicoeducacaoArticles, hasInitialized]);
+
+  const addRoom = () => {
+    const id = Date.now().toString();
+    const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    const schedule: any = {};
+    days.forEach(day => {
+      schedule[day] = {
+        periods: [
+          {
+            id: 'manha', start: '07:00', end: '12:00', available: true, priceBlock: 550, priceHour: 31.9,
+            slots: [
+              { id: 'h7', start: '07:00', end: '08:00', available: true },
+              { id: 'h8', start: '08:00', end: '09:00', available: true },
+              { id: 'h9', start: '09:00', end: '10:00', available: true },
+              { id: 'h10', start: '10:00', end: '11:00', available: true },
+              { id: 'h11', start: '11:00', end: '12:00', available: true },
+            ]
+          },
+          {
+            id: 'tarde', start: '13:00', end: '17:00', available: true, priceBlock: 550, priceHour: 31.9,
+            slots: [
+              { id: 'h13', start: '13:00', end: '14:00', available: true },
+              { id: 'h14', start: '14:00', end: '15:00', available: true },
+              { id: 'h15', start: '15:00', end: '16:00', available: true },
+              { id: 'h16', start: '16:00', end: '17:00', available: true },
+            ]
+          },
+          {
+            id: 'noite', start: '18:00', end: '21:00', available: true, priceBlock: 420, priceHour: 31.9,
+            slots: [
+              { id: 'h18', start: '18:00', end: '19:00', available: true },
+              { id: 'h19', start: '19:00', end: '20:00', available: true },
+              { id: 'h20', start: '20:00', end: '21:00', available: true },
+            ]
+          }
+        ]
+      };
+    });
+
+    const newRoom: SubleaseRoom = {
+      id,
+      name: 'Nova Sala ' + id.slice(-3),
+      description: 'Descrição elegante e detalhada da sala clínica...',
+      amenities: ['WiFi', 'Ar-condicionado', 'Café', 'Sala de espera'],
+      photos: [
+        'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&q=80&w=1170',
+        'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&q=80&w=1170'
+      ],
+      schedule
+    };
+    setLocalSubleaseRooms([...localSubleaseRooms, newRoom]);
+  };
+
+  const removeRoom = async (id: string) => {
+    if (confirm("Deseja remover esta sala?")) {
+      const updated = localSubleaseRooms.filter(r => r.id !== id);
+      setLocalSubleaseRooms(updated);
+      await onUpdateSubleaseRooms(updated);
+    }
+  };
+
+  const updateRoom = (id: string, updates: Partial<SubleaseRoom>) => {
+    setLocalSubleaseRooms(localSubleaseRooms.map(r => r.id === id ? { ...r, ...updates } as SubleaseRoom : r));
+  };
+
+  const addSpecialist = () => {
+    const id = Date.now().toString();
+    const newSpec: Specialist = {
+      id,
+      name: 'Novo Especialista',
+      crp: 'CRP --/-----',
+      spec: 'Especialidade',
+      tags: ['Tag'],
+      desc: 'Descrição aqui...',
+      img: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=688',
+      ageGroups: [AgeGroup.Adults],
+      shifts: [Shift.Morning],
+      insurancePlans: []
+    };
+    setLocalSpecialists([newSpec, ...localSpecialists]);
+  };
+
+  const removeSpecialist = async (id: string) => {
+    if (confirm("Deseja remover este especialista?")) {
+      const updated = localSpecialists.filter(s => s.id !== id);
+      setLocalSpecialists(updated);
+      await onUpdateSpecialists(updated);
+    }
+  };
+
+  const updateSpecialist = (id: string, updates: Partial<Specialist>) => {
+    setLocalSpecialists(localSpecialists.map(s => s.id === id ? { ...s, ...updates } : s));
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, specId: string) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const reader = new FileReader();
+      reader.addEventListener('load', () => {
+        setCropImage(reader.result as string);
+        setCroppingItemId(specId);
+        setCroppingType('specialist');
+      });
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  const onCropComplete = (croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  };
+
+  const applyCrop = async () => {
+    if (cropImage && croppedAreaPixels && croppingType) {
+      try {
+        const croppedImg = await getCroppedImg(cropImage, croppedAreaPixels);
+        
+        if (croppingType === 'specialist' && croppingItemId) {
+          updateSpecialist(croppingItemId, { img: croppedImg });
+        } else if (croppingType === 'logo') {
+          setLocalSettings({ ...localSettings, logoUrl: croppedImg });
+        } else if (croppingType === 'hero') {
+          setLocalSettings({ ...localSettings, heroImageUrl: croppedImg });
+        } else if (croppingType === 'insurance' && croppingItemId) {
+          updateInsurance(croppingItemId, { logo: croppedImg });
+        } else if (croppingType === 'sublease_1' && croppingItemId) {
+          const room = localSubleaseRooms.find(r => r.id === croppingItemId);
+          if (room) {
+            updateRoom(croppingItemId, { photos: [croppedImg, room.photos[1]] as [string, string] });
+          }
+        } else if (croppingType === 'sublease_2' && croppingItemId) {
+          const room = localSubleaseRooms.find(r => r.id === croppingItemId);
+          if (room) {
+            updateRoom(croppingItemId, { photos: [room.photos[0], croppedImg] as [string, string] });
+          }
+        }
+
+        setCroppingItemId(null);
+        setCroppingType(null);
+        setCropImage(null);
+        setZoom(1);
+        setCrop({ x: 0, y: 0 });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  const handleSave = async (id: string) => {
+    setSaveStatus({ ...saveStatus, [id]: true });
+    await onUpdateSpecialists(localSpecialists);
+    setTimeout(() => {
+      setSaveStatus(prev => ({ ...prev, [id]: false }));
+    }, 2000);
+  };
+
+  const syncAllSchedules = async () => {
+    if (isQuotaLocked) {
+      alert('❌ ERRO DE COTA: O banco de dados está temporariamente em modo leitura. Tente novamente amanhã.');
+      return;
+    }
+
+    const specialistsToSync = localSpecialists.filter(s => s.googleAppsScriptUrl && s.googleAppsScriptUrl.trim() !== '');
+    if (specialistsToSync.length === 0) {
+      alert('ℹ️ Nenhuma psicóloga possui uma URL de integração configurada.');
+      return;
+    }
+
+    if (!confirm(`Deseja sincronizar as agendas de ${specialistsToSync.length} especialista(s) no Firestore agora?`)) {
+      return;
+    }
+
+    setIsSyncingAll(true);
+    setSyncResultsAll([]);
+    setSyncStatusAll('Iniciando sincronização de todas as agendas...');
+
+    const { updateSpecialistSchedule } = await import('./lib/firebase');
+    const updatedSpecialists = [...localSpecialists];
+    const results: {name: string, status: 'success' | 'error', message: string}[] = [];
+
+    for (let i = 0; i < specialistsToSync.length; i++) {
+      const s = specialistsToSync[i];
+      setSyncStatusAll(`[${i + 1}/${specialistsToSync.length}] Sincronizando agenda de: ${s.name}...`);
+      
+      try {
+        let scriptUrlRaw = s.googleAppsScriptUrl.trim();
+        if (!scriptUrlRaw.startsWith('http')) scriptUrlRaw = `https://${scriptUrlRaw}`;
+        
+        // Wrap JSONP in a Promise
+        const jsonpData = await new Promise<any>((resolve, reject) => {
+          const jsonpCallbackName = `google_script_cb_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+          const scriptUrlJsonp = scriptUrlRaw.includes('?') 
+            ? `${scriptUrlRaw}&action=getDadosDaAgenda&callback=${jsonpCallbackName}` 
+            : `${scriptUrlRaw}?action=getDadosDaAgenda&callback=${jsonpCallbackName}`;
+          
+          const script = document.createElement('script');
+          
+          let scriptHandled = false;
+          const cleanup = () => {
+            if (scriptHandled) return;
+            scriptHandled = true;
+            if (script.parentNode) script.parentNode.removeChild(script);
+            delete (window as any)[jsonpCallbackName];
+          };
+
+          script.src = scriptUrlJsonp;
+          script.onerror = () => {
+            cleanup();
+            reject(new Error('Google Script não respondeu. Verifique se foi publicado como "Qualquer pessoa" e se a URL termina em /exec.'));
+          };
+          
+          const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error('Tempo limite excedido (45 segundos).'));
+          }, 45000);
+
+          (window as any)[jsonpCallbackName] = (data: any) => {
+            clearTimeout(timeout);
+            cleanup();
+            resolve(data);
+          };
+
+          document.body.appendChild(script);
+        });
+
+        const parsedSchedule = parseSheetScheduleData(jsonpData);
+        const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
+        const availableCount = appointments.filter((row: any) => {
+          const status = (row.status || row.paciente || '').toString().toLowerCase();
+          return status.includes('💚') || status.includes('livre');
+        }).length;
+
+        // Save directly to the individual specialists' schedules collection in Firestore
+        await updateSpecialistSchedule(s.id, parsedSchedule);
+
+        // Update local state list to hold the parsed schedule
+        const idx = updatedSpecialists.findIndex(spec => spec.id === s.id);
+        if (idx !== -1) {
+          updatedSpecialists[idx] = {
+            ...updatedSpecialists[idx],
+            schedule: parsedSchedule,
+            lastSync: new Date().toISOString(),
+            syncStatus: 'success',
+            syncMessage: `Sincronizada com sucesso! Encontrados ${availableCount} horários disponíveis.`
+          };
+        }
+
+        results.push({
+          name: s.name,
+          status: 'success',
+          message: `Sincronizada com sucesso! Encontrados ${availableCount} horários disponíveis.`
+        });
+      } catch (e: any) {
+        console.error(`Erro ao sincronizar ${s.name}:`, e);
+        const errorMsg = e.message || 'Falha na conexão ou processamento.';
+        const cleanError = errorMsg.includes('resource-exhausted') 
+          ? 'Limite diário do banco de dados (quota) atingido.' 
+          : errorMsg;
+        results.push({
+          name: s.name,
+          status: 'error',
+          message: cleanError
+        });
+
+        // Update local state list to hold the failed status
+        const idx = updatedSpecialists.findIndex(spec => spec.id === s.id);
+        if (idx !== -1) {
+          updatedSpecialists[idx] = {
+            ...updatedSpecialists[idx],
+            syncStatus: 'error',
+            syncMessage: cleanError
+          };
+        }
+      }
+
+      // Small pause to be gentle
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    // Save the entire specialists list so lastSync times and updated metadata are stored in Firestore
+    setLocalSpecialists(updatedSpecialists);
+    await onUpdateSpecialists(updatedSpecialists);
+
+    setSyncResultsAll(results);
+    setSyncStatusAll('Sincronização em lote concluída!');
+    setIsSyncingAll(false);
+  };
+
+  const syncSingleSpecialist = async (s: Specialist) => {
+    if (isQuotaLocked) {
+      alert('❌ ERRO DE COTA: O banco de dados está temporariamente em modo leitura. Tente novamente amanhã.');
+      return;
+    }
+    if (!s.googleAppsScriptUrl) {
+      alert('Insira a URL antes de sincronizar.');
+      return;
+    }
+    if (!s.googleAppsScriptUrl.trim().includes('/exec')) {
+      alert('❌ ATENÇÃO: Sua URL não termina em /exec. Você provavelmente colou o link do rascunho ou da edição. No Google Scripts, vá em Implantar > Nova Implantação e copie a URL correta.');
+    }
+
+    setSyncingId(s.id);
+
+    try {
+      const { updateSpecialistSchedule } = await import('./lib/firebase');
+      let scriptUrlRaw = s.googleAppsScriptUrl.trim();
+      if (!scriptUrlRaw.startsWith('http')) scriptUrlRaw = `https://${scriptUrlRaw}`;
+      
+      const jsonpCallbackName = `google_script_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      const scriptUrlJsonp = scriptUrlRaw.includes('?') 
+        ? `${scriptUrlRaw}&action=getDadosDaAgenda&callback=${jsonpCallbackName}` 
+        : `${scriptUrlRaw}?action=getDadosDaAgenda&callback=${jsonpCallbackName}`;
+      
+      const script = document.createElement('script');
+      
+      let scriptHandled = false;
+      const cleanup = () => {
+        if (scriptHandled) return;
+        scriptHandled = true;
+        if (script.parentNode) script.parentNode.removeChild(script);
+        (window as any)[jsonpCallbackName] = () => {};
+      };
+
+      script.src = scriptUrlJsonp;
+      
+      script.onerror = async () => {
+        cleanup();
+        const errorMsg = 'Erro de conexão: O Google não respondeu corretamente.';
+        alert(`❌ ERRO DE CONEXÃO: ${s.name}\nO Google não respondeu corretamente. Verifique se o Script foi publicado como "Qualquer pessoa" e se a URL termina em /exec.`);
+        
+        const updated = localSpecialists.map(spec => spec.id === s.id ? {
+          ...spec,
+          syncStatus: 'error' as const,
+          syncMessage: errorMsg
+        } : spec);
+        setLocalSpecialists(updated);
+        await onUpdateSpecialists(updated);
+        setSyncingId(null);
+      };
+      
+      const timeout = setTimeout(async () => {
+        cleanup();
+        const errorMsg = 'Erro de timeout: O Script demorou mais que 45 segundos para responder.';
+        alert(`❌ TIME-OUT: ${s.name}\nO Google Script demorou muito para responder (45s). Verifique sua URL ou conexão.`);
+        
+        const updated = localSpecialists.map(spec => spec.id === s.id ? {
+          ...spec,
+          syncStatus: 'error' as const,
+          syncMessage: errorMsg
+        } : spec);
+        setLocalSpecialists(updated);
+        await onUpdateSpecialists(updated);
+        setSyncingId(null);
+      }, 45000);
+
+      (window as any)[jsonpCallbackName] = async (jsonpData: any) => {
+        clearTimeout(timeout);
+        cleanup();
+        
+        try {
+          const parsedSchedule = parseSheetScheduleData(jsonpData);
+          const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
+          
+          const availableCount = appointments.filter((row: any) => {
+            const status = (row.status || row.paciente || '').toString().toLowerCase();
+            return status.includes('💚') || status.includes('livre');
+          }).length;
+          
+          const successMsg = `Sincronizada com sucesso! Encontrados ${availableCount} horários disponíveis (💚).`;
+          alert(`✅ AGENDA SINCRONIZADA DE: ${s.name}!\nEncontramos ${availableCount} horários disponíveis.\n\nA agenda foi atualizada localmente e no banco de dados.`);
+          
+          await updateSpecialistSchedule(s.id, parsedSchedule);
+          
+          const updated = localSpecialists.map(spec => spec.id === s.id ? {
+            ...spec,
+            schedule: parsedSchedule,
+            lastSync: new Date().toISOString(),
+            syncStatus: 'success' as const,
+            syncMessage: successMsg
+          } : spec);
+          setLocalSpecialists(updated);
+          await onUpdateSpecialists(updated);
+        } catch (e: any) {
+          const errorMsg = e.message || 'Falha ao processar dados da agenda.';
+          const updated = localSpecialists.map(spec => spec.id === s.id ? {
+            ...spec,
+            syncStatus: 'error' as const,
+            syncMessage: errorMsg
+          } : spec);
+          setLocalSpecialists(updated);
+          await onUpdateSpecialists(updated);
+        } finally {
+          setSyncingId(null);
+        }
+      };
+
+      document.body.appendChild(script);
+    } catch (e: any) {
+      const msg = e.message || '';
+      const errorMsg = msg.includes('resource-exhausted') 
+        ? 'Erro de Cota: Limite diário atingido.' 
+        : 'Erro crítico na conexão.';
+      alert(`❌ ERRO: ${errorMsg}`);
+      
+      const updated = localSpecialists.map(spec => spec.id === s.id ? {
+        ...spec,
+        syncStatus: 'error' as const,
+        syncMessage: errorMsg
+      } : spec);
+      setLocalSpecialists(updated);
+      await onUpdateSpecialists(updated);
+      setSyncingId(null);
+    }
+  };
+
+  const addInsurance = () => {
+    const id = Date.now().toString();
+    const newInsurance = {
+      id,
+      name: 'Novo Plano',
+      logo: 'https://cdn-icons-png.flaticon.com/512/2854/2854580.png'
+    };
+    setLocalInsurancePlans([...localInsurancePlans, newInsurance]);
+  };
+
+  const updateInsurance = (id: string, updates: Partial<InsurancePlan>) => {
+    setLocalInsurancePlans(localInsurancePlans.map(p => p.id === id ? { ...p, ...updates } : p));
+  };
+
+  const removeInsurance = async (id: string) => {
+    if (confirm("Deseja remover este convênio?")) {
+      const updated = localInsurancePlans.filter(p => p.id !== id);
+      setLocalInsurancePlans(updated);
+      await onUpdateInsurance(updated);
+    }
+  };
+
+  const handleInsuranceLogoChange = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setCropImage(reader.result as string);
+        setCroppingItemId(id);
+        setCroppingType('insurance');
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setSaveStatus({ ...saveStatus, settings: true });
+    await onUpdateSettings(localSettings);
+    await onUpdateInsurance(localInsurancePlans);
+    setTimeout(() => {
+      setSaveStatus(prev => ({ ...prev, settings: false }));
+    }, 2000);
+  };
+
+  const addApproach = () => {
+    const id = Date.now().toString();
+    const newApp: Approach = {
+      id,
+      title: 'Nova Abordagem',
+      desc: 'Breve descrição...',
+      details: 'Detalhes completos sobre como funciona a terapia nesta abordagem.'
+    };
+    setLocalApproaches([...localApproaches, newApp]);
+  };
+
+  const removeApproach = async (id: string) => {
+    if (confirm("Deseja remover esta abordagem?")) {
+      const updated = localApproaches.filter(a => a.id !== id);
+      setLocalApproaches(updated);
+      await onUpdateApproaches(updated);
+    }
+  };
+
+  const updateApproach = (id: string, updates: Partial<Approach>) => {
+    setLocalApproaches(localApproaches.map(a => a.id === id ? { ...a, ...updates } : a));
+  };
+
+  const handleSaveApproach = async (id: string) => {
+    setSaveStatus({ ...saveStatus, [`approach-${id}`]: true });
+    await onUpdateApproaches(localApproaches);
+    setTimeout(() => {
+      setSaveStatus(prev => ({ ...prev, [`approach-${id}`]: false }));
+    }, 2000);
+  };
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setCropImage(reader.result as string);
+        setCroppingType('logo');
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  const handleHeroImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setCropImage(reader.result as string);
+        setCroppingType('hero');
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-surface p-6 md:p-12">
+      <div className="max-w-6xl mx-auto">
+        {/* Modern Double-Layer Admin Header */}
+        <div className="flex flex-col gap-6 mb-10 pb-6 border-b border-outline-alt/40">
+          {/* Top Row: Title & Action Buttons */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => onNavigate(Screen.Home, 'push_back')} 
+                className="p-3 bg-white border border-outline rounded-full shadow-sm hover:bg-slate-50 active:scale-95 transition-all text-primary shrink-0"
+                title="Voltar para a Página Inicial"
+              >
+                <ArrowForward className="rotate-180 w-5 h-5" />
+              </button>
+              <div>
+                <h1 className="text-3xl md:text-4xl font-display font-black text-primary tracking-tight">
+                  Painel de Administração
+                </h1>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  Gerencie todo o conteúdo, especialistas e o sistema de sublocação.
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Actions & System Info */}
+            <div className="flex flex-wrap items-center gap-3">
+              {isQuotaLocked && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-accent/10 text-accent rounded-xl border border-accent/20 animate-pulse">
+                  <AlertTriangle size={14} />
+                  <span className="text-[9px] font-black uppercase tracking-wider text-left leading-tight">
+                    Modo Leitura <span className="opacity-60">(Limite Atingido)</span>
+                  </span>
+                </div>
+              )}
+
+              {/* Sincronizar Button */}
+              <button 
+                onClick={async () => {
+                  if (confirm("Deseja sincronizar os dados com o servidor? Isso irá recarregar as informações mais recentes e descartar qualquer alteração não salva localmente.")) {
+                    const btn = document.getElementById('sync-btn');
+                    if (btn) btn.classList.add('animate-spin');
+                    await forceResetFirebase();
+                  }
+                }}
+                id="sync-btn"
+                className="px-4 py-2.5 bg-secondary/10 text-secondary rounded-xl hover:bg-secondary hover:text-white transition-all duration-200 flex items-center gap-2 border border-secondary/10 text-[10px] font-black uppercase tracking-widest cursor-pointer"
+                title="Sincronizar com o Servidor (Limpar Cache)"
+              >
+                <RefreshCw size={14} />
+                <span>Sincronizar</span>
+              </button>
+
+              {/* Publicar Alterações Button */}
+              <button 
+                disabled={isQuotaLocked}
+                onClick={async () => {
+                  try {
+                    setSaveStatus({ ...saveStatus, global: true });
+                    await onUpdateSettings(localSettings);
+                    await onUpdateInsurance(localInsurancePlans);
+                    await onUpdateSpecialists(localSpecialists);
+                    await onUpdateApproaches(localApproaches);
+                    setTimeout(() => setSaveStatus(prev => ({ ...prev, global: false })), 2000);
+                  } catch (e) {
+                    alert("Erro ao salvar todas as alterações.");
+                  }
+                }}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-200 shadow-sm active:scale-95 cursor-pointer ${
+                  isQuotaLocked 
+                  ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
+                  : saveStatus['global'] 
+                    ? 'bg-green-600 text-white shadow-green-600/20' 
+                    : 'bg-green-700 text-white shadow-green-700/20 hover:bg-green-800 hover:scale-105'
+                }`}
+                title="Publicar todas as alterações no site"
+              >
+                {saveStatus['global'] ? <CheckCircle size={14} /> : <Send size={14} />}
+                <span>{saveStatus['global'] ? 'Publicado!' : 'Publicar Alterações'}</span>
+              </button>
+
+              {/* Sair Button */}
+              <button 
+                onClick={onLogout}
+                className="px-4 py-2.5 bg-white border border-outline rounded-xl hover:bg-accent/10 hover:text-accent hover:border-accent/30 transition-all duration-200 text-accent flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest cursor-pointer"
+                title="Sair"
+              >
+                <LogOut size={14} />
+                <span>Sair</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Bottom Row: Category Tabs Navigation */}
+          <div className="w-full overflow-x-auto pb-1 scrollbar-thin">
+            <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 min-w-max gap-1">
+              {(['home', 'corpo', 'abordagens', 'psicoeducacao', 'sublocacao', 'marketing'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                    activeTab === tab 
+                      ? 'bg-white text-primary shadow-sm font-bold' 
+                      : 'text-slate-600 hover:text-primary hover:bg-white/50'
+                  }`}
+                >
+                  {tab === 'home' && 'Página Inicial'}
+                  {tab === 'corpo' && 'Especialistas'}
+                  {tab === 'abordagens' && 'Abordagens'}
+                  {tab === 'psicoeducacao' && 'Psicoeducação'}
+                  {tab === 'sublocacao' && 'Sublocação'}
+                  {tab === 'marketing' && 'Marketing'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-[2.5rem] modern-shadow border border-outline p-10">
+          {activeTab === 'home' && (
+            <div className="space-y-8">
+              <AgendaSyncMonitor
+                specialists={localSpecialists}
+                isSyncingAll={isSyncingAll}
+                isQuotaLocked={isQuotaLocked}
+                syncStatusAll={syncStatusAll}
+                syncResultsAll={syncResultsAll}
+                onSyncAll={syncAllSchedules}
+                onSyncSingle={syncSingleSpecialist}
+                syncingId={syncingId}
+              />
+
+               <div className="pb-8 border-b border-outline">
+                <h2 className="text-2xl font-display font-black text-primary mb-6">Informações da Clínica</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-4">
+                    <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Nome da Clínica</label>
+                    <input 
+                      className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                      value={localSettings.clinicName}
+                      onChange={(e) => setLocalSettings({ ...localSettings, clinicName: e.target.value })}
+                      placeholder="Ex: Clínica Hope"
+                    />
+                  </div>
+                  <div className="space-y-4">
+                    <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Endereço</label>
+                    <input 
+                      className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                      value={localSettings.address}
+                      onChange={(e) => setLocalSettings({ ...localSettings, address: e.target.value })}
+                      placeholder="Ex: Bairro Pagani, Palhoça/SC"
+                    />
+                  </div>
+                </div>
+                <div className="mt-8 space-y-4">
+                  <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Direitos Autorais (Rodapé)</label>
+                  <input 
+                    className="w-full text-sm font-medium border-b-2 border-outline focus:border-primary outline-none py-2"
+                    value={localSettings.footerRights}
+                    onChange={(e) => setLocalSettings({ ...localSettings, footerRights: e.target.value })}
+                    placeholder="Ex: © 2022 Clínica Hope. Todos os direitos reservados."
+                  />
+                </div>
+              </div>
+
+              <div className="pb-8 border-b border-outline">
+                <h2 className="text-2xl font-display font-black text-primary mb-6">Seção "A Clínica"</h2>
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Título da Seção SEO</label>
+                    <input 
+                      className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                      value={localSettings.seoTitle}
+                      onChange={(e) => setLocalSettings({ ...localSettings, seoTitle: e.target.value })}
+                      placeholder="Ex: Um ambiente pensado para o cuidado com você"
+                    />
+                  </div>
+                  <div className="space-y-4">
+                    <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Texto Descritivo SEO</label>
+                    <textarea 
+                      className="w-full text-sm leading-relaxed border-b-2 border-outline focus:border-primary outline-none py-2 resize-none"
+                      rows={4}
+                      value={localSettings.seoText}
+                      onChange={(e) => setLocalSettings({ ...localSettings, seoText: e.target.value })}
+                      placeholder="Descreva a clínica e o ambiente..."
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pb-8 border-b border-outline">
+                <h2 className="text-2xl font-display font-black text-primary mb-6">Identidade Visual</h2>
+                <div className="flex items-center gap-8">
+                  <div className="p-6 bg-white border border-outline rounded-2xl flex items-center justify-center text-primary relative group min-w-[120px]">
+                    {localSettings.logoUrl ? (
+                      <img src={localSettings.logoUrl} className="h-14 w-auto object-contain" alt="Logo Preview" />
+                    ) : (
+                      <Spa size={40} />
+                    )}
+                    <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity rounded-2xl">
+                      <PhotoCamera size={24} />
+                      <span className="text-[10px] font-bold mt-1 uppercase">Trocar Logo</span>
+                      <input type="file" className="hidden" accept="image/*" onChange={handleLogoChange} />
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-bold text-primary">Logo da Clínica</p>
+                    <p className="text-xs text-on-surface-variant">Recomendado: Imagem quadrada (1:1) com fundo transparente ou sólido.</p>
+                    <button className="text-[10px] font-black uppercase text-accent tracking-widest hover:underline" onClick={() => setLocalSettings({ ...localSettings, logoUrl: '' })}>Remover Logo</button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pb-8 border-b border-outline">
+                <h2 className="text-2xl font-display font-black text-primary mb-6">Imagem de Destaque (Hero)</h2>
+                <div className="flex items-center gap-8">
+                  <div className="w-48 h-48 bg-surface border border-outline rounded-[2.5rem] overflow-hidden flex items-center justify-center text-primary relative group">
+                    {localSettings.heroImageUrl ? (
+                      <img src={localSettings.heroImageUrl} className="w-full h-full object-cover" alt="Hero Preview" />
+                    ) : (
+                      <PhotoCamera size={40} />
+                    )}
+                    <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity">
+                      <PhotoCamera size={24} />
+                      <span className="text-[10px] font-bold mt-1 uppercase">Trocar Imagem Hero</span>
+                      <input type="file" className="hidden" accept="image/*" onChange={handleHeroImageChange} />
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-bold text-primary">Imagem Principal</p>
+                    <p className="text-xs text-on-surface-variant max-w-sm">Esta imagem aparece na vitrine principal do seu site. Escolha algo que represente a Clínica Hope.</p>
+                    <button className="text-[10px] font-black uppercase text-accent tracking-widest hover:underline" onClick={() => setLocalSettings({ ...localSettings, heroImageUrl: '' })}>Remover Imagem</button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Título Principal</label>
+                  <input 
+                    className="w-full text-2xl font-display font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                    value={localSettings.heroTitle}
+                    onChange={(e) => setLocalSettings({ ...localSettings, heroTitle: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-4">
+                  <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Subtítulo</label>
+                  <input 
+                    className="w-full text-2xl font-display font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                    value={localSettings.heroSubtitle}
+                    onChange={(e) => setLocalSettings({ ...localSettings, heroSubtitle: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="space-y-4">
+                <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Texto Hero</label>
+                <textarea 
+                  className="w-full text-lg leading-relaxed border-b-2 border-outline focus:border-primary outline-none py-2 resize-none"
+                  rows={3}
+                  value={localSettings.heroText}
+                  onChange={(e) => setLocalSettings({ ...localSettings, heroText: e.target.value })}
+                />
+              </div>
+
+              <div className="pt-8 border-t border-outline">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-display font-black text-primary">Convênios Atendidos</h2>
+                  <button 
+                    onClick={addInsurance}
+                    className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all"
+                  >
+                    <Add size={14} /> Novo Convênio
+                  </button>
+                </div>
+                <p className="text-on-surface-variant text-sm mb-4">Estes convênios aparecerão para todos os profissionais do corpo clínico.</p>
+                <div className="bg-secondary/5 p-4 rounded-2xl border border-secondary/10 mb-8 text-center sm:text-left">
+                  <p className="text-[11px] text-primary/70 leading-relaxed">
+                    💡 <strong>Dica para Logos:</strong> Para um visual perfeito, utilize imagens no formato <strong>PNG Transparente</strong> ou <strong>SVG</strong>. 
+                  </p>
+                  <div className="mt-4 flex flex-col sm:flex-row gap-4 sm:items-center justify-between border-t border-secondary/10 pt-4">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-secondary opacity-60">Proporção do Corte</span>
+                      <span className="text-sm font-bold text-primary">3:1 (Horizontal)</span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-secondary opacity-60">Tamanho Recomendado</span>
+                      <span className="text-sm font-bold text-primary">300x100 pixels</span>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-secondary opacity-60">Cor de Fundo do Site</span>
+                      <div className="flex items-center gap-2">
+                         <div className="w-4 h-4 rounded-full border border-outline bg-[#f9f9ff]"></div>
+                         <span className="text-sm font-bold text-primary font-mono">#f9f9ff</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {localInsurancePlans.map(plan => (
+                    <div key={plan.id} className="p-6 border border-outline rounded-3xl bg-surface/30 group relative">
+                      <button 
+                        onClick={() => removeInsurance(plan.id)}
+                        className="absolute -top-2 -right-2 w-8 h-8 bg-white border border-outline rounded-full flex items-center justify-center text-accent opacity-20 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-accent hover:text-white z-10"
+                      >
+                        <Delete size={14} />
+                      </button>
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="p-4 rounded-2xl border border-dashed border-outline bg-secondary/5 flex items-center justify-center relative group/logo w-full min-h-[120px] overflow-hidden">
+                          {plan.logo ? (
+                            <img src={plan.logo} className="h-12 w-auto object-contain transition-all" />
+                          ) : (
+                            <div className="text-secondary/30 flex flex-col items-center gap-2">
+                              <PhotoCamera size={24} />
+                              <span className="text-[10px] uppercase font-black">Sem Logo</span>
+                            </div>
+                          )}
+                          <label className="absolute inset-0 bg-black/60 opacity-0 group-hover/logo:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-all backdrop-blur-sm">
+                            <PhotoCamera size={20} />
+                            <span className="text-[9px] font-black uppercase mt-1.5 tracking-wider">Trocar Logo</span>
+                            <span className="text-[7px] opacity-60">(Formato 3:1)</span>
+                            <input type="file" className="hidden" accept="image/*" onChange={(e) => handleInsuranceLogoChange(e, plan.id)} />
+                          </label>
+                        </div>
+                        <input 
+                          className="w-full text-center font-black text-[10px] uppercase tracking-widest bg-transparent border-b border-outline/50 focus:border-secondary outline-none pb-1.5 text-primary/80"
+                          value={plan.name}
+                          onChange={(e) => updateInsurance(plan.id, { name: e.target.value })}
+                          placeholder="Nome do Plano"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-12 border-t border-outline flex justify-center">
+                <button
+                  disabled={isQuotaLocked}
+                  onClick={handleSaveSettings}
+                  className={`flex items-center gap-2 px-12 py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] transition-all shadow-xl active:scale-95 ${
+                    isQuotaLocked 
+                    ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
+                    : saveStatus['settings'] 
+                      ? 'bg-green-500 text-white shadow-green-500/20' 
+                      : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'
+                  }`}
+                >
+                  {isQuotaLocked ? <AlertTriangle size={16} /> : saveStatus['settings'] ? <CheckCircle size={16} /> : <Settings size={16} />}
+                  {isQuotaLocked ? 'Banco de Dados Esgotado' : saveStatus['settings'] ? 'Site Atualizado!' : 'Atualizar Dados do Site'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'sublocacao' && (
+            <div className="space-y-6">
+              <div className="pb-4 border-b border-outline">
+                <h2 className="text-2xl font-display font-black text-primary mb-2">Administração do Sistema de Sublocação</h2>
+                <p className="text-on-surface-variant text-sm">Gerencie salas, reservas, configurações gerais e aprovações de profissionais parceiros de sublocação.</p>
+              </div>
+              <AdminDashboardView 
+                adminSettings={subleaseAdminSettings || INITIAL_ADMIN_SETTINGS}
+                bookings={subleaseBookingsList}
+                rooms={subleaseRoomsList}
+                onUpdateSettings={onUpdateSubleaseSettings}
+                onCancelBooking={onCancelSubleaseBooking}
+                onUpdateRooms={onUpdateSubleaseRoomsList}
+                registeredUsers={subleaseUsersList}
+                onUpdateUsers={onUpdateSubleaseUsersList}
+                setView={() => {}}
+              />
+            </div>
+          )}
+
+          {activeTab === 'corpo' && (
+            <div className="space-y-10">
+              <div className="flex justify-between items-center">
+                <p className="text-on-surface-variant text-sm">Gerencie os profissionais da clínica.</p>
+                <button onClick={addSpecialist} className="flex items-center gap-2 bg-primary/10 text-primary px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all">
+                  <Add size={16} /> Especialista
+                </button>
+              </div>
+
+              <AgendaSyncMonitor
+                specialists={localSpecialists}
+                isSyncingAll={isSyncingAll}
+                isQuotaLocked={isQuotaLocked}
+                syncStatusAll={syncStatusAll}
+                syncResultsAll={syncResultsAll}
+                onSyncAll={syncAllSchedules}
+                onSyncSingle={syncSingleSpecialist}
+                syncingId={syncingId}
+              />
+
+              <div className="grid grid-cols-1 gap-8">
+                {localSpecialists.map((s, idx) => (
+                  <div key={s.id} className="p-8 border border-outline rounded-[2rem] flex flex-col md:flex-row gap-8 items-start relative group">
+                    <button 
+                      onClick={() => removeSpecialist(s.id)}
+                      className="absolute top-4 right-4 p-2 text-accent bg-accent/5 hover:bg-accent hover:text-white rounded-full transition-all opacity-20 group-hover:opacity-100 shadow-sm"
+                      title="Excluir Especialista"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                    <div className="w-full md:w-32 h-32 rounded-2xl overflow-hidden shrink-0 relative group/photo">
+                      <img src={s.img} className="w-full h-full object-cover" />
+                      <label className="absolute inset-0 bg-black/40 opacity-0 group-hover/photo:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity">
+                        <PhotoCamera size={24} />
+                        <span className="text-[10px] font-black uppercase mt-2">Mudar Foto</span>
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => handleFileChange(e, s.id)} />
+                      </label>
+                    </div>
+                    <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Nome Completo</label>
+                        <input className="w-full font-bold p-2 border-b border-outline focus:border-primary outline-none" value={s.name} onChange={e => updateSpecialist(s.id, { name: e.target.value })} placeholder="Nome" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Especialidade Principal</label>
+                        <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={s.spec} onChange={e => updateSpecialist(s.id, { spec: e.target.value })} placeholder="Especialidade" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Registro (CRP)</label>
+                        <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={s.crp} onChange={e => updateSpecialist(s.id, { crp: e.target.value })} placeholder="CRP" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Tags (separadas por vírgula)</label>
+                        <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={s.tags.join(', ')} onChange={e => updateSpecialist(s.id, { tags: e.target.value.split(',').map(t => t.trim()) })} placeholder="Tags" />
+                      </div>
+                      <div className="md:col-span-2 space-y-1">
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Minibiografia</label>
+                        <textarea className="w-full p-2 border border-outline rounded-xl focus:border-primary outline-none" rows={2} value={s.desc} onChange={e => updateSpecialist(s.id, { desc: e.target.value })} placeholder="Descrição" />
+                      </div>
+                      
+                      <div className="md:col-span-2 space-y-4 pt-4 border-t border-outline">
+                         <p className="text-[10px] font-black uppercase text-secondary/60 tracking-widest ml-1">Integração com Agenda Online</p>
+                         <div className="flex flex-col sm:flex-row gap-4 items-end">
+                            <div className="flex-grow space-y-1">
+                              <label className="text-[9px] font-black uppercase text-primary/40 ml-1">URL de Integração</label>
+                              <div className="relative group">
+                                <input 
+                                  id={`url-input-${s.id}`}
+                                  className="p-3 pr-24 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
+                                  value={s.googleAppsScriptUrl || ''} 
+                                  onChange={e => updateSpecialist(s.id, { googleAppsScriptUrl: e.target.value })} 
+                                  placeholder="https://script.google.com/macros/s/.../exec" 
+                                />
+                                {s.googleAppsScriptUrl && (
+                                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pointer-events-auto">
+                                    <button 
+                                      type="button"
+                                      title="Limpar URL"
+                                      onClick={() => {
+                                        if (confirm("Deseja realmente remover o link de integração desta especialista?")) {
+                                          updateSpecialist(s.id, { googleAppsScriptUrl: '', schedule: undefined });
+                                        }
+                                      }}
+                                      className="p-2 hover:bg-error/10 text-error/40 hover:text-error rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <button 
+                              disabled={isSyncingAll || !!syncingId || isQuotaLocked}
+                              onClick={() => syncSingleSpecialist(s)}
+                              className={`px-8 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 whitespace-nowrap h-[46px] border flex items-center justify-center gap-2 ${
+                                isQuotaLocked 
+                                ? 'bg-outline-variant text-primary/30 cursor-not-allowed border-outline' 
+                                : syncingId === s.id
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200 cursor-wait'
+                                : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 hover:shadow-sm'
+                              }`}
+                            >
+                              {syncingId === s.id ? (
+                                <>
+                                  <RefreshCw size={12} className="animate-spin" />
+                                  Sincronizando...
+                                </>
+                              ) : (
+                                'Sincronizar Agenda Firestore'
+                              )}
+                            </button>
+                         </div>
+
+                         <div className="bg-gradient-to-br from-green-50 to-white p-8 rounded-[3rem] space-y-6 border-2 border-green-500/20 shadow-xl shadow-green-100/30 relative overflow-hidden">
+                           <div className="absolute top-0 right-0 p-4">
+                             <span className="bg-green-600 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">Configuração Obrigatória</span>
+                           </div>
+                           <div className="flex items-center gap-4 mb-2">
+                              <div className="w-10 h-10 bg-green-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-green-200 animate-pulse">
+                                 <Info size={20} />
+                              </div>
+                              <div>
+                                <p className="text-[12px] font-black uppercase text-green-800 tracking-[0.2em]">Guia de Integração Instantânea</p>
+                                <p className="text-[10px] text-green-600/70 font-bold uppercase tracking-widest">Siga estes passos para sincronizar sua planilha</p>
+                              </div>
+                           </div>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-[11px] text-green-900/80">
+                             <div className="space-y-3 p-6 bg-white rounded-[2rem] border-2 border-green-100 shadow-sm hover:border-green-300 transition-colors group">
+                               <p className="font-black text-green-700 flex items-center gap-2 uppercase text-[10px] tracking-widest">
+                                 <span className="w-8 h-8 bg-green-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">1</span>
+                                 No Google Scripts
+                               </p>
+                               <p className="font-medium text-green-900/80 leading-relaxed">
+                                 Abra seu script, cole o código, salve e vá em: <br/>
+                                 <strong className="text-green-700">Implantar &gt; Nova Implantação</strong>.
+                               </p>
+                             </div>
+                             <div className="space-y-3 p-6 bg-white rounded-[2rem] border-2 border-green-100 shadow-sm hover:border-green-300 transition-colors group">
+                               <p className="font-black text-green-700 flex items-center gap-2 uppercase text-[10px] tracking-widest">
+                                 <span className="w-8 h-8 bg-green-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">2</span>
+                                 Configuração de Acesso
+                               </p>
+                               <p className="font-medium text-green-900/80 leading-relaxed">
+                                 Selecione o tipo <strong>"App da Web"</strong> e mude quem pode acessar para <strong>"Qualquer pessoa"</strong>.
+                               </p>
+                             </div>
+                             <div className="sm:col-span-2 p-6 bg-amber-50 rounded-[2rem] border-2 border-amber-200/50 flex gap-5 shadow-inner">
+                                <div className="w-12 h-12 bg-amber-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-200">
+                                   <Info size={24} />
+                                </div>
+                                <div className="space-y-1.5 py-1">
+                                   <p className="text-[11px] font-black uppercase tracking-widest text-amber-800">Cuidado com o Link (URL)</p>
+                                   <p className="text-[12px] text-amber-700 font-bold leading-relaxed">
+                                     O link gerado na implantação <span className="underline decoration-2 underline-offset-4 decoration-amber-400">PRECISA</span> terminar exatamente com <span className="bg-amber-500 text-white px-2 py-0.5 rounded-lg text-[10px] font-black">/exec</span>.
+                                   </p>
+                                </div>
+                             </div>
+                           </div>
+                           <div className="p-6 bg-green-700 rounded-[2rem] border-b-4 border-green-900 flex items-start gap-4 shadow-xl shadow-green-200/50">
+                             <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm text-white flex items-center justify-center shrink-0 border border-white/20">
+                               <Info size={24} />
+                             </div>
+                             <div className="space-y-1.5">
+                               <p className="text-[12px] font-black uppercase text-white tracking-[0.2em]">Padrão de Sincronização</p>
+                               <p className="text-[12px] text-green-50 font-bold leading-relaxed">
+                                 O sistema mapeia automaticamente horários marcados com <span className="bg-white/20 px-2 py-1 rounded-lg text-white font-black">💚</span> ou <span className="bg-white/20 px-2 py-1 rounded-lg text-white font-black">LIVRE</span>.
+                                 <br />
+                                 <span className="text-[10px] opacity-80 uppercase font-black text-white/90">Este é o único padrão aceito para visibilidade imediata.</span>
+                               </p>
+                             </div>
+                           </div>
+                         </div>
+
+                        <p className="text-[10px] uppercase font-bold tracking-widest text-primary">Faixas Etárias</p>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.values(AgeGroup).map(age => (
+                            <button 
+                              key={age}
+                              onClick={() => {
+                                const current = s.ageGroups || [];
+                                updateSpecialist(s.id, { ageGroups: current.includes(age) ? current.filter(a => a !== age) : [...current, age] });
+                              }}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all ${s.ageGroups?.includes(age) ? 'bg-primary text-white border-primary' : 'bg-surface text-on-surface-variant border-outline hover:border-primary/40'}`}
+                            >
+                              {age}
+                            </button>
+                          ))}
+                        </div>
+
+                        <p className="text-[10px] uppercase font-bold tracking-widest text-primary pt-2">Idades Específicas Atendidas (1-17)</p>
+                        <div className="grid grid-cols-6 sm:grid-cols-9 md:grid-cols-12 gap-2">
+                          {Array.from({ length: 17 }, (_, i) => i + 1).map(age => (
+                            <button 
+                              key={age}
+                              onClick={() => {
+                                const current = s.attendedAges || [];
+                                updateSpecialist(s.id, { attendedAges: current.includes(age) ? current.filter(a => a !== age) : [...current, age] });
+                              }}
+                              className={`p-2 rounded-lg text-[10px] font-bold border transition-all ${s.attendedAges?.includes(age) ? 'bg-primary text-white border-primary' : 'bg-surface text-on-surface-variant border-outline hover:border-primary/40'}`}
+                            >
+                              {age}
+                            </button>
+                          ))}
+                        </div>
+
+                        <p className="text-[10px] uppercase font-bold tracking-widest text-primary pt-2">Convênios Atendidos</p>
+                        {localInsurancePlans && localInsurancePlans.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {localInsurancePlans.map(plan => {
+                              const current = s.insurancePlans || [];
+                              const isSelected = current.includes(plan.id);
+                              return (
+                                <button 
+                                  key={plan.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = isSelected 
+                                      ? current.filter(id => id !== plan.id) 
+                                      : [...current, plan.id];
+                                    updateSpecialist(s.id, { insurancePlans: updated });
+                                  }}
+                                  className={`px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all flex items-center gap-2 ${
+                                    isSelected 
+                                      ? 'bg-secondary text-white border-secondary shadow-sm' 
+                                      : 'bg-surface text-on-surface-variant border-outline hover:border-secondary/40'
+                                  }`}
+                                >
+                                  {plan.logo ? (
+                                    <img src={plan.logo} className="h-4 w-auto object-contain max-w-[40px] select-none" alt="" />
+                                  ) : (
+                                    <div className="w-1.5 h-1.5 rounded-full bg-current" />
+                                  )}
+                                  <span>{plan.name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-on-surface-variant/60 italic ml-1">Nenhum convênio cadastrado no site. Cadastre convênios na aba "Configurações".</p>
+                        )}
+                        
+                        {!s.googleAppsScriptUrl && (
+                          <>
+                            <p className="text-[10px] uppercase font-bold tracking-widest text-primary pt-2">Períodos de Atendimento</p>
+                            <div className="flex flex-wrap gap-2">
+                              {Object.values(Shift).map(shift => (
+                                <button 
+                                  key={shift}
+                                  onClick={() => {
+                                    const current = s.shifts || [];
+                                    updateSpecialist(s.id, { shifts: current.includes(shift) ? current.filter(a => a !== shift) : [...current, shift] });
+                                  }}
+                                  className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all ${s.shifts?.includes(shift) ? 'bg-primary text-white border-primary' : 'bg-surface text-on-surface-variant border-outline hover:border-primary/40'}`}
+                                >
+                                  {shift}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+
+                        {s.googleAppsScriptUrl ? (
+                           <div className="pt-6 border-t border-outline">
+                              <div className="p-8 bg-green-50/50 border border-green-100 rounded-3xl text-center space-y-3">
+                                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto shadow-sm">
+                                  <VerifiedUser className="text-white" size={24} />
+                                </div>
+                                <h3 className="text-sm font-black text-green-800 uppercase tracking-widest">Agenda Em Tempo Real Ativa</h3>
+                                <p className="text-[11px] text-green-700/80 max-w-xs mx-auto">
+                                  Esta agenda está sendo sincronizada com o Google Sheets. Os horários marcados com 💚 são exibidos automaticamente para os pacientes.
+                                </p>
+                                <button 
+                                  onClick={() => updateSpecialist(s.id, { googleAppsScriptUrl: '' })}
+                                  className="text-[10px] font-black uppercase text-red-500 hover:underline pt-2"
+                                >
+                                  Desativar Integração e Usar Manual
+                                </button>
+                              </div>
+                           </div>
+                        ) : (
+                          <div className="pt-6 border-t border-outline space-y-4">
+                            <div className="flex justify-between items-center">
+                              <p className="text-[10px] uppercase font-bold tracking-widest text-primary">Agenda Semanal (Card de Horários)</p>
+                              {!s.schedule && (
+                                <button 
+                                  onClick={() => {
+                                    const def = DEFAULT_SPECIALISTS.find(ds => ds.id === s.id);
+                                    if (def?.schedule) updateSpecialist(s.id, { schedule: def.schedule });
+                                    else updateSpecialist(s.id, { schedule: { 'Segunda': { periods: { [Shift.Morning]: ['08:00', '09:00'] } } } });
+                                  }}
+                                  className="text-[9px] font-black uppercase text-secondary hover:underline"
+                                >
+                                  Ativar Agenda Visual
+                                </button>
+                              )}
+                            </div>
+                            
+                            {s.schedule && (
+                              <div className="space-y-4">
+                                {Object.entries(s.schedule as Record<string, { periods: Record<string, string[]> }>).map(([day, data]) => (
+                                  <div key={day} className="p-4 bg-surface rounded-2xl border border-outline space-y-3 relative group/item">
+                                    <button 
+                                      onClick={() => {
+                                        const newSched = { ...s.schedule };
+                                        delete newSched[day];
+                                        updateSpecialist(s.id, { schedule: newSched });
+                                      }}
+                                      className="absolute top-2 right-2 text-accent p-1 opacity-20 group-hover/item:opacity-100 hover:bg-accent/10 rounded"
+                                    >
+                                      <Delete size={14} />
+                                    </button>
+                                    <p className="text-xs font-bold text-primary">{day}</p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                      {Object.values(Shift).map(shift => (
+                                        <div key={shift} className="space-y-2">
+                                          <label className="text-[9px] font-black uppercase text-on-surface-variant/40">{shift}</label>
+                                          <input 
+                                            className="w-full text-[10px] p-2 border-b border-outline outline-none focus:border-primary"
+                                            value={data.periods[shift]?.join(', ') || ''}
+                                            placeholder="Ex: 08:00, 09:00"
+                                            onChange={(e) => {
+                                              const times = e.target.value.split(',').map(t => t.trim()).filter(t => t !== '');
+                                              const newSched = JSON.parse(JSON.stringify(s.schedule));
+                                              if (!newSched[day]) newSched[day] = { periods: {} };
+                                              newSched[day].periods[shift] = times;
+                                              updateSpecialist(s.id, { schedule: newSched });
+                                            }}
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                                <div className="flex flex-wrap gap-2">
+                                  {['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(day => (
+                                    !(s.schedule as any)?.[day] && (
+                                      <button 
+                                        key={day}
+                                        onClick={() => {
+                                          const newSched = { ...s.schedule, [day]: { periods: {} } };
+                                          updateSpecialist(s.id, { schedule: newSched });
+                                        }}
+                                        className="text-[9px] font-bold text-primary/60 px-3 py-1.5 bg-surface-container rounded-lg hover:bg-primary/10 transition-colors border border-outline/30"
+                                      >
+                                        + {day}
+                                      </button>
+                                    )
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="pt-6 flex justify-between items-center">
+                          <button 
+                            disabled={isQuotaLocked}
+                            onClick={() => handleSave(s.id)}
+                            className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
+                              isQuotaLocked 
+                              ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
+                              : saveStatus[s.id] 
+                                ? 'bg-green-500 text-white shadow-green-500/20' 
+                                : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'
+                            }`}
+                          >
+                            {isQuotaLocked ? <AlertTriangle size={14} /> : saveStatus[s.id] ? <CheckCircle size={14} /> : <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin hidden group-active:block" />}
+                            {isQuotaLocked ? 'Bloqueado' : saveStatus[s.id] ? 'Salvo!' : 'Atualizar Perfil'}
+                          </button>
+                          <button onClick={() => removeSpecialist(s.id)} className="p-4 text-accent hover:bg-accent/10 rounded-full transition-colors opacity-0 group-hover:opacity-100">
+                            <Delete size={20} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'abordagens' && (
+            <div className="space-y-10">
+              <div className="flex justify-between items-center">
+                <p className="text-on-surface-variant text-sm">Gerencie as abordagens terapêuticas e seus detalhes.</p>
+                <button onClick={addApproach} className="flex items-center gap-2 bg-primary/10 text-primary px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all">
+                  <Add size={16} /> Abordagem
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-8">
+                {localApproaches.map(a => (
+                  <div key={a.id} className="p-8 border border-outline rounded-[2rem] space-y-6 group relative">
+                    <button 
+                      onClick={() => removeApproach(a.id)}
+                      className="absolute top-4 right-4 p-2 text-accent bg-accent/5 hover:bg-accent hover:text-white rounded-full transition-all opacity-20 group-hover:opacity-100 shadow-sm"
+                      title="Excluir Abordagem"
+                    >
+                      <Delete size={16} />
+                    </button>
+                    <div className="space-y-6 flex-grow">
+                      <input className="w-full text-xl font-bold p-2 border-b border-outline" value={a.title} onChange={e => updateApproach(a.id, { title: e.target.value })} placeholder="Título" />
+                      <input className="w-full p-2 border-b border-outline text-on-surface-variant" value={a.desc} onChange={e => updateApproach(a.id, { desc: e.target.value })} placeholder="Breve descrição" />
+                      <div className="space-y-2">
+                        <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Detalhes</label>
+                        <textarea className="w-full p-4 border border-outline rounded-2xl" rows={4} value={a.details} onChange={e => updateApproach(a.id, { details: e.target.value })} placeholder="Explicação..." />
+                      </div>
+                      <div className="pt-4 flex justify-between items-center">
+                        <button 
+                          disabled={isQuotaLocked}
+                          onClick={() => handleSaveApproach(a.id)}
+                          className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
+                            isQuotaLocked 
+                            ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none' 
+                            : saveStatus[`approach-${a.id}`] 
+                              ? 'bg-green-500 text-white shadow-green-500/20' 
+                              : 'bg-primary text-white shadow-primary/20 hover:bg-primary-light'
+                          }`}
+                        >
+                          {isQuotaLocked ? <AlertTriangle size={14} /> : saveStatus[`approach-${a.id}`] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
+                          {isQuotaLocked ? 'Bloqueado' : saveStatus[`approach-${a.id}`] ? 'Salvo!' : 'Atualizar Abordagem'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'psicoeducacao' && (
+            <div className="space-y-8">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-on-surface-variant text-sm">Gerencie os artigos de Psicoeducação exibidos no site.</p>
+                  <p className="text-[10px] text-on-surface-variant/50 mt-1">Use <strong>## Título</strong>, <strong>### Subtítulo</strong>, <strong>**negrito**</strong> e <strong>- item</strong> para formatar o conteúdo.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const now = Date.now();
+                    const newArticle: PsicoeducacaoArticle = {
+                      id: now.toString(),
+                      title: 'Novo Artigo',
+                      subtitle: '',
+                      content: '## Introdução\n\nEscreva aqui o conteúdo do artigo...\n\n### Subtópico\n\n- Ponto importante\n- **Palavra em destaque**',
+                      createdAt: now,
+                      updatedAt: now
+                    };
+                    setLocalArticles([newArticle, ...localArticles]);
+                    setEditingArticle(newArticle);
+                  }}
+                  className="flex items-center gap-2 bg-primary/10 text-primary px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all"
+                >
+                  <Add size={16} /> Novo Artigo
+                </button>
+              </div>
+
+              {/* Lista de artigos ou editor */}
+              {editingArticle ? (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                  <div className="flex items-center gap-4 pb-4 border-b border-outline">
+                    <button
+                      onClick={() => setEditingArticle(null)}
+                      className="flex items-center gap-2 text-primary font-bold text-sm hover:underline group"
+                    >
+                      <ArrowForward size={16} className="rotate-180 group-hover:-translate-x-1 transition-transform" />
+                      Voltar à lista
+                    </button>
+                    <h2 className="text-xl font-bold text-primary">
+                      {localArticles.find(a => a.id === editingArticle.id)?.title || 'Artigo'}
+                    </h2>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Título do Artigo *</label>
+                      <input
+                        className="w-full text-xl font-bold border-b-2 border-outline focus:border-primary outline-none py-2"
+                        value={editingArticle.title}
+                        onChange={e => setEditingArticle({ ...editingArticle, title: e.target.value })}
+                        placeholder="Ex: Ansiedade, TDAH, Depressão..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Subtítulo / Descrição curta</label>
+                      <input
+                        className="w-full border-b-2 border-outline focus:border-primary outline-none py-2 text-on-surface-variant"
+                        value={editingArticle.subtitle || ''}
+                        onChange={e => setEditingArticle({ ...editingArticle, subtitle: e.target.value })}
+                        placeholder="Ex: O que é, sintomas e como tratar"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary">Conteúdo do Artigo</label>
+                      <span className={`text-xs font-mono font-bold px-3 py-1 rounded-full ${
+                        editingArticle.content.length < 4000 ? 'bg-accent/10 text-accent'
+                        : editingArticle.content.length > 8000 ? 'bg-accent/10 text-accent'
+                        : 'bg-green-100 text-green-700'
+                      }`}>
+                        {editingArticle.content.length} caracteres
+                        {editingArticle.content.length >= 4000 && editingArticle.content.length <= 8000 && ' ✓'}
+                      </span>
+                    </div>
+                    <textarea
+                      className="w-full p-6 border-2 border-outline rounded-[1.5rem] focus:border-primary outline-none text-sm leading-relaxed font-mono resize-y min-h-[400px] transition-colors"
+                      value={editingArticle.content}
+                      onChange={e => setEditingArticle({ ...editingArticle, content: e.target.value })}
+                      placeholder="## O que é Ansiedade?&#10;&#10;A **ansiedade** é uma resposta natural do organismo...&#10;&#10;### Sintomas Comuns&#10;&#10;- Coração acelerado&#10;- **Dificuldade de concentração**&#10;- Tensão muscular"
+                      spellCheck={false}
+                    />
+                    <p className="text-xs text-on-surface-variant/50">
+                      <strong>## Título H2</strong> · <strong>### Subtítulo H3</strong> · <strong>**negrito**</strong> · <strong>- bullet</strong>
+                    </p>
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <button
+                      disabled={isQuotaLocked}
+                      onClick={async () => {
+                        const updated = localArticles.map(a =>
+                          a.id === editingArticle.id
+                            ? { ...editingArticle, updatedAt: Date.now() }
+                            : a
+                        );
+                        setLocalArticles(updated);
+                        setSaveStatus({ ...saveStatus, [`article-${editingArticle.id}`]: true });
+                        await onUpdatePsicoeducacaoArticles(updated);
+                        setTimeout(() => setSaveStatus(prev => ({ ...prev, [`article-${editingArticle.id}`]: false })), 2000);
+                        setEditingArticle(null);
+                      }}
+                      className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
+                        isQuotaLocked
+                          ? 'bg-outline-variant text-primary/30 cursor-not-allowed'
+                          : saveStatus[`article-${editingArticle.id}`]
+                            ? 'bg-green-500 text-white'
+                            : 'bg-primary text-white hover:bg-primary-light'
+                      }`}
+                    >
+                      {saveStatus[`article-${editingArticle.id}`] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
+                      {saveStatus[`article-${editingArticle.id}`] ? 'Salvo!' : 'Salvar Artigo'}
+                    </button>
+                    <button
+                      onClick={() => setEditingArticle(null)}
+                      className="px-6 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest border border-outline text-on-surface-variant hover:bg-surface transition-all"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </motion.div>
+              ) : (
+                <div className="space-y-4">
+                  {localArticles.length === 0 && (
+                    <div className="text-center py-16 bg-surface-container-low rounded-[2.5rem] border-2 border-dashed border-outline-alt/40">
+                      <Brain size={40} className="mx-auto text-primary/20 mb-3" />
+                      <p className="text-on-surface-variant font-medium">Nenhum artigo criado ainda.</p>
+                      <p className="text-xs text-on-surface-variant/50 mt-1">Clique em "Novo Artigo" para começar.</p>
+                    </div>
+                  )}
+                  {localArticles.map(article => (
+                    <div key={article.id} className="group flex items-center justify-between p-6 bg-surface-container/40 rounded-[1.5rem] border border-outline/30 hover:border-primary/30 transition-all">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-primary text-base truncate">{article.title}</h4>
+                        {article.subtitle && <p className="text-xs text-on-surface-variant/60 italic truncate mt-0.5">{article.subtitle}</p>}
+                        <p className="text-[10px] text-on-surface-variant/40 mt-1">{article.content.length} caracteres · atualizado {new Date(article.updatedAt).toLocaleDateString('pt-BR')}</p>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4 shrink-0">
+                        <button
+                          onClick={() => setEditingArticle(article)}
+                          className="p-2.5 bg-primary/5 text-primary rounded-xl hover:bg-primary hover:text-white transition-all"
+                          title="Editar"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Deseja excluir o artigo "${article.title}"?`)) {
+                              const updated = localArticles.filter(a => a.id !== article.id);
+                              setLocalArticles(updated);
+                              await onUpdatePsicoeducacaoArticles(updated);
+                            }
+                          }}
+                          className="p-2.5 bg-accent/5 text-accent rounded-xl hover:bg-accent hover:text-white transition-all opacity-0 group-hover:opacity-100"
+                          title="Excluir"
+                        >
+                          <Delete size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'marketing' && (
+            <div className="space-y-8">
+              <div>
+                <h2 className="text-2xl font-display font-black text-primary mb-2">Integrações de Marketing</h2>
+                <p className="text-on-surface-variant text-sm">
+                  Insira seus IDs de rastreamento para conectar ferramentas de análise de tráfego e campanhas de anúncios (Google Ads, Meta Ads).
+                </p>
+                <p className="text-[10px] text-accent font-semibold mt-1">
+                  Nota: Os scripts serão injetados dinamicamente no cabeçalho (&lt;head&gt;) do site de forma automática apenas quando os campos estiverem preenchidos.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {/* Google Tag Manager */}
+                <div className="bg-surface-container/20 p-6 rounded-[1.5rem] border border-outline/30 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center text-primary">
+                        <Code size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-primary text-sm">Google Tag Manager</h4>
+                        <p className="text-[10px] text-on-surface-variant/60 font-medium">Recomendado</p>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary block">ID do GTM</label>
+                      <input
+                        className="w-full text-base font-bold border-b border-outline focus:border-primary outline-none py-1.5 bg-transparent"
+                        value={localSettings.gtmId || ''}
+                        onChange={e => setLocalSettings({ ...localSettings, gtmId: e.target.value })}
+                        placeholder="Ex: GTM-XXXXXXX"
+                      />
+                    </div>
+                    <p className="text-xs text-on-surface-variant/60 leading-relaxed">
+                      Centraliza o gerenciamento de todas as tags de marketing (Pixel, Analytics, etc.) sem precisar mexer no código do site.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Google Analytics 4 */}
+                <div className="bg-surface-container/20 p-6 rounded-[1.5rem] border border-outline/30 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center text-primary">
+                        <AssignmentTurnedIn size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-primary text-sm">Google Analytics 4</h4>
+                        <p className="text-[10px] text-on-surface-variant/60 font-medium">Análise de Tráfego</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary block">ID do GA4</label>
+                      <input
+                        className="w-full text-base font-bold border-b border-outline focus:border-primary outline-none py-1.5 bg-transparent"
+                        value={localSettings.ga4Id || ''}
+                        onChange={e => setLocalSettings({ ...localSettings, ga4Id: e.target.value })}
+                        placeholder="Ex: G-XXXXXXXXXX"
+                      />
+                    </div>
+                    <p className="text-xs text-on-surface-variant/60 leading-relaxed">
+                      Mede visitas, comportamento dos usuários, fontes de tráfego e visualizações de página de maneira profunda e detalhada.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Meta Pixel */}
+                <div className="bg-surface-container/20 p-6 rounded-[1.5rem] border border-outline/30 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center text-primary">
+                        <Target size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-primary text-sm">Meta Pixel</h4>
+                        <p className="text-[10px] text-on-surface-variant/60 font-medium">Facebook &amp; Instagram Ads</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-primary block">ID do Pixel da Meta</label>
+                      <input
+                        className="w-full text-base font-bold border-b border-outline focus:border-primary outline-none py-1.5 bg-transparent"
+                        value={localSettings.metaPixelId || ''}
+                        onChange={e => setLocalSettings({ ...localSettings, metaPixelId: e.target.value })}
+                        placeholder="Ex: 123456789012345"
+                      />
+                    </div>
+                    <p className="text-xs text-on-surface-variant/60 leading-relaxed">
+                      Crucial para criar públicos-alvo, fazer remarketing e rastrear conversões vindas de anúncios patrocinados no Facebook/Instagram.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-amber-400/10 p-5 rounded-2xl border border-amber-400/20 text-xs text-amber-800 leading-relaxed space-y-2">
+                <p className="font-bold">💡 Dica de Rastreamento Automático de Conversões (GTM):</p>
+                <p>
+                  Todos os botões principais do site (como <strong>Agendar Consulta</strong>, <strong>WhatsApp</strong> e envios de formulário) já foram configurados com atributos semânticos especiais, como <code>data-event="agendamento"</code>, para que você possa facilmente configurar os disparadores de conversões no painel do Google Tag Manager sem precisar alterar o código do site novamente.
+                </p>
+              </div>
+
+              <div className="flex justify-start">
+                <button
+                  disabled={isQuotaLocked}
+                  onClick={async () => {
+                    try {
+                      setSaveStatus({ ...saveStatus, marketing: true });
+                      await onUpdateSettings(localSettings);
+                      setTimeout(() => setSaveStatus(prev => ({ ...prev, marketing: false })), 2000);
+                    } catch (e) {
+                      alert("Erro ao salvar integrações de marketing.");
+                    }
+                  }}
+                  className={`flex items-center gap-2 px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 ${
+                    isQuotaLocked
+                      ? 'bg-outline-variant text-primary/30 cursor-not-allowed shadow-none'
+                      : saveStatus['marketing']
+                        ? 'bg-green-500 text-white'
+                        : 'bg-primary text-white hover:bg-primary-light'
+                  }`}
+                >
+                  {saveStatus['marketing'] ? <CheckCircle size={14} /> : <AssignmentTurnedIn size={14} />}
+                  {saveStatus['marketing'] ? 'Integrações Salvas!' : 'Salvar Integrações'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Global Cropper Modal */}
+        <AnimatePresence>
+          {cropImage && (
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 sm:p-12">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => { setCropImage(null); setCroppingItemId(null); setCroppingType(null); }}
+                className="absolute inset-0 bg-on-surface/80 backdrop-blur-md"
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 30 }}
+                className="relative bg-white w-full max-w-2xl rounded-[3rem] modern-shadow border border-outline overflow-hidden"
+              >
+                <div className="p-8 border-b border-outline flex justify-between items-center">
+                  <h3 className="text-xl font-display font-black text-primary">Ajustar e Cortar Foto</h3>
+                  <button onClick={() => { setCropImage(null); setCroppingItemId(null); setCroppingType(null); }} className="w-10 h-10 rounded-full bg-surface hover:bg-outline flex items-center justify-center transition-colors">
+                    <Close size={20} />
+                  </button>
+                </div>
+                
+                <div className="relative h-[400px] w-full bg-surface">
+                  <Cropper
+                    image={cropImage}
+                    crop={crop}
+                    zoom={zoom}
+                    aspect={
+                      croppingType === 'hero' ? 16 / 9 : 
+                      croppingType === 'insurance' ? 3 / 1 :
+                      croppingType?.startsWith('sublease') ? 4 / 3 : 
+                      1
+                    }
+                    onCropChange={setCrop}
+                    onCropComplete={onCropComplete}
+                    onZoomChange={setZoom}
+                  />
+                </div>
+
+                <div className="p-8 space-y-6">
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-black uppercase text-primary/40 tracking-widest block text-center">Zoom</label>
+                    <input
+                      type="range"
+                      value={zoom}
+                      min={1}
+                      max={3}
+                      step={0.1}
+                      aria-labelledby="Zoom"
+                      onChange={(e) => setZoom(Number(e.target.value))}
+                      className="w-full h-1.5 bg-outline rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                  </div>
+                  
+                  <div className="flex gap-4">
+                    <button 
+                      onClick={() => { setCropImage(null); setCroppingItemId(null); setCroppingType(null); }}
+                      className="flex-1 btn-modern-outline py-4"
+                    >
+                      Cancelar
+                    </button>
+                    <button 
+                      onClick={applyCrop}
+                      className="flex-1 btn-modern-primary py-4"
+                    >
+                      Aplicar Corte
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+

@@ -1,0 +1,8 @@
+{
+  "name": "Clínica Hope - Psicologia em Palhoça",
+  "description": "Uma clínica de psicologia moderna e humanizada em Palhoça, focada em bem-estar emocional e saúde mental.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

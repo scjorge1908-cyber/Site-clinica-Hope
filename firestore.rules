@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Basic helpers
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { 
+      return isSignedIn() && request.auth.token.email == 'scjorge1908@gmail.com';
+    }
+    // Allow public read on all collections
+    match /specialists/{docId} {
+      allow read: if true;
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['schedule', 'lastSync'])
+      );
+      allow create, delete: if isAdmin();
+    }
+    match /approaches/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /insurance_plans/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /psicoeducacao_articles/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /sublease_rooms/{docId} {
+      allow read, write: if true;
+    }
+    match /sublease_settings/{docId} {
+      allow read, write: if true;
+    }
+    match /sublease_users/{docId} {
+      allow read, write: if true;
+    }
+    match /sublease_bookings/{docId} {
+      allow read, write: if true;
+    }
+    // Default deny for everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
