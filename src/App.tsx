@@ -2210,7 +2210,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                     console.warn("Failed to generate schedule summary:", e);
                   }
 
-                  const message = `Ola veja a disponibilidade: ${spec.name}. Veja horários disponíveis: ${scheduleSummary || 'sob consulta'}. Caso não encontre um horário ideal voce pode ficar na lista de espera veja o site: www.clinicahopebrasil.com.br`;
+                  const message = `Ola veja a disponibilidade: ${spec.name}. Veja horários disponíveis: ${scheduleSummary || 'sob consulta'}. Caso não encontre um horário ideal voce pode ficar na lista de espera veja o site: clinicahopebrasil.com.br`;
                   const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
                   window.open(whatsappUrl, '_blank');
                 }}
