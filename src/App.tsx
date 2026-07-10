@@ -97,11 +97,12 @@ import {
   DOCS,
   db,
   getPsicoeducacaoArticles,
-  savePsicoeducacaoArticles
+  savePsicoeducacaoArticles,
+  ensureSpecialistsSlugs
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
-import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit } from './analytics';
+import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit, trackSpecialistProfileView } from './analytics';
 // Placeholder/Fallback components for Sublocação since it might not be deployed yet in all environments
 const SublocacaoSystemWrapper = ({ onNavigate }: any) => {
   return (
@@ -230,11 +231,57 @@ function getActiveShifts(spec: Specialist): Shift[] {
   return shiftSet.size > 0 ? Array.from(shiftSet) : (spec.shifts || []);
 }
 
+const RESERVED_ROUTES: Record<string, Screen> = {
+  'especialistas': Screen.CorpoClinico,
+  'corpoclinico': Screen.CorpoClinico,
+  'sublocacao': Screen.Sublocacao,
+  'administracao': Screen.Admin,
+  'admin': Screen.Admin,
+  'login': Screen.Login,
+  'seo': Screen.SEO,
+  'abordagens': Screen.Abordagens,
+  'psicoeducacao': Screen.Psicoeducacao,
+  'agendamento': Screen.Agendamento,
+  'home': Screen.Home,
+  'quem-somos': Screen.Home,
+  'contato': Screen.Home,
+};
+
+export function getScreenFromPathname(path: string): Screen | null {
+  const cleanPath = path.toLowerCase().replace(/^\/|\/$/g, '').trim();
+  if (cleanPath === '' || cleanPath === '/') return Screen.Home;
+  return RESERVED_ROUTES[cleanPath] || null;
+}
+
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.Home);
+  const [currentScreen, setCurrentScreen] = useState<Screen>(() => {
+    const pathname = window.location.pathname.replace(/^\/|\/$/g, '').trim();
+    const staticScreen = getScreenFromPathname(pathname);
+    if (staticScreen) {
+      return staticScreen;
+    }
+    if (pathname !== '') {
+      // É um potencial slug de especialista, assumimos CorpoClinico temporariamente para evitar flash da Home
+      return Screen.CorpoClinico;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('psi')) {
+      return Screen.CorpoClinico;
+    }
+    return Screen.Home;
+  });
   const [direction, setDirection] = useState<number>(0);
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRoutingResolved, setIsRoutingResolved] = useState(() => {
+    const pathname = window.location.pathname.replace(/^\/|\/$/g, '').trim();
+    const staticScreen = getScreenFromPathname(pathname);
+    if (staticScreen) return true;
+    if (pathname !== '') return false; // Precisa resolver comparando com a lista de especialistas
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('psi')) return false; // Precisa resolver comparando com a lista de especialistas
+    return true; // Rota padrão vazia é Home, não precisa de validação de slug
+  });
   
   // Data State
   const [homeSettings, setHomeSettings] = useState<HomeSettings | null>(null);
@@ -510,7 +557,11 @@ export default function App() {
     const startSpecsListener = () => {
       unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
-        setSpecialists(data.length > 0 ? data : []);
+        const { updated, specialists: processedSpecs } = ensureSpecialistsSlugs(data);
+        setSpecialists(processedSpecs.length > 0 ? processedSpecs : []);
+        if (updated && auth.currentUser?.email === 'scjorge1908@gmail.com') {
+          saveSpecialists(processedSpecs).catch(err => console.error("Erro ao auto-salvar slugs:", err));
+        }
         specsLoaded = true;
         checkAllLoaded();
       }, (error) => {
@@ -590,7 +641,8 @@ export default function App() {
     // For public users (default on load), load specialists once instead of real-time listener
     getDocs(collection(db, COLLECTIONS.SPECIALISTS)).then((snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
-      setSpecialists(data.length > 0 ? data : []);
+      const { specialists: processedSpecs } = ensureSpecialistsSlugs(data);
+      setSpecialists(processedSpecs.length > 0 ? processedSpecs : []);
       specsLoaded = true;
       checkAllLoaded();
     }).catch((error) => {
@@ -842,6 +894,54 @@ export default function App() {
     }
   };
 
+  // Efeito de Roteamento para Slugs e Parâmetros
+  useEffect(() => {
+    if (!isDataInitialized || !specialists) return;
+
+    const pathname = window.location.pathname.replace(/^\/|\/$/g, '').trim();
+    const params = new URLSearchParams(window.location.search);
+    const psiParam = params.get('psi');
+
+    // 1. Verifica se é uma rota estática/reservada
+    const staticScreen = getScreenFromPathname(pathname);
+    if (staticScreen) {
+      setCurrentScreen(staticScreen);
+      setIsRoutingResolved(true);
+      return;
+    }
+
+    // 2. Verifica se o pathname bate com o slug de algum especialista
+    if (pathname !== '') {
+      const matchedSpecialist = specialists.find(
+        (s) => s.slug && s.slug.toLowerCase() === pathname.toLowerCase()
+      );
+      if (matchedSpecialist) {
+        setCurrentScreen(Screen.CorpoClinico);
+      } else {
+        // Fallback seguro caso não encontre nenhum especialista correspondente
+        setCurrentScreen(Screen.Home);
+      }
+      setIsRoutingResolved(true);
+      return;
+    }
+
+    // 3. Fallback de redundância para ?psi=slug
+    if (psiParam) {
+      const matchedSpecialist = specialists.find(
+        (s) => s.slug && s.slug.toLowerCase() === psiParam.toLowerCase()
+      );
+      if (matchedSpecialist) {
+        setCurrentScreen(Screen.CorpoClinico);
+      } else {
+        setCurrentScreen(Screen.Home);
+      }
+      setIsRoutingResolved(true);
+      return;
+    }
+
+    setIsRoutingResolved(true);
+  }, [isDataInitialized, specialists]);
+
   const handleLogout = async () => {
     await firebaseLogout();
     setIsAdminUnlocked(false);
@@ -876,7 +976,7 @@ export default function App() {
     }),
   };
 
-  if (isLoading || !homeSettings || !specialists || !approaches || !insurancePlans) {
+  if (isLoading || !homeSettings || !specialists || !approaches || !insurancePlans || !isRoutingResolved) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center">
         <div className="relative">
@@ -1985,6 +2085,34 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [isTouched, setIsTouched] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const [isHighlighted, setIsHighlighted] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const psiParam = params.get('psi');
+    const pathname = window.location.pathname.replace(/^\/|\/$/g, '').trim();
+
+    const isReserved = !!getScreenFromPathname(pathname);
+    const isPathnameMatch = !isReserved && pathname !== '' && spec.slug && pathname.toLowerCase() === spec.slug.toLowerCase();
+    const isQueryParamMatch = psiParam && spec.slug && psiParam.toLowerCase() === spec.slug.toLowerCase();
+
+    if (isPathnameMatch || isQueryParamMatch) {
+      setIsDescExpanded(true);
+      const scrollTimer = setTimeout(() => {
+        if (cardRef.current) {
+          cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        setIsHighlighted(true);
+        trackSpecialistProfileView(spec.name, spec.slug || '');
+        
+        const highlightTimer = setTimeout(() => {
+          setIsHighlighted(false);
+        }, 5000);
+        return () => clearTimeout(highlightTimer);
+      }, 600);
+      return () => clearTimeout(scrollTimer);
+    }
+  }, [spec.slug, spec.name]);
 
   useEffect(() => {
     if (!isAdminUnlocked) return;
@@ -2162,7 +2290,11 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
       layout
       onTouchStart={() => setIsTouched(true)}
       onTouchEnd={() => setIsTouched(false)}
-      className="bg-white rounded-[3rem] overflow-hidden soft-shadow border border-outline-alt/30 flex flex-col group h-full"
+      className={`bg-white rounded-[3rem] overflow-hidden flex flex-col group h-full transition-all duration-1000 ${
+        isHighlighted 
+        ? 'ring-4 ring-secondary shadow-[0_0_25px_rgba(230,131,114,0.4)] border-secondary scale-[1.02]' 
+        : 'soft-shadow border border-outline-alt/30'
+      }`}
     >
       <div className={`h-96 relative overflow-hidden transition-all duration-700 ${isTouched ? 'grayscale-0' : 'grayscale group-hover:grayscale-0'}`}>
         <img 
@@ -2210,7 +2342,10 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                     console.warn("Failed to generate schedule summary:", e);
                   }
 
-                  const message = `Ola veja a disponibilidade: ${spec.name}. Veja horários disponíveis: ${scheduleSummary || 'sob consulta'}. Caso não encontre um horário ideal voce pode ficar na lista de espera veja o site: clinicahopebrasil.com.br`;
+                  const link = spec.slug 
+                    ? `https://clinicahopebrasil.com.br/${spec.slug}` 
+                    : `https://clinicahopebrasil.com.br/especialistas?psi=${spec.id}`;
+                  const message = `Ola veja a disponibilidade: ${spec.name}. Veja horários disponíveis: ${scheduleSummary || 'sob consulta'}. Caso não encontre um horário ideal voce pode ficar na lista de espera veja o site: ${link}`;
                   const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
                   window.open(whatsappUrl, '_blank');
                 }}

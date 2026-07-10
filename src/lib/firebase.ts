@@ -370,3 +370,49 @@ export async function savePsicoeducacaoArticles(articles: any[]) {
     handleFirestoreError(error, OperationType.WRITE, COLLECTIONS.PSICOEDUCACAO_ARTICLES);
   }
 }
+
+export function generateSlug(name: string, id: string): string {
+  if (!name) return id;
+  let clean = name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+  
+  clean = clean.replace(/[^a-z0-9\s-]/g, '');
+  clean = clean.replace(/[\s_]+/g, '-');
+  clean = clean.replace(/^(psi|dr|dra|psicologa|psicologo)-\.?/, '');
+  clean = clean.replace(/^-+|-+$/g, '');
+  
+  return clean || id;
+}
+
+export function ensureSpecialistsSlugs(specs: any[]): { updated: boolean, specialists: any[] } {
+  let updated = false;
+  const slugCounts = new Map<string, number>();
+  
+  const candidates = specs.map(s => {
+    const candidate = s.slug || generateSlug(s.name, s.id);
+    slugCounts.set(candidate, (slugCounts.get(candidate) || 0) + 1);
+    return { s, candidate };
+  });
+
+  const usedSlugs = new Set<string>();
+  const finalSpecs = candidates.map(({ s, candidate }) => {
+    let finalSlug = candidate;
+    if (slugCounts.get(candidate)! > 1 || usedSlugs.has(candidate)) {
+      finalSlug = `${candidate}-${s.id}`;
+    }
+    
+    usedSlugs.add(finalSlug);
+    
+    if (s.slug !== finalSlug) {
+      updated = true;
+      return { ...s, slug: finalSlug };
+    }
+    return s;
+  });
+
+  return { updated, specialists: finalSpecs };
+}
+

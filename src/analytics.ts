@@ -58,3 +58,21 @@ export const trackScheduleClick = (specialistName: string) => {
   }
 };
 
+// ── Visualização de Perfil de Especialista ─────────────
+export const trackSpecialistProfileView = (specialistName: string, slug: string) => {
+  push({
+    event: 'view_specialist_profile',
+    event_category: 'engajamento',
+    event_label: specialistName,
+    slug: slug
+  });
+  if (typeof window.fbq === 'function') {
+    window.fbq('trackCustom', 'ViewPerfilEspecialista', { 
+      content_name: specialistName, 
+      content_category: 'Especialista',
+      slug: slug 
+    });
+  }
+};
+
+

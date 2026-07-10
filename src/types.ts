@@ -110,6 +110,7 @@ export interface Specialist {
     };
   };
   insurancePlans?: string[];
+  slug?: string;
 }
 
 export interface Approach {
