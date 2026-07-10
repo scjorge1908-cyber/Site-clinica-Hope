@@ -1009,6 +1009,32 @@ export default function App() {
 
   const safeSettings = { ...homeSettings, insurancePlans };
 
+  const sortedSpecialists = useMemo(() => {
+    if (!specialists) return [];
+    const specsCopy = [...specialists];
+    return specsCopy.sort((a, b) => {
+      const slugA = (a.slug || '').toLowerCase().trim();
+      const slugB = (b.slug || '').toLowerCase().trim();
+      
+      // Rule 1: beatriz-santiago is ALWAYS first
+      if (slugA === 'beatriz-santiago') return -1;
+      if (slugB === 'beatriz-santiago') return 1;
+      
+      // Rule 2: Order by availability (having active shifts/slots)
+      const activeShiftsA = getActiveShifts(a);
+      const activeShiftsB = getActiveShifts(b);
+      
+      const hasAvailabilityA = activeShiftsA.length > 0;
+      const hasAvailabilityB = activeShiftsB.length > 0;
+      
+      if (hasAvailabilityA && !hasAvailabilityB) return -1;
+      if (!hasAvailabilityA && hasAvailabilityB) return 1;
+      
+      // Keep original order
+      return 0;
+    });
+  }, [specialists]);
+
   return (
     <div className="relative overflow-hidden min-h-screen">
       <AnimatePresence initial={false} custom={direction} mode="wait">
@@ -1030,7 +1056,7 @@ export default function App() {
               onNavigate={navigateTo} 
               settings={safeSettings} 
               approaches={approaches}
-              specialists={specialists}
+              specialists={sortedSpecialists}
               isAdminUnlocked={isAdminUnlocked}
               syncingSpecs={syncingSpecs}
               onSyncRequest={syncAllExpiredSpecialists}
@@ -1040,7 +1066,7 @@ export default function App() {
           {currentScreen === Screen.CorpoClinico && (
             <CorpoClinicoScreen 
               onNavigate={navigateTo} 
-              specialists={specialists} 
+              specialists={sortedSpecialists} 
               approaches={approaches}
               settings={safeSettings}
               isAdminUnlocked={isAdminUnlocked}
