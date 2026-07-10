@@ -2502,7 +2502,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                 Para agendamentos via <span className="font-bold underline text-secondary">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="font-bold underline text-secondary">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos.
               </p>
               <div className="text-[9px] bg-white/40 p-3 rounded-xl border border-secondary/5 text-primary/60 leading-normal">
-                💡 <span className="font-bold">Dica:</span> Faça uma consulta online (telemedicina) com qualquer médico, a qualquer hora, e peça o encaminhamento com CID. Rápido, 24h e resolve para você agendar pelo plano.
+                💡 <span className="font-bold">Dica:</span> Verifique se o seu plano oferece telemedicina. Em muitos casos, o atendimento é imediato e funciona 24 horas. </span> Na consulta, solicite ao médico uma guia de encaminhamento para psicoterapia com o CID do tratamento, documento normalmente necessário para agendar as sessões pelo plano de saúde.
               </div>
             </div>
           </div>
