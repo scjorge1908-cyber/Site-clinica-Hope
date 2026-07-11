@@ -131,6 +131,8 @@ const INITIAL_ADMIN_SETTINGS = {
   cancelationHoursLimit: 24,
   autoApproveProfessionals: false
 };
+const ADMIN_EMAILS = ['scjorge1908@gmail.com', 'santiagobeatriz@hotmail.com'];
+
 // Helper for Local Storage
 const LS_KEYS = {
   SETTINGS: 'clinica_hope_settings',
@@ -561,7 +563,7 @@ export default function App() {
       const specsData = specsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
       const { updated, specialists: processedSpecs } = ensureSpecialistsSlugs(specsData);
       setSpecialists(processedSpecs.length > 0 ? processedSpecs : []);
-      if (updated && auth.currentUser?.email === 'scjorge1908@gmail.com') {
+      if (updated && auth.currentUser?.email && ADMIN_EMAILS.includes(auth.currentUser.email)) {
         saveSpecialists(processedSpecs).catch(err => console.error("Erro ao auto-salvar slugs:", err));
       }
 
@@ -628,7 +630,7 @@ export default function App() {
       setUser(authUser);
       if (authUser) {
         console.log("Usuário logado:", authUser.email);
-        if (authUser.email === 'scjorge1908@gmail.com') {
+        if (authUser.email && ADMIN_EMAILS.includes(authUser.email)) {
           setIsAdminUnlocked(true);
           console.log("Admin detectado. Carregando dados de especialistas...");
         } else {
@@ -935,7 +937,7 @@ export default function App() {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
       const { updated, specialists: processedSpecs } = ensureSpecialistsSlugs(data);
       setSpecialists(processedSpecs.length > 0 ? processedSpecs : []);
-      if (updated && auth.currentUser?.email === 'scjorge1908@gmail.com') {
+      if (updated && auth.currentUser?.email && ADMIN_EMAILS.includes(auth.currentUser.email)) {
         saveSpecialists(processedSpecs).catch(err => console.error("Erro ao auto-salvar slugs:", err));
       }
     }).catch((error) => {
@@ -3235,11 +3237,11 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
     setError('');
     try {
       const user = await loginWithGoogle();
-      if (user.email === 'scjorge1908@gmail.com') {
+      if (user.email && ADMIN_EMAILS.includes(user.email)) {
         onUnlock();
         onNavigate(Screen.Admin, 'push');
       } else {
-        setError('Acesso negado. Apenas o administrador scjorge1908@gmail.com pode acessar o painel.');
+        setError('Acesso restrito. Se você não tem permissão de administrador, entre em contato com a gerência da clínica.');
       }
     } catch (err: any) {
       if (err.message?.includes('popup-closed-by-user')) {
@@ -3288,7 +3290,7 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
             )}
             
             <p className="text-[10px] text-center text-on-surface-variant/40 uppercase font-black tracking-widest">
-              Acesso exclusivo para: scjorge1908@gmail.com
+              Acesso restrito a administradores autorizados
             </p>
           </div>
 
