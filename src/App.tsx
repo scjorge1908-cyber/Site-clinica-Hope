@@ -1072,7 +1072,10 @@ export default function App() {
     if (!isDataInitialized || !specialists) return;
 
     // Se o usuário estiver no painel administrativo ou tela de login, não deve reavaliar o roteamento
-    if (currentScreen === Screen.Admin || currentScreen === Screen.Login) return;
+    if (currentScreen === Screen.Admin || currentScreen === Screen.Login) {
+      setIsRoutingResolved(true);
+      return;
+    }
 
     const pathname = window.location.pathname.replace(/^\/|\/$/g, '').trim();
     const params = new URLSearchParams(window.location.search);
@@ -3939,6 +3942,7 @@ function AdminScreen({
   const [hasInitialized, setHasInitialized] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'corpo' | 'abordagens' | 'psicoeducacao' | 'sublocacao' | 'reservas_sublocacao' | 'marketing'>('home');
   const [saveStatus, setSaveStatus] = useState<{[key: string]: boolean}>({});
+  const [isRefreshingAdmin, setIsRefreshingAdmin] = useState(false);
 
   const [croppingType, setCroppingType] = useState<'specialist' | 'logo' | 'insurance' | 'hero' | 'sublease_1' | 'sublease_2' | null>(null);
   const [croppingItemId, setCroppingItemId] = useState<string | null>(null);
@@ -4549,12 +4553,21 @@ function AdminScreen({
 
               {/* Atualizar Button */}
               <button 
-                onClick={onManualRefreshAdmin}
-                className="px-4 py-2.5 bg-indigo-50 text-indigo-700 rounded-xl hover:bg-indigo-100 hover:text-indigo-800 transition-all duration-200 flex items-center gap-2 border border-indigo-100 text-[10px] font-black uppercase tracking-widest cursor-pointer"
+                onClick={async () => {
+                  if (isRefreshingAdmin) return;
+                  setIsRefreshingAdmin(true);
+                  try {
+                    await onManualRefreshAdmin();
+                  } finally {
+                    setIsRefreshingAdmin(false);
+                  }
+                }}
+                disabled={isRefreshingAdmin}
+                className="px-4 py-2.5 bg-indigo-50 text-indigo-700 rounded-xl hover:bg-indigo-100 hover:text-indigo-800 transition-all duration-200 flex items-center gap-2 border border-indigo-100 text-[10px] font-black uppercase tracking-widest cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 title="Atualizar Dados do Painel"
               >
-                <RefreshCw size={14} />
-                <span>Atualizar</span>
+                <RefreshCw size={14} className={isRefreshingAdmin ? "animate-spin" : ""} />
+                <span>{isRefreshingAdmin ? "Atualizando..." : "Atualizar"}</span>
               </button>
 
               {/* Sincronizar Button */}
