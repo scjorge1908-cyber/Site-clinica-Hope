@@ -272,6 +272,7 @@ export default function App() {
   });
   const [direction, setDirection] = useState<number>(0);
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [isAdminSuspended, setIsAdminSuspended] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRoutingResolved, setIsRoutingResolved] = useState(() => {
     const pathname = window.location.pathname.replace(/^\/|\/$/g, '').trim();
@@ -550,45 +551,92 @@ export default function App() {
     await Promise.all(expiredSpecs.map(s => syncSpecialist(s.id, s.id === targetId)));
   };
 
-  // Initial Load from Firebase (Real-time Sync) and Auth check
-  useEffect(() => {
-    let unsubSpecs = () => {};
+  const handleManualRefreshAdmin = async () => {
+    if (!isAdminUnlocked || isAdminSuspended) return;
+    try {
+      console.log("Iniciando atualização manual de dados (Admin)...");
+      
+      // 1. Fetch Specialists
+      const specsSnapshot = await getDocs(collection(db, COLLECTIONS.SPECIALISTS));
+      const specsData = specsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
+      const { updated, specialists: processedSpecs } = ensureSpecialistsSlugs(specsData);
+      setSpecialists(processedSpecs.length > 0 ? processedSpecs : []);
+      if (updated && auth.currentUser?.email === 'scjorge1908@gmail.com') {
+        saveSpecialists(processedSpecs).catch(err => console.error("Erro ao auto-salvar slugs:", err));
+      }
 
-    const startSpecsListener = () => {
-      unsubSpecs = onSnapshot(collection(db, COLLECTIONS.SPECIALISTS), (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
-        const { updated, specialists: processedSpecs } = ensureSpecialistsSlugs(data);
-        setSpecialists(processedSpecs.length > 0 ? processedSpecs : []);
-        if (updated && auth.currentUser?.email === 'scjorge1908@gmail.com') {
-          saveSpecialists(processedSpecs).catch(err => console.error("Erro ao auto-salvar slugs:", err));
-        }
-        specsLoaded = true;
-        checkAllLoaded();
-      }, (error) => {
-        console.error("Erro no listener de especialistas:", error);
-        setSpecialists([]);
-        specsLoaded = true;
-        checkAllLoaded();
-      });
+      // 2. Fetch sublease rooms list
+      const roomsSnapshot = await getDocs(collection(db, 'sublease_rooms'));
+      const loadedRooms = roomsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setSubleaseRoomsList(loadedRooms);
+
+      // 3. Fetch sublease users list
+      const usersSnapshot = await getDocs(collection(db, 'sublease_users'));
+      const loadedUsers = usersSnapshot.docs.map(d => d.data());
+      setSubleaseUsersList(loadedUsers);
+
+      console.log("Dados do painel administrativo atualizados com sucesso!");
+    } catch (error) {
+      console.error("Erro ao atualizar dados manualmente:", error);
+      alert("Erro ao atualizar os dados do painel.");
+    }
+  };
+
+  // Inactivity tracking for admin panel (15 minutes of inactivity on mouse/keyboard/scroll)
+  useEffect(() => {
+    if (!isAdminUnlocked) {
+      setIsAdminSuspended(false);
+      return;
+    }
+
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      if (isAdminSuspended) {
+        setIsAdminSuspended(false);
+      }
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        console.log("Inatividade detectada no painel administrativo por 15 minutos. Pausando sincronização...");
+        setIsAdminSuspended(true);
+      }, 15 * 60 * 1000); // 15 minutes
     };
 
+    const handleInteraction = () => {
+      resetTimer();
+    };
+
+    window.addEventListener('mousemove', handleInteraction);
+    window.addEventListener('keydown', handleInteraction);
+    window.addEventListener('click', handleInteraction);
+    window.addEventListener('scroll', handleInteraction);
+
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('mousemove', handleInteraction);
+      window.removeEventListener('keydown', handleInteraction);
+      window.removeEventListener('click', handleInteraction);
+      window.removeEventListener('scroll', handleInteraction);
+    };
+  }, [isAdminUnlocked, isAdminSuspended]);
+
+  // Initial Load from Firebase and Auth check
+  useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (authUser) => {
       setUser(authUser);
       if (authUser) {
         console.log("Usuário logado:", authUser.email);
         if (authUser.email === 'scjorge1908@gmail.com') {
           setIsAdminUnlocked(true);
-          console.log("Admin detectado. Ativando sincronização em tempo real de especialistas...");
-          unsubSpecs();
-          startSpecsListener();
+          console.log("Admin detectado. Carregando dados de especialistas...");
         } else {
           setIsAdminUnlocked(false);
         }
       } else {
         console.log("Usuário não logado");
         setIsAdminUnlocked(false);
-        unsubSpecs();
-        unsubSpecs = () => {};
       }
     });
 
@@ -612,11 +660,34 @@ export default function App() {
         console.warn("Loading timeout reached. Showing available data.");
         setIsDataInitialized(true);
         setIsLoading(false);
-        setHomeSettings(prev => prev || DEFAULT_HOME_SETTINGS);
-        setSpecialists(prev => prev || []);
-        setApproaches(prev => prev || []);
-        setInsurancePlans(prev => prev || []);
-        setSubleaseRooms(prev => prev || []);
+
+        try {
+          const cachedHome = localStorage.getItem('cached_home_settings');
+          if (cachedHome) setHomeSettings(JSON.parse(cachedHome));
+          else setHomeSettings(DEFAULT_HOME_SETTINGS);
+
+          const cachedSpecs = localStorage.getItem('cached_specialists');
+          if (cachedSpecs) setSpecialists(JSON.parse(cachedSpecs));
+          else setSpecialists([]);
+
+          const cachedApproaches = localStorage.getItem('cached_approaches');
+          if (cachedApproaches) setApproaches(JSON.parse(cachedApproaches));
+          else setApproaches([]);
+
+          const cachedInsurance = localStorage.getItem('cached_insurance');
+          if (cachedInsurance) setInsurancePlans(JSON.parse(cachedInsurance));
+          else setInsurancePlans([]);
+
+          const cachedRooms = localStorage.getItem('cached_sublease_rooms');
+          if (cachedRooms) setSubleaseRooms(JSON.parse(cachedRooms));
+          else setSubleaseRooms([]);
+        } catch (e) {
+          setHomeSettings(prev => prev || DEFAULT_HOME_SETTINGS);
+          setSpecialists(prev => prev || []);
+          setApproaches(prev => prev || []);
+          setInsurancePlans(prev => prev || []);
+          setSubleaseRooms(prev => prev || []);
+        }
         setSubleaseBookings(prev => prev || []);
       }
     }, 4000);
@@ -626,6 +697,9 @@ export default function App() {
       if (doc.exists()) {
         const data = doc.data() as HomeSettings;
         setHomeSettings(data);
+        try {
+          localStorage.setItem('cached_home_settings', JSON.stringify(data));
+        } catch (e) {}
       } else {
         setHomeSettings(DEFAULT_HOME_SETTINGS);
       }
@@ -633,6 +707,15 @@ export default function App() {
       checkAllLoaded();
     }, (error) => {
       console.error("Erro no listener de HomeSettings:", error);
+      try {
+        const cached = localStorage.getItem('cached_home_settings');
+        if (cached) {
+          setHomeSettings(JSON.parse(cached));
+          homeLoaded = true;
+          checkAllLoaded();
+          return;
+        }
+      } catch (e) {}
       setHomeSettings(DEFAULT_HOME_SETTINGS);
       homeLoaded = true;
       checkAllLoaded();
@@ -643,10 +726,24 @@ export default function App() {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
       const { specialists: processedSpecs } = ensureSpecialistsSlugs(data);
       setSpecialists(processedSpecs.length > 0 ? processedSpecs : []);
+      try {
+        if (processedSpecs.length > 0) {
+          localStorage.setItem('cached_specialists', JSON.stringify(processedSpecs));
+        }
+      } catch (e) {}
       specsLoaded = true;
       checkAllLoaded();
     }).catch((error) => {
       console.error("Erro ao carregar especialistas uma vez:", error);
+      try {
+        const cached = localStorage.getItem('cached_specialists');
+        if (cached) {
+          setSpecialists(JSON.parse(cached));
+          specsLoaded = true;
+          checkAllLoaded();
+          return;
+        }
+      } catch (e) {}
       setSpecialists([]);
       specsLoaded = true;
       checkAllLoaded();
@@ -654,11 +751,26 @@ export default function App() {
 
     const unsubApproaches = onSnapshot(collection(db, COLLECTIONS.APPROACHES), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Approach[];
-      setApproaches(data.length > 0 ? data : []);
+      const processed = data.length > 0 ? data : [];
+      setApproaches(processed);
+      try {
+        if (processed.length > 0) {
+          localStorage.setItem('cached_approaches', JSON.stringify(processed));
+        }
+      } catch (e) {}
       approachesLoaded = true;
       checkAllLoaded();
     }, (error) => {
       console.error("Erro no listener de abordagens:", error);
+      try {
+        const cached = localStorage.getItem('cached_approaches');
+        if (cached) {
+          setApproaches(JSON.parse(cached));
+          approachesLoaded = true;
+          checkAllLoaded();
+          return;
+        }
+      } catch (e) {}
       setApproaches([]);
       approachesLoaded = true;
       checkAllLoaded();
@@ -666,11 +778,26 @@ export default function App() {
 
     const unsubInsurance = onSnapshot(collection(db, COLLECTIONS.INSURANCE), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InsurancePlan[];
-      setInsurancePlans(data.length > 0 ? data : []);
+      const processed = data.length > 0 ? data : [];
+      setInsurancePlans(processed);
+      try {
+        if (processed.length > 0) {
+          localStorage.setItem('cached_insurance', JSON.stringify(processed));
+        }
+      } catch (e) {}
       insuranceLoaded = true;
       checkAllLoaded();
     }, (error) => {
       console.error("Erro no listener de convênios:", error);
+      try {
+        const cached = localStorage.getItem('cached_insurance');
+        if (cached) {
+          setInsurancePlans(JSON.parse(cached));
+          insuranceLoaded = true;
+          checkAllLoaded();
+          return;
+        }
+      } catch (e) {}
       setInsurancePlans([]);
       insuranceLoaded = true;
       checkAllLoaded();
@@ -678,7 +805,13 @@ export default function App() {
 
     const unsubRooms = onSnapshot(collection(db, COLLECTIONS.SUBLEASE_ROOMS), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as SubleaseRoom[];
-      setSubleaseRooms(data.length > 0 ? data : DEFAULT_SUBLEASE_ROOMS);
+      const processed = data.length > 0 ? data : DEFAULT_SUBLEASE_ROOMS;
+      setSubleaseRooms(processed);
+      try {
+        if (processed.length > 0) {
+          localStorage.setItem('cached_sublease_rooms', JSON.stringify(processed));
+        }
+      } catch (e) {}
       roomsLoaded = true;
       checkAllLoaded();
     }, (error) => {
@@ -687,6 +820,15 @@ export default function App() {
       } else {
         console.error("Erro no listener de salas:", error);
       }
+      try {
+        const cached = localStorage.getItem('cached_sublease_rooms');
+        if (cached) {
+          setSubleaseRooms(JSON.parse(cached));
+          roomsLoaded = true;
+          checkAllLoaded();
+          return;
+        }
+      } catch (e) {}
       setSubleaseRooms([]);
       roomsLoaded = true;
       checkAllLoaded();
@@ -695,9 +837,22 @@ export default function App() {
     // Psicoeducação Articles — não bloqueia o loading
     const unsubArticles = onSnapshot(collection(db, COLLECTIONS.PSICOEDUCACAO_ARTICLES), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PsicoeducacaoArticle[];
-      setPsicoeducacaoArticles(data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+      const sorted = data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      setPsicoeducacaoArticles(sorted);
+      try {
+        if (sorted.length > 0) {
+          localStorage.setItem('cached_psicoeducacao_articles', JSON.stringify(sorted));
+        }
+      } catch (e) {}
     }, (error) => {
       console.warn("Erro no listener de artigos:", error);
+      try {
+        const cached = localStorage.getItem('cached_psicoeducacao_articles');
+        if (cached) {
+          setPsicoeducacaoArticles(JSON.parse(cached));
+          return;
+        }
+      } catch (e) {}
       setPsicoeducacaoArticles([]);
     });
 
@@ -708,7 +863,6 @@ export default function App() {
       clearTimeout(loadingTimeout);
       unsubscribeAuth();
       unsubHome();
-      unsubSpecs();
       unsubApproaches();
       unsubInsurance();
       unsubRooms();
@@ -718,7 +872,7 @@ export default function App() {
 
   // Separate effect for bookings and sublease collections listener (Admins only)
   useEffect(() => {
-    if (!isAdminUnlocked) {
+    if (!isAdminUnlocked || isAdminSuspended) {
       setSubleaseBookings([]);
       setSubleaseAdminSettings(null);
       setSubleaseRoomsList([]);
@@ -739,12 +893,13 @@ export default function App() {
       setSubleaseAdminSettings(INITIAL_ADMIN_SETTINGS);
     });
 
-    // Rooms
-    const unsubRooms = onSnapshot(collection(db, 'sublease_rooms'), (snapshot) => {
+    // Rooms (One-time fetch instead of onSnapshot)
+    const unsubRooms = () => {};
+    getDocs(collection(db, 'sublease_rooms')).then((snapshot) => {
       const loadedRooms = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setSubleaseRoomsList(loadedRooms);
-    }, (error) => {
-      console.warn("Erro no listener de sublease_rooms (AppAdmin):", error);
+    }).catch((error) => {
+      console.warn("Erro ao carregar sublease_rooms (AppAdmin):", error);
     });
 
     // Bookings (legacy)
@@ -765,13 +920,26 @@ export default function App() {
       setSubleaseBookingsList([]);
     });
 
-    // Users
-    const unsubUsers = onSnapshot(collection(db, 'sublease_users'), (snapshot) => {
+    // Users (One-time fetch instead of onSnapshot)
+    const unsubUsers = () => {};
+    getDocs(collection(db, 'sublease_users')).then((snapshot) => {
       const loadedUsers = snapshot.docs.map(d => d.data());
       setSubleaseUsersList(loadedUsers);
-    }, (error) => {
-      console.warn("Erro no listener de sublease_users (AppAdmin):", error);
+    }).catch((error) => {
+      console.warn("Erro ao carregar sublease_users (AppAdmin):", error);
       setSubleaseUsersList([]);
+    });
+
+    // Specialists (One-time fetch on unlock or reactivation)
+    getDocs(collection(db, COLLECTIONS.SPECIALISTS)).then((snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Specialist[];
+      const { updated, specialists: processedSpecs } = ensureSpecialistsSlugs(data);
+      setSpecialists(processedSpecs.length > 0 ? processedSpecs : []);
+      if (updated && auth.currentUser?.email === 'scjorge1908@gmail.com') {
+        saveSpecialists(processedSpecs).catch(err => console.error("Erro ao auto-salvar slugs:", err));
+      }
+    }).catch((error) => {
+      console.error("Erro ao carregar especialistas (Admin):", error);
     });
 
     return () => {
@@ -781,7 +949,7 @@ export default function App() {
       unsubBookings();
       unsubUsers();
     };
-  }, [isAdminUnlocked]);
+  }, [isAdminUnlocked, isAdminSuspended]);
 
   const checkQuotaLock = () => {
     try {
@@ -1132,6 +1300,9 @@ export default function App() {
               onCancelSubleaseBooking={handleCancelSubleaseBooking}
               onUpdateSubleaseRoomsList={handleUpdateSubleaseRoomsList}
               onUpdateSubleaseUsersList={handleUpdateSubleaseUsersList}
+              isAdminSuspended={isAdminSuspended}
+              onReactivateAdmin={() => setIsAdminSuspended(false)}
+              onManualRefreshAdmin={handleManualRefreshAdmin}
             />
           )}
         </motion.div>
@@ -3377,6 +3548,9 @@ interface AdminScreenProps {
   onCancelSubleaseBooking?: (bookingId: string) => Promise<void>;
   onUpdateSubleaseRoomsList?: (rooms: any[]) => Promise<void>;
   onUpdateSubleaseUsersList?: (users: any[]) => Promise<void>;
+  isAdminSuspended?: boolean;
+  onReactivateAdmin?: () => void;
+  onManualRefreshAdmin?: () => void;
 }
 
 function SublocacaoScreen({ rooms, user, onBooking, onNavigate, settings }: { 
@@ -3742,7 +3916,10 @@ function AdminScreen({
   onUpdateSubleaseSettings = async () => {},
   onCancelSubleaseBooking = async () => {},
   onUpdateSubleaseRoomsList = async () => {},
-  onUpdateSubleaseUsersList = async () => {}
+  onUpdateSubleaseUsersList = async () => {},
+  isAdminSuspended = false,
+  onReactivateAdmin = () => {},
+  onManualRefreshAdmin = () => {}
 }: AdminScreenProps) {
   const [localSettings, setLocalSettings] = useState<HomeSettings>(settings);
   const [localSpecialists, setLocalSpecialists] = useState<Specialist[]>(specialists);
@@ -4310,6 +4487,26 @@ function AdminScreen({
   return (
     <div className="min-h-screen bg-surface p-6 md:p-12">
       <div className="max-w-6xl mx-auto">
+        {isAdminSuspended && (
+          <div 
+            onClick={onReactivateAdmin}
+            className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl flex items-center justify-between shadow-sm cursor-pointer hover:bg-amber-100/80 transition-all duration-200 group animate-pulse"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-3 w-3 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+              </span>
+              <div className="text-sm font-semibold">
+                Sincronização pausada por inatividade
+              </div>
+            </div>
+            <div className="text-xs bg-amber-500 text-white font-bold px-3 py-1 rounded-lg uppercase tracking-wider group-hover:scale-105 transition-transform">
+              Clique para reativar
+            </div>
+          </div>
+        )}
+
         {/* Modern Double-Layer Admin Header */}
         <div className="flex flex-col gap-6 mb-10 pb-6 border-b border-outline-alt/40">
           {/* Top Row: Title & Action Buttons */}
@@ -4342,6 +4539,16 @@ function AdminScreen({
                   </span>
                 </div>
               )}
+
+              {/* Atualizar Button */}
+              <button 
+                onClick={onManualRefreshAdmin}
+                className="px-4 py-2.5 bg-indigo-50 text-indigo-700 rounded-xl hover:bg-indigo-100 hover:text-indigo-800 transition-all duration-200 flex items-center gap-2 border border-indigo-100 text-[10px] font-black uppercase tracking-widest cursor-pointer"
+                title="Atualizar Dados do Painel"
+              >
+                <RefreshCw size={14} />
+                <span>Atualizar</span>
+              </button>
 
               {/* Sincronizar Button */}
               <button 
