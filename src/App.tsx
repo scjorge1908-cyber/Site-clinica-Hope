@@ -1071,6 +1071,9 @@ export default function App() {
   useEffect(() => {
     if (!isDataInitialized || !specialists) return;
 
+    // Se o usuário estiver no painel administrativo ou tela de login, não deve reavaliar o roteamento
+    if (currentScreen === Screen.Admin || currentScreen === Screen.Login) return;
+
     const pathname = window.location.pathname.replace(/^\/|\/$/g, '').trim();
     const params = new URLSearchParams(window.location.search);
     const psiParam = params.get('psi');
@@ -1113,7 +1116,7 @@ export default function App() {
     }
 
     setIsRoutingResolved(true);
-  }, [isDataInitialized, specialists]);
+  }, [isDataInitialized, specialists, currentScreen]);
 
   const handleLogout = async () => {
     await firebaseLogout();
@@ -1339,7 +1342,6 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
   const navItems = [
     { id: Screen.Home, label: 'Início' },
     { id: Screen.Sublocacao, label: 'Sublocação' },
-    { id: Screen.SEO, label: 'A Clínica' },
     { id: Screen.Abordagens, label: 'Abordagens' },
     { id: Screen.CorpoClinico, label: 'Especialistas' },
     { id: Screen.Psicoeducacao, label: 'Psicoeducação' },
