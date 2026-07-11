@@ -591,12 +591,15 @@ export default function App() {
       return;
     }
 
+    // Se estiver suspenso por inatividade, não ativa os listeners de janela nem cria timers.
+    // Ele deve permanecer suspenso até que o usuário clique para reativar manualmente.
+    if (isAdminSuspended) {
+      return;
+    }
+
     let timeoutId: NodeJS.Timeout;
 
     const resetTimer = () => {
-      if (isAdminSuspended) {
-        setIsAdminSuspended(false);
-      }
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         console.log("Inatividade detectada no painel administrativo por 15 minutos. Pausando sincronização...");
