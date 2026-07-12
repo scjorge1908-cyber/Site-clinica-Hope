@@ -285,6 +285,7 @@ export default function App() {
     if (params.get('psi')) return false; // Precisa resolver comparando com a lista de especialistas
     return true; // Rota padrão vazia é Home, não precisa de validação de slug
   });
+  const hasResolvedRoute = useRef(false);
   
   // Data State
   const [homeSettings, setHomeSettings] = useState<HomeSettings | null>(null);
@@ -1070,6 +1071,9 @@ export default function App() {
   // Efeito de Roteamento para Slugs e Parâmetros
   useEffect(() => {
     if (!isDataInitialized || !specialists) return;
+    if (hasResolvedRoute.current) return;
+
+    hasResolvedRoute.current = true;
 
     // Se o usuário estiver no painel administrativo ou tela de login, não deve reavaliar o roteamento
     if (currentScreen === Screen.Admin || currentScreen === Screen.Login) {
@@ -1119,7 +1123,7 @@ export default function App() {
     }
 
     setIsRoutingResolved(true);
-  }, [isDataInitialized, specialists, currentScreen]);
+  }, [isDataInitialized, specialists]);
 
   const handleLogout = async () => {
     await firebaseLogout();
