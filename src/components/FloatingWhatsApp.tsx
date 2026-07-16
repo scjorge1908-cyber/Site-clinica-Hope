@@ -5,7 +5,7 @@ import { trackWhatsAppClick } from '../analytics';
 
 const FloatingWhatsApp = () => {
   const whatsappNumber = '5548999549041'; // Clínica Hope number
-  const message = encodeURIComponent('Olá, estou vindo pelo site da Hope e gostaria de agendar uma consulta');
+  const message = encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta');
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${message}`;
 
   return (
