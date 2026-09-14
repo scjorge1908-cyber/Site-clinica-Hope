@@ -1365,7 +1365,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
           >
             <div className="shrink-0 transition-transform duration-300 group-hover:scale-110">
               {settings?.logoUrl ? (
-                <img src={settings.logoUrl} className="h-16 md:h-20 w-auto object-contain" alt="Logo" />
+                <img src={settings.logoUrl} className="h-12 md:h-16 lg:h-20 w-auto object-contain" alt="Logo" />
               ) : (
                 <Spa size={48} className="text-primary" />
               )}
@@ -1600,7 +1600,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
   return (
     <Layout activeScreen={Screen.Home} onNavigate={onNavigate} settings={settings}>
       {/* Modern Hero Section */}
-      <section className="relative px-6 py-12 md:py-24 lg:py-32 overflow-hidden bg-background">
+      <section className="relative px-6 pt-28 pb-12 md:py-24 lg:py-32 overflow-hidden bg-background">
         <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 lg:gap-16 items-center">
           <motion.div 
             initial={{ opacity: 0, x: -30 }} 
