@@ -1366,7 +1366,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
           >
             <div className="shrink-0 transition-transform duration-300 group-hover:scale-110">
               {settings?.logoUrl ? (
-                <img src={settings.logoUrl} className="h-12 md:h-16 lg:h-20 w-auto object-contain mix-blend-multiply" alt="Logo" />
+                <img src={settings.logoUrl} className="h-12 md:h-16 lg:h-20 w-auto object-contain" alt="Logo" />
               ) : (
                 <Spa size={48} className="text-primary" />
               )}
