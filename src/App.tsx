@@ -1622,13 +1622,13 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                 onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
                 id="hero-cta-agendar"
                 data-event="inicio_agendamento"
-                className="btn-primary shadow-xl"
+                className="btn-primary shadow-xl !px-4 !py-2 !text-sm whitespace-nowrap"
               >
                 Agendar Consulta
               </button>
               <button 
                 onClick={() => onNavigate(Screen.Abordagens, 'push')}
-                className="btn-secondary"
+                className="btn-secondary !px-4 !py-2 !text-sm whitespace-nowrap"
               >
                 Abordagens
               </button>
@@ -1639,7 +1639,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                 onClick={() => trackWhatsAppClick('hero_button')}
                 id="hero-cta-whatsapp"
                 data-event="contato_whatsapp"
-                className="btn-secondary flex items-center justify-center gap-2 sm:hidden"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 rounded-xl bg-[#25D366] text-white font-bold text-sm hover:bg-[#20ba5a] transition-all active:scale-95"
               >
                 <MessageCircle className="w-5 h-5" />
                 Agendar pelo WhatsApp
