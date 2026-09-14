@@ -1365,11 +1365,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             className="flex items-center gap-4 group shrink-0"
           >
             <div className="shrink-0 transition-transform duration-300 group-hover:scale-110">
-              {settings?.logoUrl ? (
-                <img src={settings.logoUrl} className="h-12 md:h-16 lg:h-20 w-auto object-contain" alt="Logo" />
-              ) : (
-                <Spa size={48} className="text-primary" />
-              )}
+              <img src="/logo-hope.png" className="h-12 md:h-16 lg:h-20 w-auto object-contain" alt="Logo" />
             </div>
             <span className="text-2xl font-black tracking-tight text-primary hidden sm:block leading-none">
               {settings?.clinicName || 'Clínica Hope'}
