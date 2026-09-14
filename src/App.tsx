@@ -68,7 +68,8 @@ import {
   Target,
   Check,
   AlertCircle,
-  Clock
+  Clock,
+  MessageCircle
 } from 'lucide-react';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Cropper from 'react-easy-crop';
@@ -1365,7 +1366,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
           >
             <div className="shrink-0 transition-transform duration-300 group-hover:scale-110">
               {settings?.logoUrl ? (
-                <img src={settings.logoUrl} className="h-12 md:h-16 lg:h-20 w-auto object-contain" alt="Logo" />
+                <img src={settings.logoUrl} className="h-12 md:h-16 lg:h-20 w-auto object-contain mix-blend-multiply" alt="Logo" />
               ) : (
                 <Spa size={48} className="text-primary" />
               )}
@@ -1631,6 +1632,18 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
               >
                 Abordagens
               </button>
+              <a
+                href={`https://wa.me/5548999549041?text=${encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => trackWhatsAppClick('hero_button')}
+                id="hero-cta-whatsapp"
+                data-event="contato_whatsapp"
+                className="btn-secondary flex items-center justify-center gap-2 sm:hidden"
+              >
+                <MessageCircle className="w-5 h-5" />
+                Agendar pelo WhatsApp
+              </a>
             </div>
 
             {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
