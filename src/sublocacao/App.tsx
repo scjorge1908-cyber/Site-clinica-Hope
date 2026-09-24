@@ -1567,7 +1567,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const handleWhatsAppClick = () => {
     if (!canBook) return;
     const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
-    window.open(`https://wa.me/5548999549041?text=${encodeURIComponent(message)}`, '_blank');
+    window.open(`https://wa.me/5548998101804?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   return (
@@ -1735,7 +1735,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                       </div>
                       
                       <a 
-                        href={`https://wa.me/5548999549041?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
+                        href={`https://wa.me/5548998101804?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
@@ -2164,7 +2164,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                 </p>
                 <div className="pt-4">
                   <a 
-                    href="https://wa.me/5548999549041" 
+                    href="https://wa.me/5548998101804" 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-4 bg-white text-primary px-10 py-5 rounded-2xl font-bold text-lg hover:shadow-2xl transition-all active:scale-95"
