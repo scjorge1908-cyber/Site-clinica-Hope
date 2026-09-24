@@ -2,11 +2,11 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { MessageCircle } from 'lucide-react';
 import { trackWhatsAppClick } from '../analytics';
+import { WHATSAPP_URL } from '../contact';
 
 const FloatingWhatsApp = () => {
-  const whatsappNumber = '5548998101804'; // Clínica Hope number
   const message = encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta');
-  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${message}`;
+  const whatsappUrl = `${WHATSAPP_URL}?text=${message}`;
 
   return (
     <motion.a
@@ -31,4 +31,3 @@ const FloatingWhatsApp = () => {
 };
 
 export default FloatingWhatsApp;
-
