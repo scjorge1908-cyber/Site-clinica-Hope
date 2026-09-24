@@ -104,6 +104,8 @@ import {
 import { onAuthStateChanged } from 'firebase/auth';
 import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit, trackSpecialistProfileView } from './analytics';
+import { WHATSAPP_URL, WHATSAPP_DISPLAY_NUMBER } from './contact';
+
 // Placeholder/Fallback components for Sublocação since it might not be deployed yet in all environments
 const SublocacaoSystemWrapper = ({ onNavigate }: any) => {
   return (
@@ -1629,7 +1631,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                 Abordagens
               </button>
               <a
-                href={`https://wa.me/5548998101804?text=${encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta')}`}
+                href={`${WHATSAPP_URL}?text=${encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta')}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => trackWhatsAppClick('hero_button')}
@@ -2511,7 +2513,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
     trackWhatsAppClick('specialist_card');
     trackScheduleClick(spec.name);
     const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
-    window.open(`https://wa.me/5548998101804?text=${encodeURIComponent(message)}`, '_blank');
+    window.open(`${WHATSAPP_URL}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   return (
@@ -2694,7 +2696,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                       </div>
                       
                       <a 
-                        href={`https://wa.me/5548998101804?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
+                        href={`${WHATSAPP_URL}?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
@@ -3137,7 +3139,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
                 </p>
                 <div className="pt-4">
                   <a 
-                    href="https://wa.me/5548998101804" 
+                    href={WHATSAPP_URL}
                     target="_blank" 
                     rel="noopener noreferrer"
                     onClick={() => trackWhatsAppClick('contato_section')}
@@ -5784,4 +5786,3 @@ function AdminScreen({
     </div>
   );
 }
-
