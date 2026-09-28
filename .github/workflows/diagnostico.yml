@@ -1,0 +1,40 @@
+name: Diagnostico agendas Apps Script (temporario)
+on:
+  push:
+    branches: [perf-site]
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Testar agendas sem login
+        run: |
+          node -e '
+          const cfg=require("./firebase-applet-config.json");
+          const base=`https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/${cfg.firestoreDatabaseId}/documents`;
+          const q=async(c,f)=>{const r=await fetch(`${base}:runQuery?key=${cfg.apiKey}`,{method:"POST",headers:{"Content-Type":"application/json",Referer:"https://clinicahopebrasil.com.br/"},body:JSON.stringify({structuredQuery:{from:[{collectionId:c}],select:{fields:f.map(x=>({fieldPath:x}))}}})});return (await r.json()).filter(x=>x.document).map(x=>({id:x.document.name.split("/").pop(),...Object.fromEntries(Object.entries(x.document.fields||{}).map(([k,v])=>[k,v.stringValue]))}));};
+          (async()=>{
+            const home=(await q("settings",["gtmId","ga4Id","metaPixelId"]));
+            for(const h of home) console.log(`::notice title=settings/${h.id}::gtmId=${h.gtmId||"-"} ga4Id=${h.ga4Id||"-"} metaPixelId=${h.metaPixelId?"(definido)":"-"}`);
+            const specs=await q("specialists",["name","googleAppsScriptUrl","googleSheetsId"]);
+            let ok=0,bad=0,none=0;
+            for(const s of specs){
+              const u=(s.googleAppsScriptUrl||"").trim();
+              if(!u){none++;console.log(`::notice title=SEM SCRIPT::${s.name} (googleSheetsId: ${s.googleSheetsId?"sim":"não"})`);continue;}
+              const url=(u.includes("?")?u+"&":u+"?")+"action=getDadosDaAgenda&callback=cbteste";
+              let res="";
+              try{
+                const r=await fetch(url,{redirect:"follow"}); const t=await r.text(); const fin=r.url;
+                const ct=r.headers.get("content-type")||"";
+                const title=(t.match(/<title>([^<]*)<\/title>/i)||[])[1]||"";
+                if(t.trim().startsWith("cbteste(")){res="OK";ok++;}
+                else if(/accounts\.google\.com|ServiceLogin|signin/i.test(fin+t.slice(0,3000))){res="BLOQUEADO: pede login Google (acesso nao e Qualquer pessoa)";bad++;}
+                else {res=`ERRO: status ${r.status}, ${ct.split(";")[0]}, titulo="${title.slice(0,80)}", inicio="${t.trim().slice(0,90).replace(/\s+/g," ")}"`;bad++;}
+              }catch(e){res="ERRO de rede: "+e.message;bad++;}
+              console.log(`::notice title=${res.startsWith("OK")?"OK":"PROBLEMA"}::${s.name} -> ${res} | ${u.slice(0,70)}...`);
+            }
+            console.log(`::notice title=RESUMO::OK=${ok} PROBLEMA=${bad} SEM_SCRIPT=${none}`);
+          })();'
