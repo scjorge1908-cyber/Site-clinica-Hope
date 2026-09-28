@@ -30,6 +30,7 @@ const OtimizarFotos = () => {
   const [progress, setProgress] = useState('');
   const [result, setResult] = useState<{ before: number; after: number; changed: number; failed: number } | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [saveError, setSaveError] = useState('');
 
   const totalKb = items.reduce((s, i) => s + sizeKb(i.value), 0);
   const base64Items = items.filter((i) => i.value.startsWith('data:image'));
@@ -101,6 +102,8 @@ const OtimizarFotos = () => {
     let after = 0;
     let changed = 0;
     let failed = 0;
+    let firstError = '';
+    const describe = (e: any) => `${e?.code ? `[${e.code}] ` : ''}${e?.message || String(e)}`;
     const newHomeInsurance = homeInsurance ? homeInsurance.map((p) => ({ ...p })) : null;
     let homeInsuranceChanged = false;
 
@@ -124,6 +127,7 @@ const OtimizarFotos = () => {
         changed++;
       } catch (e) {
         console.error('Falha ao salvar foto otimizada:', item.label, e);
+        if (!firstError) firstError = `${item.label}: ${describe(e)}`;
         after += sizeKb(item.value);
         failed++;
       }
@@ -135,10 +139,12 @@ const OtimizarFotos = () => {
         await updateDoc(doc(db, COLLECTIONS.SETTINGS, DOCS.HOME_SETTINGS), { insurancePlans: newHomeInsurance });
       } catch (e) {
         console.error('Falha ao salvar logos da página inicial:', e);
+        if (!firstError) firstError = `Logos da página inicial: ${describe(e)}`;
         failed++;
       }
     }
 
+    setSaveError(firstError);
     setResult({ before, after, changed, failed });
     setPhase('done');
   };
@@ -182,8 +188,13 @@ const OtimizarFotos = () => {
           <p className="text-sm">
             Pronto: <strong>{result.changed}</strong> imagens otimizadas. Tamanho total de{' '}
             <strong>{result.before.toLocaleString('pt-BR')} KB</strong> para <strong>{result.after.toLocaleString('pt-BR')} KB</strong>.
-            {result.failed > 0 && <span className="text-red-700"> {result.failed} não puderam ser salvas (veja o console).</span>}
+            {result.failed > 0 && <span className="text-red-700"> {result.failed} não puderam ser salvas.</span>}
           </p>
+          {saveError && (
+            <p className="text-xs font-mono text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 break-all">
+              Motivo: {saveError}
+            </p>
+          )}
           <p className="text-sm text-on-surface-variant">Recarregue o painel antes de fazer outras alterações, para ele usar as fotos novas.</p>
           <button onClick={() => window.location.reload()} className="btn-primary !px-5 !py-3 !text-sm">
             Recarregar painel
