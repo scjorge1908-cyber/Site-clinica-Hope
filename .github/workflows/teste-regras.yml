@@ -1,0 +1,24 @@
+name: Teste regras Firestore
+on:
+  push:
+    branches: [teste-regras]
+jobs:
+  teste:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Testar leitura sem login
+        run: |
+          node -e '
+          const cfg=require("./firebase-applet-config.json");
+          const base=`https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/${cfg.firestoreDatabaseId}/documents`;
+          const cols=["specialists","approaches","insurance_plans","settings","psicoeducacao_articles","sublease_rooms","sublease_settings","sublease_users","sublease_bookings"];
+          (async()=>{for(const c of cols){
+            const r=await fetch(`${base}:runQuery?key=${cfg.apiKey}`,{method:"POST",headers:{"Content-Type":"application/json",Referer:"https://clinicahopebrasil.com.br/"},body:JSON.stringify({structuredQuery:{from:[{collectionId:c}],limit:1}})});
+            const t=await r.text();
+            const res = r.ok ? "LIBERADO (leitura publica)" : (t.includes("PERMISSION_DENIED")?"BLOQUEADO":"ERRO "+r.status);
+            console.log(`::notice title=${c}::${res}`);
+          }})();'
