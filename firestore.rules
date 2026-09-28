@@ -30,17 +30,21 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+    // SublocaHope fora do ar: acesso só do admin
     match /sublease_rooms/{docId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
+    // SublocaHope fora do ar: acesso só do admin
     match /sublease_settings/{docId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
+    // SublocaHope fora do ar: acesso só do admin
     match /sublease_users/{docId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
+    // SublocaHope fora do ar: acesso só do admin
     match /sublease_bookings/{docId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
     // Default deny for everything else
     match /{document=**} {

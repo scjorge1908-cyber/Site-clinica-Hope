@@ -236,10 +236,13 @@ function getActiveShifts(spec: Specialist): Shift[] {
   return shiftSet.size > 0 ? Array.from(shiftSet) : (spec.shifts || []);
 }
 
+// SublocaHope fora do ar por enquanto. Para reativar no site, mude para true.
+const SUBLOCACAO_ATIVA = false;
+
 const RESERVED_ROUTES: Record<string, Screen> = {
   'especialistas': Screen.CorpoClinico,
   'corpoclinico': Screen.CorpoClinico,
-  'sublocacao': Screen.Sublocacao,
+  'sublocacao': SUBLOCACAO_ATIVA ? Screen.Sublocacao : Screen.Home,
   'administracao': Screen.Admin,
   'admin': Screen.Admin,
   'login': Screen.Login,
@@ -1355,7 +1358,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
     { id: Screen.Abordagens, label: 'Abordagens' },
     { id: Screen.CorpoClinico, label: 'Especialistas' },
     { id: Screen.Psicoeducacao, label: 'Psicoeducação' },
-  ];
+  ].filter(item => SUBLOCACAO_ATIVA || item.id !== Screen.Sublocacao);
 
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans selection:bg-secondary-container selection:text-on-secondary-container overflow-x-hidden">
