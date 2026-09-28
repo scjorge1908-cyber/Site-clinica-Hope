@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+  # Atualiza diariamente as páginas lidas pelo Google e pelas IAs (06:17 em Brasília)
+  schedule:
+    - cron: '17 9 * * *'
+  # Permite rodar manualmente pela aba Actions do GitHub
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,6 +31,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Gerar páginas para Google e IAs (dados do Firebase)
+        run: node scripts/prerender.mjs
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
