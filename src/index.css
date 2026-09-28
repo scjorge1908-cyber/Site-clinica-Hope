@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=JetBrains+Mono:wght@100..800&display=swap');
+/* Fontes carregadas no index.html (em paralelo, sem bloquear a tela). Antes: @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=JetBrains+Mono:wght@100..800&display=swap'); */
 @import "tailwindcss";
 
 @theme {

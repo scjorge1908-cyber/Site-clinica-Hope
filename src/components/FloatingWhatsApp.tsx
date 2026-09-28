@@ -23,7 +23,7 @@ const FloatingWhatsApp = () => {
         transition={{ delay: 0.1 }}
         whileHover={{ scale: 1.06 }}
         whileTap={{ scale: 0.94 }}
-        className="flex items-center gap-3 bg-[#0088cc] text-white px-5 py-3 rounded-full shadow-2xl hover:bg-[#0078b4] transition-colors cursor-pointer border-2 border-white/20"
+        className="flex items-center gap-3 bg-[#0077b6] text-white px-5 py-3 rounded-full shadow-2xl hover:bg-[#006fa6] transition-colors cursor-pointer border-2 border-white/20"
         id="floating-telegram"
         data-event="contato_telegram"
         title="Agende pelo Telegram"
@@ -43,7 +43,7 @@ const FloatingWhatsApp = () => {
         animate={{ scale: 1, opacity: 1 }}
         whileHover={{ scale: 1.06 }}
         whileTap={{ scale: 0.94 }}
-        className="flex items-center gap-3 bg-[#25D366] text-white px-5 py-3 rounded-full shadow-2xl hover:bg-[#20ba5a] transition-colors cursor-pointer border-2 border-white/20"
+        className="flex items-center gap-3 bg-[#15803d] text-white px-5 py-3 rounded-full shadow-2xl hover:bg-[#166534] transition-colors cursor-pointer border-2 border-white/20"
         id="floating-whatsapp"
         data-event="contato_whatsapp"
         title="Agende pelo WhatsApp"
@@ -51,7 +51,7 @@ const FloatingWhatsApp = () => {
         <span className="font-bold text-sm tracking-tight whitespace-nowrap">
           Agende pelo WhatsApp
         </span>
-        <MessageCircle className="w-6 h-6 fill-white stroke-[#25D366]" />
+        <MessageCircle className="w-6 h-6 fill-white stroke-[#15803d]" />
       </motion.a>
     </div>
   );

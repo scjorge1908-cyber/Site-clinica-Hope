@@ -17,7 +17,7 @@ const FloatingTelegram = () => {
       transition={{ delay: 0.1 }}
       whileHover={{ scale: 1.1 }}
       whileTap={{ scale: 0.9 }}
-      className="flex items-center gap-3 bg-[#0088cc] text-white px-5 py-3 rounded-full shadow-2xl hover:bg-[#0078b4] transition-colors cursor-pointer border-2 border-white/20"
+      className="flex items-center gap-3 bg-[#0077b6] text-white px-5 py-3 rounded-full shadow-2xl hover:bg-[#006fa6] transition-colors cursor-pointer border-2 border-white/20"
       id="floating-telegram"
       data-event="contato_telegram"
       title="Agende pelo Telegram"
