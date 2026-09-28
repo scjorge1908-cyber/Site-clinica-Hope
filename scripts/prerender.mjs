@@ -72,7 +72,7 @@ async function loadFromFirestore() {
   async function getJson(url) {
     // Referer do site: necessário se a chave do Firebase estiver restrita ao domínio da clínica.
     const res = await fetch(url, { headers: { Accept: 'application/json', Referer: `${SITE}/` } });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText} em ${url.split('?')[0]}`);
+    if (!res.ok) { let detail = ''; try { detail = (await res.text()).replace(/\s+/g, ' ').slice(0, 300); } catch (_) {} throw new Error(`${res.status} ${res.statusText} em ${url.split('?')[0]} ${detail}`); }
     return res.json();
   }
   async function list(collection, fields) {
@@ -92,7 +92,7 @@ async function loadFromFirestore() {
     return decodeFields(json.fields);
   }
   async function safe(label, fn, fallback) {
-    try { return await fn(); } catch (e) { console.warn(`[prerender] Aviso: não foi possível ler ${label}: ${e.message}`); return fallback; }
+    try { return await fn(); } catch (e) { console.warn(`[prerender] Aviso: não foi possível ler ${label}: ${e.message}`); if (process.env.GITHUB_ACTIONS) console.log(`::warning title=Prerender ${label}::${e.message}`); return fallback; }
   }
 
   const settings = await safe('settings/home', () => getDoc('settings/home', ['clinicName', 'heroTitle', 'heroSubtitle', 'heroText', 'seoTitle', 'seoText', 'insurancePlans']), {});
