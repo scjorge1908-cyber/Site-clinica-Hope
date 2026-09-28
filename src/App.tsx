@@ -2838,14 +2838,14 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                               <button
                                 type="button"
                                 onClick={() => { setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular'); setIsPlanListOpen(false); }}
-                                className={`px-3 py-2.5 rounded-xl border transition-all flex items-center justify-center gap-1.5 text-center min-h-[44px] ${
+                                className={`px-2 py-2 rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-1 text-center min-h-[64px] ${
                                   selectedPlan === 'Particular'
-                                  ? 'bg-secondary text-white border-secondary shadow-sm'
+                                  ? 'bg-secondary/5 text-secondary border-secondary shadow-sm'
                                   : 'bg-white text-primary border-outline-alt/60 hover:border-secondary/50'
                                 }`}
                               >
-                                <CreditCard size={14} className={selectedPlan === 'Particular' ? 'text-white' : 'text-secondary'} />
-                                <span className="text-[11px] font-black uppercase tracking-wide leading-tight">Particular</span>
+                                <CreditCard size={24} className="text-secondary" />
+                                <span className="text-[10px] font-black uppercase tracking-wide leading-tight">Particular</span>
                               </button>
                             )}
                             {insurancePlans
@@ -2861,13 +2861,21 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                                 key={plan.id}
                                 type="button"
                                 onClick={() => { setSelectedPlan(selectedPlan === plan.name ? null : plan.name); setIsPlanListOpen(false); }}
-                                className={`px-3 py-2.5 rounded-xl border transition-all flex items-center justify-center text-center min-h-[44px] ${
+                                className={`px-2 py-2 rounded-xl border-2 transition-all flex flex-col items-center justify-center text-center gap-1 min-h-[64px] ${
                                   selectedPlan === plan.name
-                                  ? 'bg-secondary text-white border-secondary shadow-sm'
+                                  ? 'bg-secondary/5 text-secondary border-secondary shadow-sm'
                                   : 'bg-white text-primary border-outline-alt/60 hover:border-secondary/50'
                                 }`}
                               >
-                                <span className="text-[11px] font-black uppercase tracking-wide leading-tight">{plan.name}</span>
+                                {plan.logo && (
+                                  <img
+                                    src={plan.logo}
+                                    alt=""
+                                    loading="lazy"
+                                    className="h-7 max-w-[90%] w-auto object-contain"
+                                  />
+                                )}
+                                <span className="text-[10px] font-black uppercase tracking-wide leading-tight">{plan.name}</span>
                               </button>
                             ))}
                           </div>
