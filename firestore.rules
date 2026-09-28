@@ -4,7 +4,7 @@ service cloud.firestore {
     // Basic helpers
     function isSignedIn() { return request.auth != null; }
     function isAdmin() { 
-      return isSignedIn() && request.auth.token.email == 'scjorge1908@gmail.com';
+      return isSignedIn() && (request.auth.token.email == 'scjorge1908@gmail.com' || request.auth.token.email == 'santiagobeatriz@hotmail.com');
     }
     // Allow public read on all collections
     match /specialists/{docId} {

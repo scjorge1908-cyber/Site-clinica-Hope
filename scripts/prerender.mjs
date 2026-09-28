@@ -75,17 +75,24 @@ async function loadFromFirestore() {
     if (!res.ok) { let detail = ''; try { detail = (await res.text()).replace(/\s+/g, ' ').slice(0, 300); } catch (_) {} throw new Error(`${res.status} ${res.statusText} em ${url.split('?')[0]} ${detail}`); }
     return res.json();
   }
+  // Mesma forma de leitura que o site usa (consulta runQuery), aceita pelas regras públicas.
   async function list(collection, fields) {
-    const docs = [];
-    let pageToken = '';
-    for (let i = 0; i < 20; i++) {
-      const url = `${base}/${collection}?pageSize=300&${mask(fields)}&key=${cfg.apiKey}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
-      const json = await getJson(url);
-      for (const d of json.documents || []) docs.push({ id: d.name.split('/').pop(), ...decodeFields(d.fields) });
-      if (!json.nextPageToken) break;
-      pageToken = json.nextPageToken;
-    }
-    return docs;
+    const res = await fetch(`${base}:runQuery?key=${cfg.apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Referer: `${SITE}/` },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: collection }],
+          select: { fields: fields.map((f) => ({ fieldPath: f })) },
+          limit: 500,
+        },
+      }),
+    });
+    if (!res.ok) { let detail = ''; try { detail = (await res.text()).replace(/\s+/g, ' ').slice(0, 300); } catch (_) {} throw new Error(`${res.status} ${res.statusText} em ${collection} (runQuery) ${detail}`); }
+    const rows = await res.json();
+    return (Array.isArray(rows) ? rows : [])
+      .filter((r) => r && r.document)
+      .map((r) => ({ id: r.document.name.split('/').pop(), ...decodeFields(r.document.fields) }));
   }
   async function getDoc(docPath, fields) {
     const json = await getJson(`${base}/${docPath}?${mask(fields)}&key=${cfg.apiKey}`);
