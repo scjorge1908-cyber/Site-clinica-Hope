@@ -20,10 +20,10 @@ jobs:
             const home=(await q("settings",["gtmId","ga4Id","metaPixelId"]));
             for(const h of home) console.log(`::notice title=settings/${h.id}::gtmId=${h.gtmId||"-"} ga4Id=${h.ga4Id||"-"} metaPixelId=${h.metaPixelId?"(definido)":"-"}`);
             const specs=await q("specialists",["name","googleAppsScriptUrl","googleSheetsId"]);
-            let ok=0,bad=0,none=0;
+            let ok=0,bad=0,none=0; const out=[];
             for(const s of specs){
               const u=(s.googleAppsScriptUrl||"").trim();
-              if(!u){none++;console.log(`::notice title=SEM SCRIPT::${s.name} (googleSheetsId: ${s.googleSheetsId?"sim":"não"})`);continue;}
+              if(!u){none++;out.push(`SEM SCRIPT: ${s.name}`);continue;}
               const url=(u.includes("?")?u+"&":u+"?")+"action=getDadosDaAgenda&callback=cbteste";
               let res="";
               try{
@@ -34,7 +34,7 @@ jobs:
                 else if(/accounts\.google\.com|ServiceLogin|signin/i.test(fin+t.slice(0,3000))){res="BLOQUEADO: pede login Google (acesso nao e Qualquer pessoa)";bad++;}
                 else {res=`ERRO: status ${r.status}, ${ct.split(";")[0]}, titulo="${title.slice(0,80)}", inicio="${t.trim().slice(0,90).replace(/\s+/g," ")}"`;bad++;}
               }catch(e){res="ERRO de rede: "+e.message;bad++;}
-              console.log(`::notice title=${res.startsWith("OK")?"OK":"PROBLEMA"}::${s.name} -> ${res} | ${u.slice(0,70)}...`);
+              out.push(`${res.startsWith("OK")?"OK":"PROBLEMA"}: ${s.name} -> ${res.startsWith("ERRO: status 404")?"404 Page Not Found (implantacao nao existe mais)":res.slice(0,120)} | ${u.slice(0,75)}`);
             }
-            console.log(`::notice title=RESUMO::OK=${ok} PROBLEMA=${bad} SEM_SCRIPT=${none}`);
+            console.log(`::notice title=RESUMO OK=${ok} PROBLEMA=${bad} SEM_SCRIPT=${none}::${out.join(" %0A ")}`);
           })();'
