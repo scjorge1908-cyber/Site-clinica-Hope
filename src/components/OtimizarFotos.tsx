@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { collection, doc, getDocFromServer, getDocsFromServer, updateDoc } from 'firebase/firestore';
-import { db, COLLECTIONS, DOCS } from '../lib/firebase';
+import { db, auth, COLLECTIONS, DOCS } from '../lib/firebase';
 import { IMAGE_MAX_SIZE, shrinkDataUrl, sizeKb } from '../lib/imageOptimize';
 
 /**
@@ -144,6 +144,15 @@ const OtimizarFotos = () => {
       }
     }
 
+    if (firstError) {
+      try {
+        const u = auth.currentUser;
+        const t = u ? await u.getIdTokenResult() : null;
+        firstError += ` | Login: ${u ? u.email : 'NENHUM (não logado no Firebase)'} | token.email: ${t?.claims?.email ?? '—'} | provedor: ${t?.signInProvider ?? '—'} | projeto: ${t?.claims?.aud ?? '—'}`;
+      } catch (e: any) {
+        firstError += ` | Login: erro ao ler token (${e?.message || e})`;
+      }
+    }
     setSaveError(firstError);
     setResult({ before, after, changed, failed });
     setPhase('done');
