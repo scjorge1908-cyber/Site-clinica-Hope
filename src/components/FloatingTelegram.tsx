@@ -1,10 +1,11 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Send } from 'lucide-react';
-import { TELEGRAM_URL } from '../contact';
+import { TELEGRAM_PHONE } from '../contact';
 
 const FloatingTelegram = () => {
-  const telegramUrl = TELEGRAM_URL;
+  // Telegram web URL com número de telefone no formato internacional
+  const telegramUrl = `https://t.me/+${TELEGRAM_PHONE}`;
 
   return (
     <motion.a
