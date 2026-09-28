@@ -1643,7 +1643,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                 Agendar pelo WhatsApp
               </a>
               <a
-                href={TELEGRAM_URL}
+                href={`${TELEGRAM_URL}?text=${encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta')}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => trackTelegramClick('hero_button')}

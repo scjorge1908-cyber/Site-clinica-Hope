@@ -8,8 +8,8 @@ const FloatingWhatsApp = () => {
   const message = 'Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta';
   const encodedMessage = encodeURIComponent(message);
   const whatsappUrl = `${WHATSAPP_URL}?text=${encodedMessage}`;
-  // Link do Telegram pelo telefone (t.me/+NUMERO). O Telegram não aceita mensagem pré-preenchida neste formato.
-  const telegramUrl = TELEGRAM_URL || `https://t.me/+${TELEGRAM_PHONE}`;
+  // Link do Telegram pelo telefone (t.me/+NUMERO?text=...) com a mesma mensagem do WhatsApp.
+  const telegramUrl = `${TELEGRAM_URL || `https://t.me/+${TELEGRAM_PHONE}`}?text=${encodedMessage}`;
 
   return (
     <div className="fixed bottom-6 right-6 z-50 hidden sm:flex items-center gap-3">
