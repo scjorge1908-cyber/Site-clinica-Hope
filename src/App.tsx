@@ -69,10 +69,13 @@ import {
   Check,
   AlertCircle,
   Clock,
-  MessageCircle
+  MessageCircle,
+  ChevronDown
 } from 'lucide-react';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 import Cropper from 'react-easy-crop';
+import { renderToDataUrl, IMAGE_MAX_SIZE } from './lib/imageOptimize';
+import OtimizarFotos from './components/OtimizarFotos';
 import { Screen, TransitionType, Specialist, Approach, HomeSettings, AgeGroup, Shift, InsurancePlan, SubleaseRoom, SubleaseBooking, PsicoeducacaoArticle } from './types';
 import { DEFAULT_HOME_SETTINGS, DEFAULT_SPECIALISTS, DEFAULT_APPROACHES, DEFAULT_TESTIMONIALS, CLINICA_LOGO_URL, DEFAULT_SUBLEASE_ROOMS } from './constants';
 import { 
@@ -175,9 +178,15 @@ const createImage = (url: string): Promise<HTMLImageElement> =>
 
 const getCroppedImg = async (
   imageSrc: string,
-  pixelCrop: { x: number; y: number; width: number; height: number }
+  pixelCrop: { x: number; y: number; width: number; height: number },
+  maxSize?: number
 ): Promise<string> => {
   const image = await createImage(imageSrc);
+  // Otimização: reduz ao tamanho de exibição e salva em WebP (fotos bem mais leves).
+  if (maxSize) {
+    const optimized = renderToDataUrl(image, pixelCrop, maxSize);
+    if (optimized) return optimized;
+  }
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
 
@@ -1370,7 +1379,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
             className="flex items-center gap-4 group shrink-0"
           >
             <div className="shrink-0 transition-transform duration-300 group-hover:scale-110">
-              <img src="/logo-hope.png" className="h-12 md:h-16 lg:h-20 w-auto object-contain" alt="Logo" />
+              <img src="/logo-hope.png" width="218" height="240" className="h-12 md:h-16 lg:h-20 w-auto object-contain" alt="Logo da Clínica Hope" />
             </div>
             <span className="text-2xl font-black tracking-tight text-primary hidden sm:block leading-none">
               {settings?.clinicName || 'Clínica Hope'}
@@ -1640,7 +1649,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                 onClick={() => trackWhatsAppClick('hero_button')}
                 id="hero-cta-whatsapp"
                 data-event="contato_whatsapp"
-                className="flex w-full items-center justify-center gap-2 whitespace-nowrap px-4 py-3 rounded-xl bg-[#25D366] text-white font-bold text-sm hover:bg-[#20ba5a] transition-all active:scale-95"
+                className="flex w-full items-center justify-center gap-2 whitespace-nowrap px-4 py-3 rounded-xl bg-[#15803d] text-white font-bold text-sm hover:bg-[#166534] transition-all active:scale-95"
               >
                 <MessageCircle className="w-5 h-5 shrink-0" />
                 Agendar pelo WhatsApp
@@ -1652,7 +1661,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                 onClick={() => trackTelegramClick('hero_button')}
                 id="hero-cta-telegram"
                 data-event="contato_telegram"
-                className="flex w-full items-center justify-center gap-2 whitespace-nowrap px-4 py-3 rounded-xl bg-[#0088cc] text-white font-bold text-sm hover:bg-[#0078b4] transition-all active:scale-95"
+                className="flex w-full items-center justify-center gap-2 whitespace-nowrap px-4 py-3 rounded-xl bg-[#0077b6] text-white font-bold text-sm hover:bg-[#006fa6] transition-all active:scale-95"
               >
                 <Send className="w-5 h-5 shrink-0" />
                 Agendar pelo Telegram
@@ -2309,6 +2318,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  // Lista de convênios recolhida: abre ao tocar, ou sozinha quando falta escolher o convênio.
+  const [isPlanListOpen, setIsPlanListOpen] = useState(false);
   const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(spec.schedule || null);
   
   const particularPlan = insurancePlans?.find(p => (p?.name || '').toLowerCase() === 'particular');
@@ -2714,7 +2725,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                         href={`${WHATSAPP_URL}?text=${encodeURIComponent(`Olá! Estou no site da Clínica e gostaria de entrar na lista de espera para atendimento com ${spec.name}.`)}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full flex items-center justify-center gap-3 bg-[#25D366] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
+                        className="w-full flex items-center justify-center gap-3 bg-[#15803d] text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-green-200 hover:scale-[1.02] transition-all hover:shadow-green-300"
                       >
                         <Chat size={20} />
                         Lista de Espera
@@ -2794,27 +2805,47 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
                       <div className="space-y-4">
                         <div className={`space-y-2 p-3 rounded-3xl transition-all duration-500 ${selectedTime && !selectedPlan ? 'bg-amber-400/10 ring-4 ring-amber-400/20 animate-pulse' : ''}`}>
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <p className="text-[9px] font-black uppercase text-on-surface-variant/40">Selecione seu Convênio</p>
-                            {selectedTime && !selectedPlan && (
-                              <p className="text-[9px] font-black uppercase text-amber-500 animate-pulse">Selecione o convênio</p>
-                            )}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setIsPlanListOpen(!(isPlanListOpen || (!!selectedTime && !selectedPlan)))}
+                            aria-expanded={isPlanListOpen || (!!selectedTime && !selectedPlan)}
+                            className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-2xl border transition-all text-left ${
+                              selectedPlan ? 'border-secondary/40 bg-secondary/5' : 'border-outline-alt/60 bg-white hover:border-secondary/40'
+                            }`}
+                          >
+                            <span className="flex flex-col">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+                                {selectedPlan ? 'Convênio' : 'Selecione seu convênio'}
+                              </span>
+                              {selectedPlan && (
+                                <span className="flex items-center gap-1.5 text-sm font-bold text-secondary">
+                                  <Check size={14} /> {selectedPlan}
+                                </span>
+                              )}
+                              {!selectedPlan && selectedTime && (
+                                <span className="text-[10px] font-black uppercase text-amber-600">Falta escolher o convênio</span>
+                              )}
+                            </span>
+                            <ChevronDown
+                              size={18}
+                              className={`shrink-0 text-primary transition-transform ${isPlanListOpen || (!!selectedTime && !selectedPlan) ? 'rotate-180' : ''}`}
+                            />
+                          </button>
 
-                          <div className="grid grid-cols-2 gap-4">
+                          {(isPlanListOpen || (!!selectedTime && !selectedPlan)) && (
+                          <div className="grid grid-cols-2 gap-2 pt-2">
                             {(!spec.insurancePlans || (particularPlan && spec.insurancePlans.includes(particularPlan.id))) && (
                               <button
-                                onClick={() => setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular')}
-                                className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
+                                type="button"
+                                onClick={() => { setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular'); setIsPlanListOpen(false); }}
+                                className={`px-3 py-2.5 rounded-xl border transition-all flex items-center justify-center gap-1.5 text-center min-h-[44px] ${
                                   selectedPlan === 'Particular'
-                                  ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
-                                  : 'bg-transparent text-primary hover:bg-secondary/5'
+                                  ? 'bg-secondary text-white border-secondary shadow-sm'
+                                  : 'bg-white text-primary border-outline-alt/60 hover:border-secondary/50'
                                 }`}
                               >
-                                <div className="w-12 h-10 flex items-center justify-center">
-                                  <CreditCard size={28} className="text-secondary" />
-                                </div>
-                                <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === 'Particular' ? 'text-secondary' : 'text-primary/70'}`}>Particular</span>
+                                <CreditCard size={14} className={selectedPlan === 'Particular' ? 'text-white' : 'text-secondary'} />
+                                <span className="text-[11px] font-black uppercase tracking-wide leading-tight">Particular</span>
                               </button>
                             )}
                             {insurancePlans
@@ -2828,28 +2859,19 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                               .map(plan => (
                               <button
                                 key={plan.id}
-                                onClick={() => setSelectedPlan(selectedPlan === plan.name ? null : plan.name)}
-                                className={`px-3 py-4 rounded-2xl transition-all flex flex-col items-center justify-center min-h-[80px] text-center gap-2.5 ${
+                                type="button"
+                                onClick={() => { setSelectedPlan(selectedPlan === plan.name ? null : plan.name); setIsPlanListOpen(false); }}
+                                className={`px-3 py-2.5 rounded-xl border transition-all flex items-center justify-center text-center min-h-[44px] ${
                                   selectedPlan === plan.name
-                                  ? 'bg-secondary/5 text-secondary shadow-sm scale-105 z-10'
-                                  : 'bg-transparent text-primary hover:bg-secondary/5'
+                                  ? 'bg-secondary text-white border-secondary shadow-sm'
+                                  : 'bg-white text-primary border-outline-alt/60 hover:border-secondary/50'
                                 }`}
                               >
-                                {plan.logo ? (
-                                  <img 
-                                    src={plan.logo} 
-                                    alt={plan.name} 
-                                    className="h-10 w-auto object-contain transition-all"
-                                  />
-                                ) : (
-                                  <div className="w-12 h-10 flex items-center justify-center">
-                                    <Verified size={28} className="text-secondary/40" />
-                                  </div>
-                                )}
-                                <span className={`text-[11px] font-black uppercase tracking-widest leading-tight ${selectedPlan === plan.name ? 'text-secondary' : 'text-primary/70'}`}>{plan.name}</span>
+                                <span className="text-[11px] font-black uppercase tracking-wide leading-tight">{plan.name}</span>
                               </button>
                             ))}
                           </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -4129,7 +4151,13 @@ function AdminScreen({
   const applyCrop = async () => {
     if (cropImage && croppedAreaPixels && croppingType) {
       try {
-        const croppedImg = await getCroppedImg(cropImage, croppedAreaPixels);
+        const cropMaxSize =
+          croppingType === 'specialist' ? IMAGE_MAX_SIZE.specialist :
+          croppingType === 'insurance' ? IMAGE_MAX_SIZE.insurance :
+          croppingType === 'logo' ? IMAGE_MAX_SIZE.logo :
+          croppingType === 'hero' ? IMAGE_MAX_SIZE.hero :
+          IMAGE_MAX_SIZE.sublease;
+        const croppedImg = await getCroppedImg(cropImage, croppedAreaPixels, cropMaxSize);
         
         if (croppingType === 'specialist' && croppingItemId) {
           updateSpecialist(croppingItemId, { img: croppedImg });
@@ -4685,6 +4713,7 @@ function AdminScreen({
         <div className="bg-white rounded-[2.5rem] modern-shadow border border-outline p-10">
           {activeTab === 'home' && (
             <div className="space-y-8">
+              <OtimizarFotos />
               <AgendaSyncMonitor
                 specialists={localSpecialists}
                 isSyncingAll={isSyncingAll}
