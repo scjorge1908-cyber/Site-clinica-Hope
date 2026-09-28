@@ -1,0 +1,38 @@
+# Clínica Hope - clinicahopebrasil.com.br
+# Buscadores e assistentes de IA são bem-vindos a ler o conteúdo público do site.
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /administracao
+Disallow: /login
+
+# Assistentes de IA (liberados explicitamente)
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+Sitemap: https://clinicahopebrasil.com.br/sitemap.xml
