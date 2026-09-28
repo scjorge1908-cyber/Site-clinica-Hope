@@ -1,14 +1,15 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { MessageCircle, Send } from 'lucide-react';
-import { trackWhatsAppClick } from '../analytics';
-import { TELEGRAM_PHONE, WHATSAPP_URL } from '../contact';
+import { trackWhatsAppClick, trackTelegramClick } from '../analytics';
+import { TELEGRAM_PHONE, TELEGRAM_URL, WHATSAPP_URL } from '../contact';
 
 const FloatingWhatsApp = () => {
   const message = 'Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta';
   const encodedMessage = encodeURIComponent(message);
   const whatsappUrl = `${WHATSAPP_URL}?text=${encodedMessage}`;
-  const telegramUrl = `https://t.me/+${TELEGRAM_PHONE}?text=${encodedMessage}`;
+  // Link do Telegram pelo telefone (t.me/+NUMERO). O Telegram não aceita mensagem pré-preenchida neste formato.
+  const telegramUrl = TELEGRAM_URL || `https://t.me/+${TELEGRAM_PHONE}`;
 
   return (
     <div className="fixed bottom-6 right-6 z-50 hidden sm:flex items-center gap-3">
@@ -16,6 +17,7 @@ const FloatingWhatsApp = () => {
         href={telegramUrl}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={() => trackTelegramClick('floating_button')}
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ delay: 0.1 }}
