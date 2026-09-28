@@ -1615,18 +1615,18 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
             <p className="text-lg md:text-xl text-on-surface-variant font-medium leading-relaxed max-w-lg">
               {settings.heroText}
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 w-full max-w-lg">
               <button 
                 onClick={() => onNavigate(Screen.CorpoClinico, 'push', true)}
                 id="hero-cta-agendar"
                 data-event="inicio_agendamento"
-                className="btn-primary shadow-xl !px-4 !py-2 !text-sm whitespace-nowrap"
+                className="btn-primary shadow-xl w-full !px-4 !py-3 !text-sm whitespace-nowrap"
               >
                 Agendar Consulta
               </button>
               <button 
                 onClick={() => onNavigate(Screen.Abordagens, 'push')}
-                className="btn-secondary !px-4 !py-2 !text-sm whitespace-nowrap"
+                className="btn-secondary w-full !px-4 !py-3 !text-sm whitespace-nowrap"
               >
                 Abordagens
               </button>
@@ -1637,9 +1637,9 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                 onClick={() => trackWhatsAppClick('hero_button')}
                 id="hero-cta-whatsapp"
                 data-event="contato_whatsapp"
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 rounded-xl bg-[#25D366] text-white font-bold text-sm hover:bg-[#20ba5a] transition-all active:scale-95"
+                className="flex w-full items-center justify-center gap-2 whitespace-nowrap px-4 py-3 rounded-xl bg-[#25D366] text-white font-bold text-sm hover:bg-[#20ba5a] transition-all active:scale-95"
               >
-                <MessageCircle className="w-5 h-5" />
+                <MessageCircle className="w-5 h-5 shrink-0" />
                 Agendar pelo WhatsApp
               </a>
               <a
@@ -1649,9 +1649,9 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                 onClick={() => trackTelegramClick('hero_button')}
                 id="hero-cta-telegram"
                 data-event="contato_telegram"
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2 rounded-xl bg-[#0088cc] text-white font-bold text-sm hover:bg-[#0078b4] transition-all active:scale-95"
+                className="flex w-full items-center justify-center gap-2 whitespace-nowrap px-4 py-3 rounded-xl bg-[#0088cc] text-white font-bold text-sm hover:bg-[#0078b4] transition-all active:scale-95"
               >
-                <Send className="w-5 h-5" />
+                <Send className="w-5 h-5 shrink-0" />
                 Agendar pelo Telegram
               </a>
             </div>
