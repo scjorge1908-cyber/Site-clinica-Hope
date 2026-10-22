@@ -43,6 +43,7 @@ const CLINIC = {
   heroText: 'Oferecemos um espaço seguro e acolhedor para o seu desenvolvimento emocional em Palhoça. Um convite ao reencontro com sua essência.',
 };
 const FULL_ADDRESS = `${CLINIC.street}, ${CLINIC.district}, ${CLINIC.city} - ${CLINIC.state}, CEP ${CLINIC.cep}`;
+const DESLIGADAS = new Set(['amanda-lobo-de-sousa']);
 const RESERVED = new Set(['index', 'especialistas', 'corpoclinico', 'sublocacao', 'administracao', 'admin', 'login', 'seo', 'abordagens', 'psicoeducacao', 'agendamento', 'home', '404', 'assets', 'sitemap', 'robots', 'llms']);
 
 // ── Firestore REST (somente leitura pública) ─────────────────────────────────
@@ -188,7 +189,9 @@ ${plans.length ? `<p>Convênios: ${esc(joinPt(plans))}.</p>` : ''}
 // ── Montagem das páginas ─────────────────────────────────────────────────────
 function buildPages(data) {
   const { settings = {}, approaches = [], articles = [] } = data;
-  const specialists = (data.specialists || []).filter((s) => s && s.name);
+  // Profissionais desligadas não ganham página, nem entram no mapa do site e no llms.txt (Jorge, 22/10/2026).
+  // O cadastro continua no Firebase; para voltar, basta tirar o endereço desta lista.
+  const specialists = (data.specialists || []).filter((s) => s && s.name && !DESLIGADAS.has(String(s.slug || '').toLowerCase()));
 
   // Convênios: coleção insurance_plans + os da home (mesmo id), sem duplicar nomes.
   const plansById = new Map();
