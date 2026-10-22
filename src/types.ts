@@ -111,6 +111,8 @@ export interface Specialist {
   };
   insurancePlans?: string[];
   slug?: string;
+  /** Horários vindos do HopeCore (marcação "Agenda no site"); não é gravado no Firebase. */
+  agendaHopeCore?: boolean;
 }
 
 export interface Approach {
