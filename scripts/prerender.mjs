@@ -43,7 +43,7 @@ const CLINIC = {
   heroText: 'Oferecemos um espaço seguro e acolhedor para o seu desenvolvimento emocional em Palhoça. Um convite ao reencontro com sua essência.',
 };
 const FULL_ADDRESS = `${CLINIC.street}, ${CLINIC.district}, ${CLINIC.city} - ${CLINIC.state}, CEP ${CLINIC.cep}`;
-const DESLIGADAS = new Set(['amanda-lobo-de-sousa']);
+const DESLIGADAS = new Set([]); // ex.: 'nome-do-link'. Amanda Lobo continua atendendo (Jorge, 22/10/2026).
 const RESERVED = new Set(['index', 'especialistas', 'corpoclinico', 'sublocacao', 'administracao', 'admin', 'login', 'seo', 'abordagens', 'psicoeducacao', 'agendamento', 'home', '404', 'assets', 'sitemap', 'robots', 'llms']);
 
 // ── Firestore REST (somente leitura pública) ─────────────────────────────────
