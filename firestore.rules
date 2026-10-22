@@ -9,9 +9,8 @@ service cloud.firestore {
     // Allow public read on all collections
     match /specialists/{docId} {
       allow read: if true;
-      allow update: if isAdmin() || (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['schedule', 'lastSync'])
-      );
+      // 21/10/2026: a agenda do site vem do HopeCore; visitante não grava mais schedule/lastSync.
+      allow update: if isAdmin();
       allow create, delete: if isAdmin();
     }
     match /approaches/{docId} {

@@ -92,7 +92,6 @@ import {
   getSubleaseBookings,
   saveSubleaseBooking,
   updateSubleaseBookingStatus,
-  updateSpecialistSchedule,
   loginWithGoogle,
   logout as firebaseLogout,
   forceResetFirebase,
@@ -105,6 +104,7 @@ import {
   ensureSpecialistsSlugs
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { useAgendaHopeCore, comAgendaHopeCore, agendaDe } from './lib/agendaHopeCore';
 import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { trackWhatsAppClick, trackTelegramClick, trackScheduleClick, trackFormSubmit, trackSpecialistProfileView } from './analytics';
 import { WHATSAPP_URL, WHATSAPP_DISPLAY_NUMBER, TELEGRAM_URL } from './contact';
@@ -413,161 +413,15 @@ export default function App() {
   
   const [scrollIntent, setScrollIntent] = useState(false);
 
-  const [syncingSpecs, setSyncingSpecs] = useState<Record<string, boolean>>({});
-
-  const syncSpecialist = async (specId: string, force: boolean = false) => {
-    if (syncingSpecs[specId]) return;
-
-    const spec = (specialists || []).find(s => s.id === specId);
-    if (!spec || (!spec.googleAppsScriptUrl && !spec.googleSheetsId)) return;
-
-    const twoHoursMs = 2 * 60 * 60 * 1000;
-    const isExpired = !spec.lastSync || (Date.now() - new Date(spec.lastSync).getTime() > twoHoursMs);
-
-    if (!isExpired && !force) {
-      console.log(`[Cache Ativo] Agenda de ${spec.name} está dentro das 2h válidas.`);
-      return;
-    }
-
-    console.log(`[Lazy Sync] Sincronizando agenda de ${spec.name}...`);
-    setSyncingSpecs(prev => ({ ...prev, [specId]: true }));
-
-    try {
-      let baseUrl = (spec.googleAppsScriptUrl || '').trim();
-      if (baseUrl && !baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
-
-      let newSchedule: any = null;
-      let foundData = false;
-
-      if (baseUrl && baseUrl.toLowerCase().includes('script.google.com') && baseUrl.includes('/exec')) {
-        const jsonpUrl = baseUrl.includes('?') 
-          ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` 
-          : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
-        
-        const jsonpData = await new Promise<any>((resolve) => {
-          const callbackName = `bg_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-          const script = document.createElement('script');
-          
-          let scriptResolved = false;
-          const cleanup = () => {
-            if (scriptResolved) return;
-            scriptResolved = true;
-            if (script.parentNode) script.parentNode.removeChild(script);
-            (window as any)[callbackName] = () => {};
-          };
-
-          script.src = `${jsonpUrl}&callback=${callbackName}`;
-          script.onerror = () => {
-            cleanup();
-            resolve(null);
-          };
-
-          (window as any)[callbackName] = (res: any) => {
-            cleanup();
-            resolve(res);
-          };
-
-          setTimeout(() => {
-            cleanup();
-            resolve(null);
-          }, 25000);
-
-          document.body.appendChild(script);
-        });
-
-        if (jsonpData) {
-          newSchedule = parseSheetScheduleData(jsonpData);
-          if (newSchedule && Object.keys(newSchedule).length > 0) {
-            foundData = true;
-          }
-        }
-      }
-
-      if (!foundData && spec.googleSheetsId) {
-        let sheetId = spec.googleSheetsId;
-        if (sheetId.includes('/d/')) {
-          const parts = sheetId.split('/d/');
-          if (parts.length > 1) sheetId = parts[1].split('/')[0];
-        }
-        const tabName = spec.googleSheetsTab || 'Agenda';
-        const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}&t=${Date.now()}`;
-        
-        const response = await fetch(url).catch(() => null);
-        if (response && response.ok) {
-          const csvText = await response.text();
-          const rows = csvText.split(/\r?\n/).map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim())).filter(row => row.length >= 3);
-          
-          const newCsvSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
-          rows.slice(1).forEach(row => {
-            const [dayRaw, timeRaw, statusRaw] = row;
-            const status = (statusRaw || '').toLowerCase().trim();
-            const isAvailable = status.includes('💚') || status.includes('livre');
-
-            if (dayRaw && timeRaw && isAvailable) {
-              const dayMap: Record<string, string> = {
-                'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'seg': 'Segunda',
-                'terca': 'Terça', 'terca-feira': 'Terça', 'ter': 'Terça',
-                'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'qua': 'Quarta',
-                'quinta': 'Quinta', 'quinta-feira': 'Quinta', 'qui': 'Quinta',
-                'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sex': 'Sexta',
-                'sabado': 'Sábado', 'sábado': 'Sábado', 'sab': 'Sábado'
-              };
-              const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-              const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
-              
-              if (!newCsvSchedule[day]) newCsvSchedule[day] = { periods: {} as any };
-              const hourMatch = timeRaw.match(/(\d{1,2})/);
-              if (hourMatch) {
-                const hour = parseInt(hourMatch[1]);
-                const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
-                if (!newCsvSchedule[day].periods[shift]) newCsvSchedule[day].periods[shift] = [];
-                const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
-                const processedTime = timeMatch ? timeMatch[1] : timeRaw;
-                if (!newCsvSchedule[day].periods[shift]?.includes(processedTime)) newCsvSchedule[day].periods[shift]?.push(processedTime);
-              }
-            }
-          });
-
-          if (Object.keys(newCsvSchedule).length > 0) {
-            newSchedule = newCsvSchedule;
-            foundData = true;
-          }
-        }
-      }
-
-      if (foundData && newSchedule) {
-        await updateSpecialistSchedule(specId, newSchedule);
-        setSpecialists(prev => (prev || []).map(s => s.id === specId ? {
-          ...s,
-          schedule: newSchedule,
-          lastSync: new Date().toISOString()
-        } : s));
-        console.log(`[Lazy Sync Sucesso] Agenda de ${spec.name} atualizada no Firestore.`);
-      }
-    } catch (e) {
-      console.error(`[Lazy Sync Erro] Falha ao sincronizar agenda de ${spec.name}:`, e);
-    } finally {
-      setSyncingSpecs(prev => ({ ...prev, [specId]: false }));
-    }
-  };
-
-  const syncAllExpiredSpecialists = async (targetId: string) => {
-    if (!specialists || specialists.length === 0) return;
-
-    const twoHoursMs = 2 * 60 * 60 * 1000;
-    const now = Date.now();
-
-    const expiredSpecs = specialists.filter(s => {
-      if (!s.googleAppsScriptUrl && !s.googleSheetsId) return false;
-      const isExpired = !s.lastSync || (now - new Date(s.lastSync).getTime() > twoHoursMs);
-      return isExpired || s.id === targetId;
-    });
-
-    if (expiredSpecs.length === 0) return;
-
-    console.log(`[Lazy Sync Geral] Sincronizando agendas expiradas (${expiredSpecs.length} psicólogos)...`);
-    await Promise.all(expiredSpecs.map(s => syncSpecialist(s.id, s.id === targetId)));
-  };
+  // Agenda do site (21/10/2026): os horários livres vêm do HopeCore em tempo real (src/lib/agendaHopeCore.ts).
+  // A leitura da planilha pelo link do Apps Script foi descontinuada; não há mais sincronização a pedir.
+  const agendaHope = useAgendaHopeCore();
+  const syncAllExpiredSpecialists = (_targetId: string) => {};
+  // Enquanto a primeira leitura do HopeCore não chega, os cartões mostram "carregando agenda".
+  const syncingSpecs = useMemo<Record<string, boolean>>(
+    () => (agendaHope.carregada ? {} : Object.fromEntries((specialists || []).map((s) => [s.id, true]))),
+    [agendaHope.carregada, specialists],
+  );
 
   const handleManualRefreshAdmin = async () => {
     if (!isAdminUnlocked || isAdminSuspended) return;
@@ -1161,6 +1015,8 @@ export default function App() {
 
   const sortedSpecialists = useMemo(() => {
     if (!specialists) return [];
+    // Horários livres: sempre do HopeCore (marcação "Agenda no site"), nunca do Firebase/planilha.
+    const comAgenda = specialists.map((s) => comAgendaHopeCore(s, agendaHope));
 
     // Helper to check if a specialist has actual schedule times/slots defined
     const hasActualScheduleTimes = (spec: Specialist) => {
@@ -1171,7 +1027,7 @@ export default function App() {
       });
     };
 
-    const specsCopy = [...specialists];
+    const specsCopy = [...comAgenda];
     return specsCopy.sort((a, b) => {
       const slugA = (a.slug || '').toLowerCase().trim();
       const slugB = (b.slug || '').toLowerCase().trim();
@@ -1193,7 +1049,7 @@ export default function App() {
       // Keep original order
       return 0;
     });
-  }, [specialists]);
+  }, [specialists, agendaHope]);
 
   const variants = {
     enter: (dir: number) => ({
@@ -2256,64 +2112,6 @@ function sortKeys(obj: any): any {
   }, {});
 }
 
-// Helper to parse Sheet Data
-function parseSheetScheduleData(jsonpData: any): Record<string, { periods: Record<Shift, string[]> }> {
-  if (!jsonpData) return {};
-  const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
-  const newSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
-  
-  if (Array.isArray(appointments) && appointments.length > 0) {
-    appointments.forEach((row: any) => {
-      try {
-        const statusValue = (row.status || row.paciente || '').toString().toLowerCase();
-        const isAvailable = statusValue.includes('💚') || statusValue.includes('livre');
-        if (row && isAvailable) {
-          const dayRaw = row.dia || row.day || '';
-          const timeRaw = row.horario || row.time || '';
-          
-          if (dayRaw && timeRaw && typeof dayRaw === 'string' && typeof timeRaw === 'string') {
-            const dayMap: Record<string, string> = {
-              'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'seg': 'Segunda',
-              'terca': 'Terça', 'terca-feira': 'Terça', 'ter': 'Terça',
-              'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'qua': 'Quarta',
-              'quinta': 'Quinta', 'quinta-feira': 'Quinta', 'qui': 'Quinta',
-              'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sex': 'Sexta',
-              'sabado': 'Sábado', 'sábado': 'Sábado', 'sab': 'Sábado'
-            };
-            const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const day = dayMap[dayKey] || (dayRaw.length > 0 ? (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase()) : '');
-            
-            if (day) {
-              if (!newSchedule[day]) newSchedule[day] = { periods: {} as any };
-              const hourMatch = timeRaw.match(/(\d{1,2})/);
-              if (hourMatch) {
-                const hour = parseInt(hourMatch[1]);
-                const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
-                if (!newSchedule[day].periods[shift]) newSchedule[day].periods[shift] = [];
-                const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
-                const processedTime = timeMatch ? timeMatch[1] : timeRaw;
-                if (!newSchedule[day].periods[shift]?.includes(processedTime)) newSchedule[day].periods[shift]?.push(processedTime);
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Erro ao processar linha da planilha:", e);
-      }
-    });
-
-    Object.keys(newSchedule).forEach(day => {
-      Object.keys(newSchedule[day].periods).forEach(period => {
-        const p = period as Shift;
-        if (newSchedule[day].periods[p]) {
-          newSchedule[day].periods[p].sort((a, b) => a.localeCompare(b));
-        }
-      });
-    });
-  }
-  return newSchedule;
-}
-
 function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate, isSyncing, onSyncRequest }: SpecialistCardProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -2328,18 +2126,9 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
     setSheetSchedule(spec.schedule || null);
   }, [spec.schedule]);
 
-  useEffect(() => {
-    if (!isAdminUnlocked && (spec.googleAppsScriptUrl || spec.googleSheetsId)) {
-      const twoHoursMs = 2 * 60 * 60 * 1000;
-      const isExpired = !spec.lastSync || (Date.now() - new Date(spec.lastSync).getTime() > twoHoursMs);
-      if (isExpired && onSyncRequest) {
-        onSyncRequest();
-      }
-    }
-  }, [spec.lastSync, isAdminUnlocked, spec.googleAppsScriptUrl, spec.googleSheetsId]);
-
-  const [isLoadingSheet, setIsLoadingSheet] = useState(false);
-  const [sheetError, setSheetError] = useState<string | null>(null);
+  // A agenda chega pronta do HopeCore (tempo real): o cartão não busca mais nada na planilha.
+  const isLoadingSheet = !!isSyncing;
+  const sheetError: string | null = null;
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [isTouched, setIsTouched] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -2372,152 +2161,22 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
     }
   }, [spec.slug, spec.name]);
 
-  useEffect(() => {
-    if (!isAdminUnlocked) return;
-
-    if (spec.googleAppsScriptUrl || spec.googleSheetsId) {
-      const fetchSheetData = async () => {
-        if (isLoadingSheet) return;
-        
-        try {
-          const lock = localStorage.getItem('firestore_quota_exhausted');
-          if (lock) {
-            const lockTime = parseInt(lock);
-            if (Date.now() - lockTime < 4 * 60 * 60 * 1000) return;
-          }
-        } catch (e) {}
-
-        setIsLoadingSheet(true);
-        setSheetError(null);
-        try {
-          let baseUrl = (spec.googleAppsScriptUrl || '').trim();
-          if (baseUrl && !baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
-          
-          let newSchedule: NonNullable<Specialist['schedule']> = {};
-          let foundData = false;
-          
-          if (baseUrl && baseUrl.toLowerCase().includes('script.google.com') && baseUrl.includes('/exec')) {
-            const jsonpUrl = baseUrl.includes('?') ? `${baseUrl}&action=getDadosDaAgenda&t=${Date.now()}` : `${baseUrl}?action=getDadosDaAgenda&t=${Date.now()}`;
-            const jsonpData = await new Promise<any>((resolve) => {
-              const callbackName = `bg_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-              const script = document.createElement('script');
-              
-              let scriptResolved = false;
-              const cleanup = () => {
-                if (scriptResolved) return;
-                scriptResolved = true;
-                if (script.parentNode) script.parentNode.removeChild(script);
-                (window as any)[callbackName] = () => {};
-              };
-
-              script.src = `${jsonpUrl}&callback=${callbackName}`;
-              script.onerror = () => {
-                cleanup();
-                resolve(null);
-              };
-
-              (window as any)[callbackName] = (res: any) => {
-                cleanup();
-                resolve(res);
-              };
-
-              setTimeout(() => {
-                cleanup();
-                resolve(null);
-              }, 45000);
-
-              document.body.appendChild(script);
-            });
-            if (jsonpData) {
-              newSchedule = parseSheetScheduleData(jsonpData);
-              if (Object.keys(newSchedule).length > 0) {
-                foundData = true;
-                setSheetSchedule(newSchedule);
-              }
-            }
-          }
-
-          if (!foundData && spec.googleSheetsId) {
-            let sheetId = spec.googleSheetsId;
-            if (sheetId.includes('/d/')) {
-              const parts = sheetId.split('/d/');
-              if (parts.length > 1) sheetId = parts[1].split('/')[0];
-            }
-            const tabName = spec.googleSheetsTab || 'Agenda';
-            const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(tabName)}&t=${Date.now()}`;
-            const response = await fetch(url).catch(() => null);
-            if (response && response.ok) {
-              const csvText = await response.text();
-              const rows = csvText.split(/\r?\n/).map(row => row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim())).filter(row => row.length >= 3);
-              
-              const newCsvSchedule: Record<string, { periods: Record<Shift, string[]> }> = {};
-              rows.slice(1).forEach(row => {
-                const [dayRaw, timeRaw, statusRaw] = row;
-                const status = (statusRaw || '').toLowerCase().trim();
-                const isAvailable = status.includes('💚') || status.includes('livre');
-
-                if (dayRaw && timeRaw && isAvailable) {
-                   const dayMap: Record<string, string> = {
-                    'segunda': 'Segunda', 'segunda-feira': 'Segunda', 'seg': 'Segunda',
-                    'terca': 'Terça', 'terca-feira': 'Terça', 'ter': 'Terça',
-                    'quarta': 'Quarta', 'quarta-feira': 'Quarta', 'qua': 'Quarta',
-                    'quinta': 'Quinta', 'quinta-feira': 'Quinta', 'qui': 'Quinta',
-                    'sexta': 'Sexta', 'sexta-feira': 'Sexta', 'sex': 'Sexta',
-                    'sabado': 'Sábado', 'sábado': 'Sábado', 'sab': 'Sábado'
-                  };
-                  const dayKey = dayRaw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                  const day = dayMap[dayKey] || (dayRaw.charAt(0).toUpperCase() + dayRaw.slice(1).toLowerCase());
-                  
-                  if (!newCsvSchedule[day]) newCsvSchedule[day] = { periods: {} as any };
-                  const hourMatch = timeRaw.match(/(\d{1,2})/);
-                  if (hourMatch) {
-                    const hour = parseInt(hourMatch[1]);
-                    const shift = (hour >= 7 && hour < 13) ? Shift.Morning : (hour >= 13 && hour < 18) ? Shift.Afternoon : Shift.Night;
-                    if (!newCsvSchedule[day].periods[shift]) newCsvSchedule[day].periods[shift] = [];
-                    const timeMatch = timeRaw.match(/(\d{1,2}:\d{2})/);
-                    const processedTime = timeMatch ? timeMatch[1] : timeRaw;
-                    if (!newCsvSchedule[day].periods[shift]?.includes(processedTime)) newCsvSchedule[day].periods[shift]?.push(processedTime);
-                  }
-                }
-              });
-
-              if (Object.keys(newCsvSchedule).length > 0) {
-                setSheetSchedule(newCsvSchedule);
-              }
-            }
-          }
-        } catch (e) { 
-          console.error("Erro fetch:", e); 
-        } finally {
-          setIsLoadingSheet(false);
-        }
-      };
-
-      fetchSheetData();
-      const interval = setInterval(fetchSheetData, 120000);
-      
-      const handleForceSync = (e: any) => {
-        if (e.detail?.specId === spec.id) {
-          fetchSheetData();
-        }
-      };
-      window.addEventListener('force-sheet-sync', handleForceSync);
-
-      return () => {
-        clearInterval(interval);
-        window.removeEventListener('force-sheet-sync', handleForceSync);
-      };
-    }
-  }, [spec.googleAppsScriptUrl, spec.googleSheetsId, spec.id]);
-
   const activeSchedule = useMemo(() => {
     if (sheetSchedule && Object.keys(sheetSchedule).length > 0) return sheetSchedule;
     return spec.schedule || null;
   }, [sheetSchedule, spec.schedule]);
 
+  // Tempo real: se o horário escolhido acabou de ser ocupado no HopeCore, limpa a escolha.
+  useEffect(() => {
+    if (!selectedDay) return;
+    const dia = activeSchedule?.[selectedDay];
+    if (!dia) { setSelectedDay(null); setSelectedTime(null); return; }
+    if (selectedTime && !Object.values(dia.periods || {}).some((h) => Array.isArray(h) && h.includes(selectedTime))) setSelectedTime(null);
+  }, [activeSchedule, selectedDay, selectedTime]);
+
   const hasAnySchedule = activeSchedule && Object.keys(activeSchedule).length > 0;
   const isSyncComplete = !isLoadingSheet;
-  const isAgendaFull = isSyncComplete && !hasAnySchedule && (spec.googleAppsScriptUrl || spec.googleSheetsId);
+  const isAgendaFull = isSyncComplete && !hasAnySchedule && !!spec.agendaHopeCore;
   const showAgendaSection = hasAnySchedule || isAgendaFull;
   const displayAgenda = isAdminUnlocked ? (isSyncComplete || !!sheetError) : showAgendaSection;
 
@@ -2686,11 +2345,11 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                     </p>
                   </div>
                 )}
-                {isAdminUnlocked && (spec.googleSheetsId || spec.googleAppsScriptUrl) && (
+                {isAdminUnlocked && (
                   <div className="flex items-center gap-2 mb-2 px-2">
-                    <div className={`w-1.5 h-1.5 rounded-full ${isLoadingSheet ? 'bg-amber-500 animate-pulse' : (sheetError ? 'bg-red-500' : 'bg-green-500')}`} />
+                    <div className={`w-1.5 h-1.5 rounded-full ${isLoadingSheet ? 'bg-amber-500 animate-pulse' : (spec.agendaHopeCore ? 'bg-green-500' : 'bg-red-500')}`} />
                     <p className={`text-[9px] font-bold uppercase tracking-widest ${sheetError ? 'text-red-500/80' : 'text-on-surface-variant/60'}`}>
-                      {isLoadingSheet ? 'Sincronizando Agenda...' : (sheetError ? `Aviso Admin: ${sheetError}` : (spec.googleAppsScriptUrl ? 'Agenda Conectada (Web App)' : 'Planilha Conectada'))}
+                      {isLoadingSheet ? 'Carregando agenda do HopeCore...' : (spec.agendaHopeCore ? 'Agenda do HopeCore (tempo real)' : 'Sem "Agenda no site" no HopeCore')}
                     </p>
                   </div>
                 )}
@@ -3374,220 +3033,45 @@ function LoginScreen({ onNavigate, onUnlock, settings }: { onNavigate: (screen: 
   );
 }
 
-interface AgendaSyncMonitorProps {
-  specialists: Specialist[];
-  isSyncingAll: boolean;
-  isQuotaLocked: boolean;
-  syncStatusAll: string;
-  syncResultsAll: { name: string; status: 'success' | 'error'; message: string }[];
-  onSyncAll: () => Promise<void>;
-  onSyncSingle: (s: Specialist) => Promise<void>;
-  syncingId: string | null;
-}
-
-function AgendaSyncMonitor({
-  specialists,
-  isSyncingAll,
-  isQuotaLocked,
-  syncStatusAll,
-  syncResultsAll,
-  onSyncAll,
-  onSyncSingle,
-  syncingId
-}: AgendaSyncMonitorProps) {
-  // Filter specialists with integration configured
-  const integratedSpecialists = useMemo(() => {
-    return specialists.filter(s => s.googleAppsScriptUrl && s.googleAppsScriptUrl.trim() !== '');
-  }, [specialists]);
-
-  // Statistics
-  const stats = useMemo(() => {
-    const total = integratedSpecialists.length;
-    const successes = integratedSpecialists.filter(s => s.syncStatus === 'success').length;
-    const failures = integratedSpecialists.filter(s => s.syncStatus === 'error').length;
-    const pending = total - successes - failures;
-    return { total, successes, failures, pending };
-  }, [integratedSpecialists]);
-
-  // If there are failures, show a prominent banner
-  const hasFailures = stats.failures > 0;
-
+// Agenda do site (21/10/2026): horários livres vêm do HopeCore em tempo real. A marcação fica no HopeCore:
+// Cadastro profissional → "Agenda no site". Aqui o admin só confere quem está ligado.
+function AgendaHopeCoreMonitor({ specialists }: { specialists: Specialist[] }) {
+  const agenda = useAgendaHopeCore();
+  const linhas = specialists.map((s) => {
+    const a = agenda.carregada ? agendaDe(s, agenda.porSlug) : null;
+    const total = a ? Object.values(a.horarios).reduce((t, d) => t + Object.values(d?.periods || {}).reduce((x, h) => x + (Array.isArray(h) ? h.length : 0), 0), 0) : 0;
+    return { s, a, total };
+  });
+  const ligadas = linhas.filter((l) => l.a).length;
   return (
-    <div className="bg-gradient-to-b from-slate-50 to-white border border-slate-200/80 rounded-[2rem] p-6 sm:p-8 space-y-6 shadow-sm">
-      {/* Header and Sync All Button */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-        <div className="space-y-1">
-          <h3 className="text-lg font-black uppercase text-slate-950 tracking-wider flex items-center gap-2">
-            <RefreshCw size={18} className={`text-indigo-600 ${isSyncingAll ? 'animate-spin' : ''}`} />
-            Monitor de Sincronização de Agendas
-          </h3>
-          <p className="text-xs text-slate-500 font-medium">
-            Monitore e sincronize as agendas de integração do Google Sheets com o site clínico.
+    <div className="p-6 border border-outline rounded-[2rem] space-y-4">
+      <div className="flex items-start gap-3">
+        <RefreshCw size={18} className={`text-indigo-600 mt-1 ${agenda.carregada ? '' : 'animate-spin'}`} />
+        <div>
+          <h3 className="font-display font-black text-primary text-lg">Agenda dos especialistas — HopeCore</h3>
+          <p className="text-xs text-on-surface-variant">
+            Os horários livres vêm direto do HopeCore e mudam sozinhos, em tempo real. Para mostrar ou esconder a agenda de uma
+            psicóloga, use no HopeCore: Cadastro profissional → <b>Agenda no site</b>. Não há mais link de planilha nem botão de sincronizar.
           </p>
         </div>
-        
-        <button
-          disabled={isSyncingAll || !!syncingId || isQuotaLocked}
-          onClick={onSyncAll}
-          className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm shrink-0 cursor-pointer ${
-            isQuotaLocked
-              ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300'
-              : isSyncingAll
-              ? 'bg-indigo-200 text-indigo-700 cursor-wait'
-              : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-200 hover:scale-[1.02] active:scale-95'
-          }`}
-        >
-          {isSyncingAll ? (
-            <>
-              <RefreshCw size={14} className="animate-spin" />
-              Sincronizando Tudo...
-            </>
-          ) : (
-            <>
-              <RefreshCw size={14} />
-              Sincronizar Todas as Agendas
-            </>
-          )}
-        </button>
       </div>
-
-      {/* Summary Bento Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl flex flex-col justify-between">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Integradas</span>
-          <span className="text-2xl font-black text-slate-950 mt-1">{stats.total}</span>
-        </div>
-        <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-2xl flex flex-col justify-between">
-          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Sucessos</span>
-          <span className="text-2xl font-black text-emerald-700 mt-1">{stats.successes}</span>
-        </div>
-        <div className={`p-4 rounded-2xl flex flex-col justify-between border transition-all ${
-          hasFailures 
-            ? 'bg-rose-50 border-rose-200/60 animate-pulse' 
-            : 'bg-slate-50/50 border-slate-100'
-        }`}>
-          <span className={`text-[10px] font-bold uppercase tracking-wider ${hasFailures ? 'text-rose-600' : 'text-slate-500'}`}>Falhas</span>
-          <span className={`text-2xl font-black mt-1 ${hasFailures ? 'text-rose-700' : 'text-slate-950'}`}>{stats.failures}</span>
-        </div>
-        <div className="bg-slate-50/50 border border-slate-100 p-4 rounded-2xl flex flex-col justify-between">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sem Sincronização</span>
-          <span className="text-2xl font-black text-slate-950 mt-1">{stats.pending}</span>
-        </div>
-      </div>
-
-      {/* Prominent Failure Alert Banner */}
-      {hasFailures && (
-        <div className="bg-rose-50 border border-rose-200/50 rounded-2xl p-5 flex items-start gap-4">
-          <div className="w-10 h-10 bg-rose-600 text-white rounded-xl flex items-center justify-center shrink-0 shadow-md shadow-rose-200">
-            <AlertTriangle size={20} />
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-black uppercase text-rose-800 tracking-wider">Falha de Sincronização Detectada!</p>
-            <p className="text-xs text-rose-700 font-medium leading-relaxed">
-              Algumas agendas de especialistas falharam ao sincronizar. Verifique se as URLs dos scripts estão corretas, se foram publicadas como "Qualquer pessoa" e se o banco de dados não atingiu a cota diária de escrita.
-            </p>
-          </div>
-        </div>
+      {agenda.erro && <p className="text-xs text-red-500">Não foi possível ler o HopeCore agora: {agenda.erro}</p>}
+      {agenda.carregada && (
+        <p className="text-xs font-bold text-on-surface-variant">{ligadas} de {specialists.length} especialistas com agenda no site.</p>
       )}
-
-      {/* Running Sync Feedback */}
-      {(isSyncingAll && syncStatusAll) && (
-        <div className="bg-indigo-50 border border-indigo-100/50 rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />
-          <p className="text-xs font-semibold text-indigo-950 uppercase tracking-wide">
-            {syncStatusAll}
-          </p>
-        </div>
-      )}
-
-      {/* Detailed List */}
-      <div className="space-y-3">
-        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Acompanhamento por Especialista:</p>
-        
-        {integratedSpecialists.length === 0 ? (
-          <div className="text-center py-10 bg-slate-50/50 border border-dashed border-slate-200 rounded-2xl space-y-2">
-            <p className="text-sm font-bold text-slate-600">Nenhuma especialista integrada</p>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
-              Não há nenhuma especialista configurada com uma URL do Google Apps Script ainda. Adicione as URLs de integração nas fichas dos profissionais na aba <strong>Especialistas</strong>.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100 bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-inner-sm">
-            {integratedSpecialists.map((s) => {
-              const isSyncingThis = syncingId === s.id;
-              return (
-                <div key={s.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
-                  {/* Specialist info */}
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img src={s.img} alt={s.name} className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-100 shadow-sm" />
-                    <div className="min-w-0">
-                      <p className="font-bold text-slate-950 text-sm truncate">{s.name}</p>
-                      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide mt-0.5">
-                        {s.noCouncil ? 'Sem registro' : `${s.councilType === 'Outro' ? (s.customCouncil || 'Reg.') : (s.councilType || 'CRP')} ${s.crp || ''}`}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Sync status and message */}
-                  <div className="flex-1 flex flex-col sm:items-end gap-1.5 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                      {/* Last Sync Timestamp */}
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        Ult. Sinc: {s.lastSync ? new Date(s.lastSync).toLocaleString('pt-BR') : 'Nunca'}
-                      </span>
-                      
-                      {/* Status Badge */}
-                      {s.syncStatus === 'success' ? (
-                        <span className="inline-flex items-center gap-1 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50">
-                          <Check size={10} className="stroke-[3]" />
-                          Sucesso
-                        </span>
-                      ) : s.syncStatus === 'error' ? (
-                        <span className="inline-flex items-center gap-1 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200/50">
-                          <AlertCircle size={10} className="stroke-[3]" />
-                          Falha
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider bg-slate-50 text-slate-500 border border-slate-200/50">
-                          <Clock size={10} />
-                          Pendente
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Detailed Message */}
-                    {s.syncMessage && (
-                      <p className={`text-[11px] font-medium leading-tight truncate max-w-md ${
-                        s.syncStatus === 'error' ? 'text-rose-600 font-bold' : 'text-slate-500'
-                      }`}>
-                        {s.syncMessage}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Sync button */}
-                  <div className="flex items-center shrink-0">
-                    <button
-                      disabled={isSyncingAll || !!syncingId || isQuotaLocked}
-                      onClick={() => onSyncSingle(s)}
-                      className={`p-2.5 rounded-xl border transition-all duration-200 cursor-pointer ${
-                        isSyncingThis
-                          ? 'bg-indigo-50 border-indigo-200 text-indigo-600 animate-spin cursor-wait'
-                          : s.syncStatus === 'error'
-                          ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100 hover:text-rose-700 hover:shadow-sm'
-                          : 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 hover:shadow-sm'
-                      }`}
-                      title="Sincronizar esta agenda individualmente"
-                    >
-                      <RefreshCw size={14} className={isSyncingThis ? 'animate-spin' : ''} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <ul className="divide-y divide-outline/40 text-sm">
+        {linhas.map(({ s, a, total }) => (
+          <li key={s.id} className="flex items-center justify-between gap-3 py-2">
+            <span className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${!agenda.carregada ? 'bg-amber-500 animate-pulse' : a ? 'bg-green-500' : 'bg-outline'}`} />
+              {s.name}
+            </span>
+            <span className="text-xs text-on-surface-variant">
+              {!agenda.carregada ? 'carregando…' : a ? `${total} horário(s) livre(s) · atualizado ${new Date(a.atualizado_em).toLocaleString('pt-BR')}` : 'sem "Agenda no site" no HopeCore'}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -4011,10 +3495,6 @@ function AdminScreen({
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   const [isQuotaLocked, setIsQuotaLocked] = useState(false);
-  const [isSyncingAll, setIsSyncingAll] = useState(false);
-  const [syncStatusAll, setSyncStatusAll] = useState('');
-  const [syncResultsAll, setSyncResultsAll] = useState<{name: string, status: 'success' | 'error', message: string}[]>([]);
-  const [syncingId, setSyncingId] = useState<string | null>(null);
 
   useEffect(() => {
     const lock = localStorage.getItem('firestore_quota_exhausted');
@@ -4204,265 +3684,6 @@ function AdminScreen({
     setTimeout(() => {
       setSaveStatus(prev => ({ ...prev, [id]: false }));
     }, 2000);
-  };
-
-  const syncAllSchedules = async () => {
-    if (isQuotaLocked) {
-      alert('❌ ERRO DE COTA: O banco de dados está temporariamente em modo leitura. Tente novamente amanhã.');
-      return;
-    }
-
-    const specialistsToSync = localSpecialists.filter(s => s.googleAppsScriptUrl && s.googleAppsScriptUrl.trim() !== '');
-    if (specialistsToSync.length === 0) {
-      alert('ℹ️ Nenhuma psicóloga possui uma URL de integração configurada.');
-      return;
-    }
-
-    if (!confirm(`Deseja sincronizar as agendas de ${specialistsToSync.length} especialista(s) no Firestore agora?`)) {
-      return;
-    }
-
-    setIsSyncingAll(true);
-    setSyncResultsAll([]);
-    setSyncStatusAll('Iniciando sincronização de todas as agendas...');
-
-    const { updateSpecialistSchedule } = await import('./lib/firebase');
-    const updatedSpecialists = [...localSpecialists];
-    const results: {name: string, status: 'success' | 'error', message: string}[] = [];
-
-    for (let i = 0; i < specialistsToSync.length; i++) {
-      const s = specialistsToSync[i];
-      setSyncStatusAll(`[${i + 1}/${specialistsToSync.length}] Sincronizando agenda de: ${s.name}...`);
-      
-      try {
-        let scriptUrlRaw = s.googleAppsScriptUrl.trim();
-        if (!scriptUrlRaw.startsWith('http')) scriptUrlRaw = `https://${scriptUrlRaw}`;
-        
-        // Wrap JSONP in a Promise
-        const jsonpData = await new Promise<any>((resolve, reject) => {
-          const jsonpCallbackName = `google_script_cb_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-          const scriptUrlJsonp = scriptUrlRaw.includes('?') 
-            ? `${scriptUrlRaw}&action=getDadosDaAgenda&callback=${jsonpCallbackName}` 
-            : `${scriptUrlRaw}?action=getDadosDaAgenda&callback=${jsonpCallbackName}`;
-          
-          const script = document.createElement('script');
-          
-          let scriptHandled = false;
-          const cleanup = () => {
-            if (scriptHandled) return;
-            scriptHandled = true;
-            if (script.parentNode) script.parentNode.removeChild(script);
-            delete (window as any)[jsonpCallbackName];
-          };
-
-          script.src = scriptUrlJsonp;
-          script.onerror = () => {
-            cleanup();
-            reject(new Error('Google Script não respondeu. Verifique se foi publicado como "Qualquer pessoa" e se a URL termina em /exec.'));
-          };
-          
-          const timeout = setTimeout(() => {
-            cleanup();
-            reject(new Error('Tempo limite excedido (45 segundos).'));
-          }, 45000);
-
-          (window as any)[jsonpCallbackName] = (data: any) => {
-            clearTimeout(timeout);
-            cleanup();
-            resolve(data);
-          };
-
-          document.body.appendChild(script);
-        });
-
-        const parsedSchedule = parseSheetScheduleData(jsonpData);
-        const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
-        const availableCount = appointments.filter((row: any) => {
-          const status = (row.status || row.paciente || '').toString().toLowerCase();
-          return status.includes('💚') || status.includes('livre');
-        }).length;
-
-        // Save directly to the individual specialists' schedules collection in Firestore
-        await updateSpecialistSchedule(s.id, parsedSchedule);
-
-        // Update local state list to hold the parsed schedule
-        const idx = updatedSpecialists.findIndex(spec => spec.id === s.id);
-        if (idx !== -1) {
-          updatedSpecialists[idx] = {
-            ...updatedSpecialists[idx],
-            schedule: parsedSchedule,
-            lastSync: new Date().toISOString(),
-            syncStatus: 'success',
-            syncMessage: `Sincronizada com sucesso! Encontrados ${availableCount} horários disponíveis.`
-          };
-        }
-
-        results.push({
-          name: s.name,
-          status: 'success',
-          message: `Sincronizada com sucesso! Encontrados ${availableCount} horários disponíveis.`
-        });
-      } catch (e: any) {
-        console.error(`Erro ao sincronizar ${s.name}:`, e);
-        const errorMsg = e.message || 'Falha na conexão ou processamento.';
-        const cleanError = errorMsg.includes('resource-exhausted') 
-          ? 'Limite diário do banco de dados (quota) atingido.' 
-          : errorMsg;
-        results.push({
-          name: s.name,
-          status: 'error',
-          message: cleanError
-        });
-
-        // Update local state list to hold the failed status
-        const idx = updatedSpecialists.findIndex(spec => spec.id === s.id);
-        if (idx !== -1) {
-          updatedSpecialists[idx] = {
-            ...updatedSpecialists[idx],
-            syncStatus: 'error',
-            syncMessage: cleanError
-          };
-        }
-      }
-
-      // Small pause to be gentle
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-
-    // Save the entire specialists list so lastSync times and updated metadata are stored in Firestore
-    setLocalSpecialists(updatedSpecialists);
-    await onUpdateSpecialists(updatedSpecialists);
-
-    setSyncResultsAll(results);
-    setSyncStatusAll('Sincronização em lote concluída!');
-    setIsSyncingAll(false);
-  };
-
-  const syncSingleSpecialist = async (s: Specialist) => {
-    if (isQuotaLocked) {
-      alert('❌ ERRO DE COTA: O banco de dados está temporariamente em modo leitura. Tente novamente amanhã.');
-      return;
-    }
-    if (!s.googleAppsScriptUrl) {
-      alert('Insira a URL antes de sincronizar.');
-      return;
-    }
-    if (!s.googleAppsScriptUrl.trim().includes('/exec')) {
-      alert('❌ ATENÇÃO: Sua URL não termina em /exec. Você provavelmente colou o link do rascunho ou da edição. No Google Scripts, vá em Implantar > Nova Implantação e copie a URL correta.');
-    }
-
-    setSyncingId(s.id);
-
-    try {
-      const { updateSpecialistSchedule } = await import('./lib/firebase');
-      let scriptUrlRaw = s.googleAppsScriptUrl.trim();
-      if (!scriptUrlRaw.startsWith('http')) scriptUrlRaw = `https://${scriptUrlRaw}`;
-      
-      const jsonpCallbackName = `google_script_cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-      const scriptUrlJsonp = scriptUrlRaw.includes('?') 
-        ? `${scriptUrlRaw}&action=getDadosDaAgenda&callback=${jsonpCallbackName}` 
-        : `${scriptUrlRaw}?action=getDadosDaAgenda&callback=${jsonpCallbackName}`;
-      
-      const script = document.createElement('script');
-      
-      let scriptHandled = false;
-      const cleanup = () => {
-        if (scriptHandled) return;
-        scriptHandled = true;
-        if (script.parentNode) script.parentNode.removeChild(script);
-        (window as any)[jsonpCallbackName] = () => {};
-      };
-
-      script.src = scriptUrlJsonp;
-      
-      script.onerror = async () => {
-        cleanup();
-        const errorMsg = 'Erro de conexão: O Google não respondeu corretamente.';
-        alert(`❌ ERRO DE CONEXÃO: ${s.name}\nO Google não respondeu corretamente. Verifique se o Script foi publicado como "Qualquer pessoa" e se a URL termina em /exec.`);
-        
-        const updated = localSpecialists.map(spec => spec.id === s.id ? {
-          ...spec,
-          syncStatus: 'error' as const,
-          syncMessage: errorMsg
-        } : spec);
-        setLocalSpecialists(updated);
-        await onUpdateSpecialists(updated);
-        setSyncingId(null);
-      };
-      
-      const timeout = setTimeout(async () => {
-        cleanup();
-        const errorMsg = 'Erro de timeout: O Script demorou mais que 45 segundos para responder.';
-        alert(`❌ TIME-OUT: ${s.name}\nO Google Script demorou muito para responder (45s). Verifique sua URL ou conexão.`);
-        
-        const updated = localSpecialists.map(spec => spec.id === s.id ? {
-          ...spec,
-          syncStatus: 'error' as const,
-          syncMessage: errorMsg
-        } : spec);
-        setLocalSpecialists(updated);
-        await onUpdateSpecialists(updated);
-        setSyncingId(null);
-      }, 45000);
-
-      (window as any)[jsonpCallbackName] = async (jsonpData: any) => {
-        clearTimeout(timeout);
-        cleanup();
-        
-        try {
-          const parsedSchedule = parseSheetScheduleData(jsonpData);
-          const appointments = Array.isArray(jsonpData) ? jsonpData : (jsonpData.data || []);
-          
-          const availableCount = appointments.filter((row: any) => {
-            const status = (row.status || row.paciente || '').toString().toLowerCase();
-            return status.includes('💚') || status.includes('livre');
-          }).length;
-          
-          const successMsg = `Sincronizada com sucesso! Encontrados ${availableCount} horários disponíveis (💚).`;
-          alert(`✅ AGENDA SINCRONIZADA DE: ${s.name}!\nEncontramos ${availableCount} horários disponíveis.\n\nA agenda foi atualizada localmente e no banco de dados.`);
-          
-          await updateSpecialistSchedule(s.id, parsedSchedule);
-          
-          const updated = localSpecialists.map(spec => spec.id === s.id ? {
-            ...spec,
-            schedule: parsedSchedule,
-            lastSync: new Date().toISOString(),
-            syncStatus: 'success' as const,
-            syncMessage: successMsg
-          } : spec);
-          setLocalSpecialists(updated);
-          await onUpdateSpecialists(updated);
-        } catch (e: any) {
-          const errorMsg = e.message || 'Falha ao processar dados da agenda.';
-          const updated = localSpecialists.map(spec => spec.id === s.id ? {
-            ...spec,
-            syncStatus: 'error' as const,
-            syncMessage: errorMsg
-          } : spec);
-          setLocalSpecialists(updated);
-          await onUpdateSpecialists(updated);
-        } finally {
-          setSyncingId(null);
-        }
-      };
-
-      document.body.appendChild(script);
-    } catch (e: any) {
-      const msg = e.message || '';
-      const errorMsg = msg.includes('resource-exhausted') 
-        ? 'Erro de Cota: Limite diário atingido.' 
-        : 'Erro crítico na conexão.';
-      alert(`❌ ERRO: ${errorMsg}`);
-      
-      const updated = localSpecialists.map(spec => spec.id === s.id ? {
-        ...spec,
-        syncStatus: 'error' as const,
-        syncMessage: errorMsg
-      } : spec);
-      setLocalSpecialists(updated);
-      await onUpdateSpecialists(updated);
-      setSyncingId(null);
-    }
   };
 
   const addInsurance = () => {
@@ -4722,16 +3943,7 @@ function AdminScreen({
           {activeTab === 'home' && (
             <div className="space-y-8">
               <OtimizarFotos />
-              <AgendaSyncMonitor
-                specialists={localSpecialists}
-                isSyncingAll={isSyncingAll}
-                isQuotaLocked={isQuotaLocked}
-                syncStatusAll={syncStatusAll}
-                syncResultsAll={syncResultsAll}
-                onSyncAll={syncAllSchedules}
-                onSyncSingle={syncSingleSpecialist}
-                syncingId={syncingId}
-              />
+              <AgendaHopeCoreMonitor specialists={localSpecialists} />
 
                <div className="pb-8 border-b border-outline">
                 <h2 className="text-2xl font-display font-black text-primary mb-6">Informações da Clínica</h2>
@@ -4984,16 +4196,7 @@ function AdminScreen({
                 </button>
               </div>
 
-              <AgendaSyncMonitor
-                specialists={localSpecialists}
-                isSyncingAll={isSyncingAll}
-                isQuotaLocked={isQuotaLocked}
-                syncStatusAll={syncStatusAll}
-                syncResultsAll={syncResultsAll}
-                onSyncAll={syncAllSchedules}
-                onSyncSingle={syncSingleSpecialist}
-                syncingId={syncingId}
-              />
+              <AgendaHopeCoreMonitor specialists={localSpecialists} />
 
               <div className="grid grid-cols-1 gap-8">
                 {localSpecialists.map((s, idx) => (
@@ -5091,118 +4294,6 @@ function AdminScreen({
                       </div>
                       
                       <div className="md:col-span-2 space-y-4 pt-4 border-t border-outline">
-                         <p className="text-[10px] font-black uppercase text-secondary/60 tracking-widest ml-1">Integração com Agenda Online</p>
-                         <div className="flex flex-col sm:flex-row gap-4 items-end">
-                            <div className="flex-grow space-y-1">
-                              <label className="text-[9px] font-black uppercase text-primary/40 ml-1">URL de Integração</label>
-                              <div className="relative group">
-                                <input 
-                                  id={`url-input-${s.id}`}
-                                  className="p-3 pr-24 bg-surface-container-low border border-outline rounded-xl w-full focus:border-primary outline-none font-medium text-xs shadow-sm transition-all" 
-                                  value={s.googleAppsScriptUrl || ''} 
-                                  onChange={e => updateSpecialist(s.id, { googleAppsScriptUrl: e.target.value })} 
-                                  placeholder="https://script.google.com/macros/s/.../exec" 
-                                />
-                                {s.googleAppsScriptUrl && (
-                                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pointer-events-auto">
-                                    <button 
-                                      type="button"
-                                      title="Limpar URL"
-                                      onClick={() => {
-                                        if (confirm("Deseja realmente remover o link de integração desta especialista?")) {
-                                          updateSpecialist(s.id, { googleAppsScriptUrl: '', schedule: undefined });
-                                        }
-                                      }}
-                                      className="p-2 hover:bg-error/10 text-error/40 hover:text-error rounded-lg transition-colors cursor-pointer"
-                                    >
-                                      <Trash2 size={14} />
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <button 
-                              disabled={isSyncingAll || !!syncingId || isQuotaLocked}
-                              onClick={() => syncSingleSpecialist(s)}
-                              className={`px-8 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 whitespace-nowrap h-[46px] border flex items-center justify-center gap-2 ${
-                                isQuotaLocked 
-                                ? 'bg-outline-variant text-primary/30 cursor-not-allowed border-outline' 
-                                : syncingId === s.id
-                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200 cursor-wait'
-                                : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 hover:shadow-sm'
-                              }`}
-                            >
-                              {syncingId === s.id ? (
-                                <>
-                                  <RefreshCw size={12} className="animate-spin" />
-                                  Sincronizando...
-                                </>
-                              ) : (
-                                'Sincronizar Agenda Firestore'
-                              )}
-                            </button>
-                         </div>
-
-                         <div className="bg-gradient-to-br from-green-50 to-white p-8 rounded-[3rem] space-y-6 border-2 border-green-500/20 shadow-xl shadow-green-100/30 relative overflow-hidden">
-                           <div className="absolute top-0 right-0 p-4">
-                             <span className="bg-green-600 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">Configuração Obrigatória</span>
-                           </div>
-                           <div className="flex items-center gap-4 mb-2">
-                              <div className="w-10 h-10 bg-green-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-green-200 animate-pulse">
-                                 <Info size={20} />
-                              </div>
-                              <div>
-                                <p className="text-[12px] font-black uppercase text-green-800 tracking-[0.2em]">Guia de Integração Instantânea</p>
-                                <p className="text-[10px] text-green-600/70 font-bold uppercase tracking-widest">Siga estes passos para sincronizar sua planilha</p>
-                              </div>
-                           </div>
-                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-[11px] text-green-900/80">
-                             <div className="space-y-3 p-6 bg-white rounded-[2rem] border-2 border-green-100 shadow-sm hover:border-green-300 transition-colors group">
-                               <p className="font-black text-green-700 flex items-center gap-2 uppercase text-[10px] tracking-widest">
-                                 <span className="w-8 h-8 bg-green-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">1</span>
-                                 No Google Scripts
-                               </p>
-                               <p className="font-medium text-green-900/80 leading-relaxed">
-                                 Abra seu script, cole o código, salve e vá em: <br/>
-                                 <strong className="text-green-700">Implantar &gt; Nova Implantação</strong>.
-                               </p>
-                             </div>
-                             <div className="space-y-3 p-6 bg-white rounded-[2rem] border-2 border-green-100 shadow-sm hover:border-green-300 transition-colors group">
-                               <p className="font-black text-green-700 flex items-center gap-2 uppercase text-[10px] tracking-widest">
-                                 <span className="w-8 h-8 bg-green-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">2</span>
-                                 Configuração de Acesso
-                               </p>
-                               <p className="font-medium text-green-900/80 leading-relaxed">
-                                 Selecione o tipo <strong>"App da Web"</strong> e mude quem pode acessar para <strong>"Qualquer pessoa"</strong>.
-                               </p>
-                             </div>
-                             <div className="sm:col-span-2 p-6 bg-amber-50 rounded-[2rem] border-2 border-amber-200/50 flex gap-5 shadow-inner">
-                                <div className="w-12 h-12 bg-amber-500 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-200">
-                                   <Info size={24} />
-                                </div>
-                                <div className="space-y-1.5 py-1">
-                                   <p className="text-[11px] font-black uppercase tracking-widest text-amber-800">Cuidado com o Link (URL)</p>
-                                   <p className="text-[12px] text-amber-700 font-bold leading-relaxed">
-                                     O link gerado na implantação <span className="underline decoration-2 underline-offset-4 decoration-amber-400">PRECISA</span> terminar exatamente com <span className="bg-amber-500 text-white px-2 py-0.5 rounded-lg text-[10px] font-black">/exec</span>.
-                                   </p>
-                                </div>
-                             </div>
-                           </div>
-                           <div className="p-6 bg-green-700 rounded-[2rem] border-b-4 border-green-900 flex items-start gap-4 shadow-xl shadow-green-200/50">
-                             <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm text-white flex items-center justify-center shrink-0 border border-white/20">
-                               <Info size={24} />
-                             </div>
-                             <div className="space-y-1.5">
-                               <p className="text-[12px] font-black uppercase text-white tracking-[0.2em]">Padrão de Sincronização</p>
-                               <p className="text-[12px] text-green-50 font-bold leading-relaxed">
-                                 O sistema mapeia automaticamente horários marcados com <span className="bg-white/20 px-2 py-1 rounded-lg text-white font-black">💚</span> ou <span className="bg-white/20 px-2 py-1 rounded-lg text-white font-black">LIVRE</span>.
-                                 <br />
-                                 <span className="text-[10px] opacity-80 uppercase font-black text-white/90">Este é o único padrão aceito para visibilidade imediata.</span>
-                               </p>
-                             </div>
-                           </div>
-                         </div>
-
                         <p className="text-[10px] uppercase font-bold tracking-widest text-primary">Faixas Etárias</p>
                         <div className="flex flex-wrap gap-2">
                           {Object.values(AgeGroup).map(age => (
@@ -5271,7 +4362,7 @@ function AdminScreen({
                           <p className="text-[10px] text-on-surface-variant/60 italic ml-1">Nenhum convênio cadastrado no site. Cadastre convênios na aba "Configurações".</p>
                         )}
                         
-                        {!s.googleAppsScriptUrl && (
+                        {(
                           <>
                             <p className="text-[10px] uppercase font-bold tracking-widest text-primary pt-2">Períodos de Atendimento</p>
                             <div className="flex flex-wrap gap-2">
@@ -5291,98 +4382,15 @@ function AdminScreen({
                           </>
                         )}
 
-                        {s.googleAppsScriptUrl ? (
-                           <div className="pt-6 border-t border-outline">
-                              <div className="p-8 bg-green-50/50 border border-green-100 rounded-3xl text-center space-y-3">
-                                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto shadow-sm">
-                                  <VerifiedUser className="text-white" size={24} />
-                                </div>
-                                <h3 className="text-sm font-black text-green-800 uppercase tracking-widest">Agenda Em Tempo Real Ativa</h3>
-                                <p className="text-[11px] text-green-700/80 max-w-xs mx-auto">
-                                  Esta agenda está sendo sincronizada com o Google Sheets. Os horários marcados com 💚 são exibidos automaticamente para os pacientes.
-                                </p>
-                                <button 
-                                  onClick={() => updateSpecialist(s.id, { googleAppsScriptUrl: '' })}
-                                  className="text-[10px] font-black uppercase text-red-500 hover:underline pt-2"
-                                >
-                                  Desativar Integração e Usar Manual
-                                </button>
-                              </div>
-                           </div>
-                        ) : (
-                          <div className="pt-6 border-t border-outline space-y-4">
-                            <div className="flex justify-between items-center">
-                              <p className="text-[10px] uppercase font-bold tracking-widest text-primary">Agenda Semanal (Card de Horários)</p>
-                              {!s.schedule && (
-                                <button 
-                                  onClick={() => {
-                                    const def = DEFAULT_SPECIALISTS.find(ds => ds.id === s.id);
-                                    if (def?.schedule) updateSpecialist(s.id, { schedule: def.schedule });
-                                    else updateSpecialist(s.id, { schedule: { 'Segunda': { periods: { [Shift.Morning]: ['08:00', '09:00'] } } } });
-                                  }}
-                                  className="text-[9px] font-black uppercase text-secondary hover:underline"
-                                >
-                                  Ativar Agenda Visual
-                                </button>
-                              )}
-                            </div>
-                            
-                            {s.schedule && (
-                              <div className="space-y-4">
-                                {Object.entries(s.schedule as Record<string, { periods: Record<string, string[]> }>).map(([day, data]) => (
-                                  <div key={day} className="p-4 bg-surface rounded-2xl border border-outline space-y-3 relative group/item">
-                                    <button 
-                                      onClick={() => {
-                                        const newSched = { ...s.schedule };
-                                        delete newSched[day];
-                                        updateSpecialist(s.id, { schedule: newSched });
-                                      }}
-                                      className="absolute top-2 right-2 text-accent p-1 opacity-20 group-hover/item:opacity-100 hover:bg-accent/10 rounded"
-                                    >
-                                      <Delete size={14} />
-                                    </button>
-                                    <p className="text-xs font-bold text-primary">{day}</p>
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                      {Object.values(Shift).map(shift => (
-                                        <div key={shift} className="space-y-2">
-                                          <label className="text-[9px] font-black uppercase text-on-surface-variant/40">{shift}</label>
-                                          <input 
-                                            className="w-full text-[10px] p-2 border-b border-outline outline-none focus:border-primary"
-                                            value={data.periods[shift]?.join(', ') || ''}
-                                            placeholder="Ex: 08:00, 09:00"
-                                            onChange={(e) => {
-                                              const times = e.target.value.split(',').map(t => t.trim()).filter(t => t !== '');
-                                              const newSched = JSON.parse(JSON.stringify(s.schedule));
-                                              if (!newSched[day]) newSched[day] = { periods: {} };
-                                              newSched[day].periods[shift] = times;
-                                              updateSpecialist(s.id, { schedule: newSched });
-                                            }}
-                                          />
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))}
-                                <div className="flex flex-wrap gap-2">
-                                  {['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(day => (
-                                    !(s.schedule as any)?.[day] && (
-                                      <button 
-                                        key={day}
-                                        onClick={() => {
-                                          const newSched = { ...s.schedule, [day]: { periods: {} } };
-                                          updateSpecialist(s.id, { schedule: newSched });
-                                        }}
-                                        className="text-[9px] font-bold text-primary/60 px-3 py-1.5 bg-surface-container rounded-lg hover:bg-primary/10 transition-colors border border-outline/30"
-                                      >
-                                        + {day}
-                                      </button>
-                                    )
-                                  ))}
-                                </div>
-                              </div>
-                            )}
+                        <div className="pt-6 border-t border-outline">
+                          <div className="p-6 bg-green-50/50 border border-green-100 rounded-3xl space-y-2">
+                            <h3 className="text-sm font-black text-green-800 uppercase tracking-widest">Agenda em tempo real — HopeCore</h3>
+                            <p className="text-[11px] text-green-700/80">
+                              Os horários livres desta especialista vêm direto do HopeCore. Para mostrar ou esconder, use no HopeCore:
+                              Cadastro profissional → <b>Agenda no site</b>. O endereço público (slug) daqui precisa ser o mesmo do HopeCore.
+                            </p>
                           </div>
-                        )}
+                        </div>
 
                         <div className="pt-6 flex justify-between items-center">
                           <button 
