@@ -27,10 +27,10 @@ const SITE = 'https://clinicahopebrasil.com.br';
 const CLINIC = {
   name: 'Clínica Hope',
   legalName: 'Hope Clínica Multidisciplinar LTDA',
-  phoneDisplay: '(48) 9 9609-9644',
-  phoneIntl: '+55-48-99609-9644',
-  whatsappUrl: 'https://wa.me/5548996099644?text=' + encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta'),
-  telegramUrl: 'https://t.me/+5548996099644?text=' + encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta'),
+  phoneDisplay: '(48) 9 9126-6921',
+  phoneIntl: '+55-48-99126-6921',
+  whatsappUrl: 'https://wa.me/5548991266921?text=' + encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta'),
+  telegramUrl: 'https://t.me/+5548991266921?text=' + encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta'),
   street: 'Rua Najla Carone Guedert, 1080 - City Office Square',
   district: 'Pagani',
   city: 'Palhoça',
@@ -155,7 +155,7 @@ function contactBlock() {
 <h2 id="ssr-contato">Endereço, horário e contato</h2>
 <address style="font-style:normal">
 <p><strong>${esc(CLINIC.name)}</strong><br>${esc(CLINIC.street)}<br>${esc(CLINIC.district)}, ${esc(CLINIC.city)} - ${esc(CLINIC.state)}, CEP ${esc(CLINIC.cep)}</p>
-<p>Telefone e WhatsApp: <a href="tel:+5548996099644">${esc(CLINIC.phoneDisplay)}</a></p>
+<p>Telefone e WhatsApp: <a href="tel:+5548991266921">${esc(CLINIC.phoneDisplay)}</a></p>
 <p>Horário de atendimento: ${esc(CLINIC.hoursText)}</p>
 <p><a href="${esc(CLINIC.mapUrl)}" rel="noopener">Ver no Google Maps</a></p>
 </address>
