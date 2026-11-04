@@ -2202,7 +2202,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
   const handleWhatsAppClick = () => {
     if (!canBook) return;
-    if (spec.agendaHopeCore && spec.slug && selectedPlan !== 'Particular') { trackScheduleClick(spec.name); setAgendando(true); return; }
+    if (spec.agendaHopeCore && (spec.agendaSlug || spec.slug) && selectedPlan !== 'Particular') { trackScheduleClick(spec.name); setAgendando(true); return; }
     trackWhatsAppClick('specialist_card');
     trackScheduleClick(spec.name);
     const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
@@ -2221,8 +2221,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
         : 'soft-shadow border border-outline-alt/30'
       }`}
     >
-      {agendando && selectedDay && selectedTime && selectedPlan && spec.slug && (
-        <AgendamentoSite slug={spec.slug} especialista={spec.name} dia={selectedDay} hora={selectedTime} planoSite={selectedPlan}
+      {agendando && selectedDay && selectedTime && selectedPlan && (spec.agendaSlug || spec.slug) && (
+        <AgendamentoSite slug={(spec.agendaSlug || spec.slug) as string} especialista={spec.name} dia={selectedDay} hora={selectedTime} planoSite={selectedPlan}
           onFechar={() => { setAgendando(false); setSelectedTime(null); }} />
       )}
       <div className={`h-96 relative overflow-hidden transition-all duration-700 ${isTouched ? 'grayscale-0' : 'grayscale group-hover:grayscale-0'}`}>

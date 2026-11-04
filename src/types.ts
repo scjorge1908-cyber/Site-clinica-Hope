@@ -118,6 +118,8 @@ export interface Specialist {
   agendaHopeCore?: boolean;
   /** Horários que outra pessoa está agendando agora pelo site (trava de 20 min) ou aguardando a equipe. Não vai ao Firebase. */
   emAgendamento?: EmAgendamento[];
+  /** Endereço (slug) da especialista no sistema da clínica, usado para reservar o horário. Não vai ao Firebase. */
+  agendaSlug?: string;
 }
 
 export interface Approach {

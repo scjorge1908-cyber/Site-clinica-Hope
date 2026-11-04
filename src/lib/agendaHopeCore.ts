@@ -39,7 +39,7 @@ export function comAgendaHopeCore(spec: Specialist, estado: EstadoAgenda): Speci
   // Agendamento pelo site (03/11/2026): horários travados por quem está preenchendo agora (só os que ainda valem)
   const agora = Date.now();
   const emAgendamento = (a?.em_agendamento ?? []).filter((e) => !e.ate || new Date(e.ate).getTime() > agora);
-  return { ...spec, schedule: a?.horarios ?? {}, lastSync: a?.atualizado_em ?? spec.lastSync, agendaHopeCore: !!a, emAgendamento };
+  return { ...spec, schedule: a?.horarios ?? {}, lastSync: a?.atualizado_em ?? spec.lastSync, agendaHopeCore: !!a, emAgendamento, agendaSlug: a?.slug };
 }
 
 /** Lê os horários livres do HopeCore e acompanha as mudanças em tempo real. */
