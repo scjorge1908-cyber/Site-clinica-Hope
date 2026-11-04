@@ -5,6 +5,7 @@
 //  3) ao salvar: "Recebemos seus dados" + e-mail com os dados, as regras e os documentos; a equipe valida e confirma pelo WhatsApp.
 // Desistiu (fechou) antes de salvar: o horário é liberado na hora. Nada daqui fica guardado no navegador.
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ANEXOS, MAX_ANEXO_BYTES, MAX_TOTAL_BYTES, SEXOS, faltando, mascaraCep, mascaraCpf, mascaraData, mascaraTelefone, nomeCampo, pedeQr,
   type Dados, type TipoAnexo,
@@ -163,7 +164,8 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
     </label>
   );
 
-  return (
+  // Abre por cima da página inteira (portal no <body>): dentro do cartão animado/recortado da especialista a janela ficava invisível.
+  return createPortal(
     <div className="fixed inset-0 z-[200] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-label="Agendamento">
       <div className="bg-white w-full sm:max-w-xl max-h-[100dvh] sm:max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl shadow-2xl">
         <div id="agsite-topo" className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-gray-100 px-5 py-3 flex items-center justify-between gap-3">
@@ -282,6 +284,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
