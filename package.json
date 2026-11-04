@@ -8,7 +8,7 @@
     "dev": "tsx server.ts",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
-    "build": "vite build && cp dist/index.html dist/404.html && mkdir -p dist/validar && cp dist/index.html dist/validar/index.html",
+    "build": "vite build && cp dist/index.html dist/404.html && mkdir -p dist/validar && sed -E 's#(src|href)=\"\\./#\\1=\"/#g' dist/index.html > dist/validar/index.html",
     "preview": "vite preview"
   },
   "dependencies": {
