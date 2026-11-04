@@ -2190,6 +2190,13 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const [agendando, setAgendando] = useState<{ dia: string; hora: string; plano: string } | null>(null);
   const periodoDe = (h: string) => (h < '13:00' ? Shift.Morning : h < '18:00' ? Shift.Afternoon : Shift.Night) as string;
   const emAgendamentoDia = (spec.emAgendamento ?? []).filter((e) => e.dia === selectedDay);
+  // Jorge 03/11/2026: com dia, hora e CONVÊNIO (plano) escolhidos → já abre o cadastro, sem precisar clicar em "Enviar".
+  useEffect(() => {
+    if (agendando || !selectedDay || !selectedTime || !selectedPlan || selectedPlan === 'Particular') return;
+    if (!spec.agendaHopeCore || !(spec.agendaSlug || spec.slug)) return;
+    trackScheduleClick(spec.name);
+    setAgendando({ dia: selectedDay, hora: selectedTime, plano: selectedPlan });
+  }, [selectedPlan, selectedTime, selectedDay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getSpecialtyIcon = (specialty?: string) => {
     const s = (specialty || '').toLowerCase();

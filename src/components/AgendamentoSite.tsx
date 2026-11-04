@@ -1,9 +1,10 @@
 // Agendamento pelo site (prévia APROVADA por Jorge em 03/11/2026).
 // A pessoa escolhe dia, hora e convênio no cartão da especialista e clica em "Enviar sua solicitação":
-//  1) o sistema da clínica trava o horário por 20 minutos (para quem estiver no site ele aparece "em agendamento");
+//  1) o sistema da clínica trava o horário por 30 minutos (Jorge, 03/11/2026) (para quem estiver no site ele aparece "em agendamento");
 //  2) aqui mesmo, no site, ela preenche os dados do PACIENTE e anexa os documentos (tudo obrigatório, só o complemento não);
 //  3) ao salvar: "Recebemos seus dados" + e-mail com os dados, as regras e os documentos; a equipe valida e confirma pelo WhatsApp.
-// Desistiu (fechou) antes de salvar: o horário é liberado na hora. Nada daqui fica guardado no navegador.
+// Desistiu (fechou) antes de salvar: o horário é liberado na hora. Saiu para buscar um documento e voltou (ou a página recarregou):
+// continua a mesma reserva e o que já foi digitado (guardado só nesta aba, até salvar, desistir ou vencer; sem os arquivos).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -55,9 +56,23 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
   const enviado = useRef(false);
   const caminhoRef = useRef<string | null>(null);
 
-  // 1) trava o horário (uma vez)
+  const chave = `agsite:${slug}|${dia}|${hora}`;
+  const ler = (k: string) => { try { return JSON.parse(sessionStorage.getItem(k) || 'null'); } catch { return null; } };
+  const gravar = (k: string, v: unknown) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* aba privada: segue sem guardar */ } };
+  const limpar = () => { try { sessionStorage.removeItem(chave); sessionStorage.removeItem(chave + ':dados'); } catch { /* nada */ } };
+
+  // 1) trava o horário (uma vez) — ou retoma a reserva desta aba, se ainda vale
   useEffect(() => {
     let vivo = true;
+    const salva = ler(chave) as Reserva | null;
+    if (salva?.caminho && new Date(salva.expira_em).getTime() > Date.now() + 5000) {
+      caminhoRef.current = salva.caminho;
+      setReserva(salva);
+      const rascunho = ler(chave + ':dados') as Dados | null;
+      setD(rascunho ? { ...VAZIO, ...rascunho } : { ...VAZIO, plano: planoDoSistema(planoSite, salva.planos ?? []) });
+      setEtapa('form');
+      return () => { vivo = false; };
+    }
     void (async () => {
       try {
         const r = await fetch(`${SISTEMA}/api/site/agendar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ acao: 'reservar', slug, dia, hora }) });
@@ -66,6 +81,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
         if (!j.ok || !j.caminho) { setErro(j.erro || 'Não foi possível reservar este horário agora. Tente de novo.'); setEtapa('erro'); return; }
         const res = j as Reserva;
         caminhoRef.current = res.caminho;
+        gravar(chave, res);
         setReserva(res);
         setD((x) => ({ ...x, plano: planoDoSistema(planoSite, res.planos ?? []) }));
         setEtapa('form');
@@ -74,29 +90,29 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
       }
     })();
     return () => { vivo = false; };
-  }, [slug, dia, hora, planoSite]);
+  }, [slug, dia, hora, planoSite]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // contagem regressiva dos 20 min
+  // o que já foi digitado fica guardado nesta aba (sem os arquivos) para não perder ao sair e voltar
+  useEffect(() => { if (etapa === 'form') gravar(chave + ':dados', d); }, [d, etapa]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // contagem regressiva dos 30 min
   useEffect(() => {
     if (etapa !== 'form') return;
     const t = setInterval(() => setAgora(Date.now()), 1000);
     return () => clearInterval(t);
   }, [etapa]);
   const restam = reserva ? Math.max(0, Math.floor((new Date(reserva.expira_em).getTime() - agora) / 1000)) : 0;
-  useEffect(() => { if (etapa === 'form' && reserva && restam === 0) setEtapa('tempo'); }, [etapa, reserva, restam]);
+  useEffect(() => { if (etapa === 'form' && reserva && restam === 0) { limpar(); setEtapa('tempo'); } }, [etapa, reserva, restam]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // desistiu (fechou a janela ou saiu da página) antes de salvar: libera o horário
+  // desistiu (botão Desistir ou ×) antes de salvar: libera o horário na hora. Sair da página NÃO libera
+  // (a pessoa pode ter ido buscar um documento); se não voltar, a reserva vence sozinha em 30 min.
   const liberar = () => {
     const c = caminhoRef.current;
+    limpar();
     if (!c || enviado.current) return;
     caminhoRef.current = null;
-    try { void fetch(`${SISTEMA}/api/site/agendar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ acao: 'desistir', caminho: c }), keepalive: true }); } catch { /* vence sozinho em 20 min */ }
+    try { void fetch(`${SISTEMA}/api/site/agendar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ acao: 'desistir', caminho: c }), keepalive: true }); } catch { /* vence sozinho em 30 min */ }
   };
-  useEffect(() => {
-    const sair = () => liberar();
-    window.addEventListener('pagehide', sair);
-    return () => window.removeEventListener('pagehide', sair);
-  }, []);
   const fechar = () => { liberar(); onFechar(); };
 
   const qr = pedeQr(d.plano, d.carteirinha);
@@ -147,7 +163,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
       for (const t of tipos) fd.append(t, arqs[t]!, arqs[t]!.nome ?? t);
       const r = await fetch(`${SISTEMA}/api/agendamento-link`, { method: 'POST', body: fd });
       const j = await r.json().catch(() => ({})) as { ok?: boolean; erro?: string; campos?: string[] };
-      if (j.ok) { enviado.current = true; setEtapa('ok'); }
+      if (j.ok) { enviado.current = true; limpar(); setEtapa('ok'); }
       else { setErro(j.erro ?? 'Não foi possível enviar. Tente de novo.'); if (j.campos?.length) setFalta(j.campos); }
     } catch { setErro('Sem conexão. Confira a internet e tente de novo.'); }
     setEnviando(false);
@@ -185,7 +201,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
 
           {etapa === 'tempo' && (
             <div className="grid gap-3 py-6 text-center">
-              <p className="text-sm font-bold text-amber-800">O tempo de 20 minutos acabou e o horário foi liberado.</p>
+              <p className="text-sm font-bold text-amber-800">O tempo de 30 minutos para finalizar acabou e o horário foi liberado.</p>
               <button type="button" onClick={onFechar} className="rounded-xl bg-[#0f3d63] text-white font-bold py-3">Escolher o horário de novo</button>
             </div>
           )}
@@ -203,8 +219,9 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
 
           {etapa === 'form' && reserva && (
             <form className="grid gap-4" noValidate onSubmit={(e) => { e.preventDefault(); void salvar(); }}>
-              <div className="rounded-xl bg-amber-50 text-amber-900 px-3 py-2 text-sm font-bold" role="timer" aria-live="off">
-                ⏱ Horário reservado para você por 20 min — {reserva.dia}, {reserva.horario} · {reserva.psicologa} <span className="tabular-nums">(restam {mmss})</span>
+              <div className="rounded-xl bg-amber-50 text-amber-900 px-3 py-2 text-sm grid gap-0.5" role="timer" aria-live="off">
+                <b>⏱ Finalize seu agendamento: você tem 30 minutos <span className="tabular-nums">(restam {mmss})</span></b>
+                <span>{reserva.dia}, {reserva.horario} · {reserva.psicologa}</span>
               </div>
               {inicio && <p className="text-sm text-gray-700 -mt-2">Início previsto: <b>{inicio}</b> (atendimento semanal, mesmo dia e horário).</p>}
 
