@@ -105,6 +105,7 @@ import {
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useAgendaHopeCore, comAgendaHopeCore, agendaDe } from './lib/agendaHopeCore';
+import { AgendamentoSite } from './components/AgendamentoSite';
 import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { trackWhatsAppClick, trackTelegramClick, trackScheduleClick, trackFormSubmit, trackSpecialistProfileView } from './analytics';
 import { WHATSAPP_URL, WHATSAPP_DISPLAY_NUMBER, TELEGRAM_URL } from './contact';
@@ -2181,6 +2182,10 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const displayAgenda = isAdminUnlocked ? (isSyncComplete || !!sheetError) : showAgendaSection;
 
   const canBook = selectedDay && selectedTime && selectedPlan;
+  // Agendamento pelo site (03/11/2026): convênio + agenda do sistema da clínica → formulário aqui mesmo; particular segue pelo WhatsApp.
+  const [agendando, setAgendando] = useState(false);
+  const periodoDe = (h: string) => (h < '13:00' ? Shift.Morning : h < '18:00' ? Shift.Afternoon : Shift.Night) as string;
+  const emAgendamentoDia = (spec.emAgendamento ?? []).filter((e) => e.dia === selectedDay);
 
   const getSpecialtyIcon = (specialty?: string) => {
     const s = (specialty || '').toLowerCase();
@@ -2195,6 +2200,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
   const handleWhatsAppClick = () => {
     if (!canBook) return;
+    if (spec.agendaHopeCore && spec.slug && selectedPlan !== 'Particular') { trackScheduleClick(spec.name); setAgendando(true); return; }
     trackWhatsAppClick('specialist_card');
     trackScheduleClick(spec.name);
     const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
@@ -2213,6 +2219,10 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
         : 'soft-shadow border border-outline-alt/30'
       }`}
     >
+      {agendando && selectedDay && selectedTime && selectedPlan && spec.slug && (
+        <AgendamentoSite slug={spec.slug} especialista={spec.name} dia={selectedDay} hora={selectedTime} planoSite={selectedPlan}
+          onFechar={() => { setAgendando(false); setSelectedTime(null); }} />
+      )}
       <div className={`h-96 relative overflow-hidden transition-all duration-700 ${isTouched ? 'grayscale-0' : 'grayscale group-hover:grayscale-0'}`}>
         <img 
           src={spec.img} 
@@ -2443,7 +2453,18 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                               <div key={period} className="space-y-1.5">
                                 <p className="text-[8px] font-black uppercase text-on-surface-variant/60">{period}</p>
                                 <div className="flex flex-wrap gap-2">
-                                  {times.map(time => (
+                                  {[...times, ...emAgendamentoDia.filter((e) => periodoDe(e.hora) === period && !times.includes(e.hora)).map((e) => e.hora)].sort().map(time => emAgendamentoDia.some((e) => e.hora === time) && !times.includes(time) ? (
+                                    <button
+                                      key={time}
+                                      type="button"
+                                      disabled
+                                      aria-label={`${time}, em agendamento por outra pessoa`}
+                                      title="Outra pessoa está agendando este horário agora"
+                                      className="px-3 py-1.5 rounded-lg text-[10px] font-bold leading-tight bg-red-50 text-red-700 border-2 border-dashed border-orange-400 cursor-not-allowed grid text-center"
+                                    >
+                                      {time}<span className="text-[8px] font-bold">em agendamento</span>
+                                    </button>
+                                  ) : (
                                     <button
                                       key={time}
                                       onClick={() => setSelectedTime(time === selectedTime ? null : time)}

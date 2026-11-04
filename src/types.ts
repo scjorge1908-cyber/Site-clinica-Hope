@@ -74,6 +74,9 @@ export enum AgeGroup {
   Seniors = 'Idoso'
 }
 
+/** Horário em agendamento (dia: 'Segunda'…'Sábado'; hora 'HH:MM'; ate = fim da trava, null = aguardando a equipe). */
+export type EmAgendamento = { dia: string; hora: string; ate: string | null };
+
 export enum Shift {
   Morning = 'Manhã',
   Afternoon = 'Tarde',
@@ -113,6 +116,8 @@ export interface Specialist {
   slug?: string;
   /** Horários vindos do HopeCore (marcação "Agenda no site"); não é gravado no Firebase. */
   agendaHopeCore?: boolean;
+  /** Horários que outra pessoa está agendando agora pelo site (trava de 20 min) ou aguardando a equipe. Não vai ao Firebase. */
+  emAgendamento?: EmAgendamento[];
 }
 
 export interface Approach {
