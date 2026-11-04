@@ -4,14 +4,14 @@
 // Agendou, deu alta, reservou ou liberou no HopeCore → o site muda na hora (tempo real).
 import { useEffect, useState } from 'react';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { Specialist } from '../types';
+import type { EmAgendamento, Specialist } from '../types';
 
 // Endereço e chave PÚBLICA do HopeCore (chave publicável: só lê o que o banco libera para o público).
 export const HOPECORE_URL = 'https://wqktlmcsfytfwquungey.supabase.co';
 export const HOPECORE_CHAVE_PUBLICA = 'sb_publishable_UdfP24ZCPtRfXJ57ZJWARQ_rVGhyXkn';
 
 export type Horarios = NonNullable<Specialist['schedule']>;
-export type AgendaPublica = { slug: string; nome: string; horarios: Horarios; atualizado_em: string };
+export type AgendaPublica = { slug: string; nome: string; horarios: Horarios; atualizado_em: string; em_agendamento?: EmAgendamento[] };
 export type EstadoAgenda = { carregada: boolean; erro: string | null; porSlug: Record<string, AgendaPublica> };
 
 let cliente: SupabaseClient | null = null;
@@ -36,12 +36,16 @@ export function agendaDe(spec: Pick<Specialist, 'slug' | 'name'>, porSlug: Recor
 /** Especialista com a agenda do HopeCore. Sem "Agenda no site" marcada: sem horários no site. */
 export function comAgendaHopeCore(spec: Specialist, estado: EstadoAgenda): Specialist {
   const a = estado.carregada ? agendaDe(spec, estado.porSlug) : null;
-  return { ...spec, schedule: a?.horarios ?? {}, lastSync: a?.atualizado_em ?? spec.lastSync, agendaHopeCore: !!a };
+  // Agendamento pelo site (03/11/2026): horários travados por quem está preenchendo agora (só os que ainda valem)
+  const agora = Date.now();
+  const emAgendamento = (a?.em_agendamento ?? []).filter((e) => !e.ate || new Date(e.ate).getTime() > agora);
+  return { ...spec, schedule: a?.horarios ?? {}, lastSync: a?.atualizado_em ?? spec.lastSync, agendaHopeCore: !!a, emAgendamento };
 }
 
 /** Lê os horários livres do HopeCore e acompanha as mudanças em tempo real. */
 export function useAgendaHopeCore(): EstadoAgenda {
   const [estado, setEstado] = useState<EstadoAgenda>({ carregada: false, erro: null, porSlug: {} });
+  const [relerEm, setRelerEm] = useState(0);
 
   useEffect(() => {
     let ativo = true;
@@ -69,7 +73,7 @@ export function useAgendaHopeCore(): EstadoAgenda {
         setEstado((e) => {
           const porSlug = { ...e.porSlug };
           if (novo.publicado === false) delete porSlug[novo.slug.toLowerCase()];
-          else porSlug[novo.slug.toLowerCase()] = { slug: novo.slug, nome: novo.nome, horarios: novo.horarios ?? {}, atualizado_em: novo.atualizado_em };
+          else porSlug[novo.slug.toLowerCase()] = { slug: novo.slug, nome: novo.nome, horarios: novo.horarios ?? {}, atualizado_em: novo.atualizado_em, em_agendamento: novo.em_agendamento ?? [] };
           return { ...e, porSlug };
         });
       })
@@ -87,7 +91,17 @@ export function useAgendaHopeCore(): EstadoAgenda {
       document.removeEventListener('visibilitychange', aoVoltar);
       void db.removeChannel(canal);
     };
-  }, []);
+  }, [relerEm]);
+
+  // Quando a trava de 20 min de alguém vence, relê para o horário voltar como livre (sem esperar outra mudança).
+  useEffect(() => {
+    const agora = Date.now();
+    const fins = (Object.values(estado.porSlug) as AgendaPublica[]).flatMap((a) => (a.em_agendamento ?? []).map((e) => (e.ate ? new Date(e.ate).getTime() : 0)))
+      .filter((t) => t > agora);
+    if (!fins.length) return;
+    const t = setTimeout(() => setRelerEm((x) => x + 1), Math.min(...fins) - agora + 1500);
+    return () => clearTimeout(t);
+  }, [estado.porSlug]);
 
   return estado;
 }
