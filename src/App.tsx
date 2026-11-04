@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ValidarRodape } from './components/ValidarRodape';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Psychology, 
@@ -1416,6 +1417,7 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
           <div className="md:text-right space-y-4">
             <p className="text-on-surface-variant text-sm">{settings?.footerRights || '© 2022 Clínica Hope. Todos os direitos reservados.'}</p>
             <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/40">{settings?.address || 'Pagani, Palhoça – SC'}</p>
+            <ValidarRodape />
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-6 mt-12 pt-8 border-t border-outline-alt/10">
