@@ -2185,7 +2185,9 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
   const canBook = selectedDay && selectedTime && selectedPlan;
   // Agendamento pelo site (03/11/2026): convênio + agenda do sistema da clínica → formulário aqui mesmo; particular segue pelo WhatsApp.
-  const [agendando, setAgendando] = useState(false);
+  // A escolha fica guardada ao abrir: com a trava, o horário sai da lista de livres (tempo real) e a seleção do cartão é limpa —
+  // o formulário não pode depender dela, senão fecha sozinho.
+  const [agendando, setAgendando] = useState<{ dia: string; hora: string; plano: string } | null>(null);
   const periodoDe = (h: string) => (h < '13:00' ? Shift.Morning : h < '18:00' ? Shift.Afternoon : Shift.Night) as string;
   const emAgendamentoDia = (spec.emAgendamento ?? []).filter((e) => e.dia === selectedDay);
 
@@ -2202,7 +2204,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
   const handleWhatsAppClick = () => {
     if (!canBook) return;
-    if (spec.agendaHopeCore && (spec.agendaSlug || spec.slug) && selectedPlan !== 'Particular') { trackScheduleClick(spec.name); setAgendando(true); return; }
+    if (spec.agendaHopeCore && (spec.agendaSlug || spec.slug) && selectedPlan !== 'Particular') { trackScheduleClick(spec.name); setAgendando({ dia: selectedDay!, hora: selectedTime!, plano: selectedPlan! }); return; }
     trackWhatsAppClick('specialist_card');
     trackScheduleClick(spec.name);
     const message = `Olá, estou vindo pelo site. Gostaria de agendar com a ${spec.name} na ${selectedDay} às ${selectedTime} (${selectedPlan}). Por gentileza, quais documentos necessito para finalizar este agendamento?`;
@@ -2221,9 +2223,9 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
         : 'soft-shadow border border-outline-alt/30'
       }`}
     >
-      {agendando && selectedDay && selectedTime && selectedPlan && (spec.agendaSlug || spec.slug) && (
-        <AgendamentoSite slug={(spec.agendaSlug || spec.slug) as string} especialista={spec.name} dia={selectedDay} hora={selectedTime} planoSite={selectedPlan}
-          onFechar={() => { setAgendando(false); setSelectedTime(null); }} />
+      {agendando && (spec.agendaSlug || spec.slug) && (
+        <AgendamentoSite slug={(spec.agendaSlug || spec.slug) as string} especialista={spec.name} dia={agendando.dia} hora={agendando.hora} planoSite={agendando.plano}
+          onFechar={() => { setAgendando(null); setSelectedTime(null); }} />
       )}
       <div className={`h-96 relative overflow-hidden transition-all duration-700 ${isTouched ? 'grayscale-0' : 'grayscale group-hover:grayscale-0'}`}>
         <img 
