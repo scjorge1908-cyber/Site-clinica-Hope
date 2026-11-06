@@ -2605,6 +2605,9 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                 <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
               </p>
               <div className="text-[10px] bg-white/40 p-4 rounded-xl border border-secondary/5 text-primary/80 leading-relaxed space-y-3">
+                <p className="font-bold text-primary">
+                  📍 Pelo plano de saúde, o atendimento na Clínica Hope é somente presencial. A clínica não realiza atendimento online.
+                </p>
                 <p>
                   💡 <span className="font-bold">Dica:</span> Verifique se o seu plano oferece telemedicina. Em muitos casos, o atendimento é imediato e funciona 24 horas.
                 </p>
@@ -2948,6 +2951,7 @@ function AgendamentoScreen({ onNavigate, settings }: ScreenProps & { settings: H
               <div className="space-y-4">
                 <h4 className="text-xl font-bold text-primary tracking-tight italic">Informação importante para quem for agendar pelo plano de saúde</h4>
                 <p className="text-on-surface-variant font-medium leading-relaxed max-w-4xl">
+                  <span className="block mb-4 font-bold text-primary">📍 Atendimentos pelo plano de saúde são somente presenciais, na clínica. A Clínica Hope não realiza atendimento online pelo plano.</span>
                   Para agendamentos via <span className="text-secondary font-bold">plano de saúde</span>, é necessário possuir um encaminhamento médico com <span className="text-secondary font-bold">CID</span> indicando o tratamento. Somente com este documento os planos autorizam os atendimentos. 
                   <span className="block mt-4 text-sm bg-white/50 p-4 rounded-xl border border-outline-alt/30">
                     💡 <span className="font-bold">Dica:</span> Se você não tiver o encaminhamento, verifique no aplicativo do seu plano se existe a opção de <span className="font-bold underline">teleatendimento</span>. É um processo rápido que pode auxiliar você neste momento de decisão.

@@ -212,6 +212,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
               <h2 className="text-lg font-black text-gray-900">Recebemos seus dados!</h2>
               <p className="text-sm text-gray-600">Nosso time vai validar a autorização junto ao seu plano e entrar em contato pelo <b className="text-green-700">WhatsApp</b> para confirmar o seu agendamento.</p>
               <p className="text-sm text-gray-600">Enviamos um resumo para o seu e-mail, com as orientações e os documentos.</p>
+              <p className="text-sm font-bold text-[#0f3d63]">📍 Lembre-se: pelo plano de saúde o atendimento é somente presencial, na clínica (não há atendimento online).</p>
               <p className="text-sm font-bold text-gray-800">{reserva.dia}, {reserva.horario}{inicio ? ` · início ${inicio}` : ''} · {reserva.psicologa}</p>
               <button type="button" onClick={onFechar} className="rounded-xl bg-[#0f3d63] text-white font-bold py-3 px-8 mt-2">Fechar</button>
             </div>
@@ -224,6 +225,11 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
                 <span>{reserva.dia}, {reserva.horario} · {reserva.psicologa}</span>
               </div>
               {inicio && <p className="text-sm text-gray-700 -mt-2">Início previsto: <b>{inicio}</b> (atendimento semanal, mesmo dia e horário).</p>}
+              {/* Aviso pedido por Jorge em 06/11/2026: pelo plano de saúde a clínica atende só presencialmente (não faz online). */}
+              <div className="rounded-xl border-2 border-[#0f3d63] bg-blue-50 text-[#0f3d63] px-3 py-2.5 text-sm grid gap-1" role="note">
+                <b>📍 Atendimento pelo plano de saúde é somente PRESENCIAL</b>
+                <span>A Clínica Hope <b>não realiza atendimento online</b> pelo plano de saúde. As sessões acontecem na clínica: City Office Square, R. Najla Carone Guedert, 1080 – Pagani, Palhoça/SC.</span>
+              </div>
 
               <fieldset className="grid gap-3">
                 <legend className="text-xs font-black uppercase tracking-widest text-gray-500 mb-1">Dados do paciente (quem vai ser atendido)</legend>
