@@ -60,12 +60,17 @@ export function nascimentoValido(v: string, hoje = new Date()) {
   return d <= hoje && hoje.getFullYear() - d.getFullYear() <= 120
 }
 
+/** Plano PARTICULAR (sem convênio) — mesma regra do banco (agendamento_link_enviar, migration 183). */
+export const ehParticular = (plano: string) => /^particular$/i.test(String(plano ?? '').trim())
+
 /** O que falta (chaves) para enviar. `anexos` = tipos já escolhidos. */
 export function faltando(d: Partial<Dados>, anexos: TipoAnexo[], planos: string[]): string[] {
   const f: string[] = []
   const vazio = (k: keyof Dados) => !String(d[k] ?? '').trim()
-  // Jorge 03/11/2026: todos os dados obrigatórios (só o complemento fica opcional)
-  for (const k of ['nome', 'cpf', 'nascimento', 'sexo', 'telefone', 'email', 'cep', 'rua', 'numero', 'bairro', 'cidade', 'plano', 'carteirinha', 'crm'] as (keyof Dados)[]) if (vazio(k)) f.push(k)
+  // Jorge 03/11/2026: todos os dados obrigatórios (só o complemento fica opcional).
+  // Jorge 10/11/2026 (migration 183): no PARTICULAR não há carteirinha, CRM nem pedido médico — só o RG/CNH.
+  const part = ehParticular(String(d.plano ?? ''))
+  for (const k of ['nome', 'cpf', 'nascimento', 'sexo', 'telefone', 'email', 'cep', 'rua', 'numero', 'bairro', 'cidade', 'plano', ...(part ? [] : ['carteirinha', 'crm'])] as (keyof Dados)[]) if (vazio(k)) f.push(k)
   if (!vazio('nome') && String(d.nome).trim().split(/\s+/).length < 2) f.push('nome')
   if (!vazio('cpf') && !cpfValido(String(d.cpf))) f.push('cpf')
   if (!vazio('nascimento') && !nascimentoValido(String(d.nascimento))) f.push('nascimento')
@@ -74,8 +79,8 @@ export function faltando(d: Partial<Dados>, anexos: TipoAnexo[], planos: string[
   if (!vazio('email') && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(d.email).trim())) f.push('email')
   if (!vazio('cep') && so(d.cep).length !== 8) f.push('cep')
   if (!vazio('plano') && !planos.includes(String(d.plano))) f.push('plano')
-  if (!vazio('crm') && !/^\d{1,8}$/.test(so(d.crm)) ) f.push('crm')
-  const precisa: TipoAnexo[] = ['carteirinha', 'pedido_medico', 'rg', ...(pedeQr(String(d.plano ?? ''), String(d.carteirinha ?? '')) ? ['qr' as const] : [])]
+  if (!part && !vazio('crm') && !/^\d{1,8}$/.test(so(d.crm)) ) f.push('crm')
+  const precisa: TipoAnexo[] = part ? ['rg'] : ['carteirinha', 'pedido_medico', 'rg', ...(pedeQr(String(d.plano ?? ''), String(d.carteirinha ?? '')) ? ['qr' as const] : [])]
   for (const t of precisa) if (!anexos.includes(t)) f.push('anexo_' + t)
   return [...new Set(f)]
 }

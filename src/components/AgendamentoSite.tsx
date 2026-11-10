@@ -1,4 +1,4 @@
-// Agendamento pelo site (prévia APROVADA por Jorge em 03/11/2026; cadastro em etapas APROVADO em 10/11/2026).
+// Agendamento pelo site (prévia APROVADA por Jorge em 03/11/2026; cadastro em etapas e opção Particular APROVADOS em 10/11/2026).
 // A pessoa escolhe dia, hora e convênio no cartão da especialista e clica em "Enviar sua solicitação":
 //  1) o sistema da clínica trava o horário por 30 minutos (Jorge, 03/11/2026) (para quem estiver no site ele aparece "em agendamento");
 //  2) aqui mesmo, no site, ela preenche os dados do PACIENTE e anexa os documentos (tudo obrigatório, só o complemento não);
@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ANEXOS, MAX_ANEXO_BYTES, MAX_TOTAL_BYTES, SEXOS, faltando, mascaraCep, mascaraCpf, mascaraData, mascaraTelefone, nomeCampo, pedeQr,
+  ANEXOS, MAX_ANEXO_BYTES, MAX_TOTAL_BYTES, SEXOS, ehParticular, faltando, mascaraCep, mascaraCpf, mascaraData, mascaraTelefone, nomeCampo, pedeQr,
   type Dados, type TipoAnexo,
 } from '../lib/agendamentoRegras';
 
@@ -25,7 +25,6 @@ const ETAPAS: { id: string; titulo: string; campos: string[] }[] = [
   { id: 'documentos', titulo: 'Documentos', campos: ['carteirinha', 'anexo_carteirinha', 'anexo_qr', 'anexo_rg'] },
   { id: 'confirmar', titulo: 'Confirmar', campos: ['aceite'] },
 ];
-const etapaDoCampo = (k: string) => Math.max(0, ETAPAS.findIndex((e) => e.campos.includes(k)));
 /** Idade em anos a partir de dd/mm/aaaa (null se a data não estiver completa). */
 function idadeDe(nasc: string, hoje = new Date()): number | null {
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(nasc.trim());
@@ -74,6 +73,8 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [agora, setAgora] = useState(Date.now());
   const [passo, setPasso] = useState(0);
+  // Particular ou plano (Jorge 10/11/2026): Particular pula o pedido médico e a carteirinha (migration 183).
+  const [modo, setModo] = useState<'' | 'particular' | 'plano'>('');
   const enviado = useRef(false);
   const caminhoRef = useRef<string | null>(null);
 
@@ -139,8 +140,14 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
   };
   const fechar = () => { liberar(); onFechar(); };
 
-  const qr = pedeQr(d.plano, d.carteirinha);
-  const anexosVisiveis = ANEXOS.filter((a) => a.tipo !== 'qr' || qr);
+  const part = ehParticular(d.plano);
+  useEffect(() => { if (etapa === 'form' && !modo && d.plano) setModo(ehParticular(d.plano) ? 'particular' : 'plano'); }, [etapa, d.plano]); // eslint-disable-line react-hooks/exhaustive-deps
+  const etapas = part ? ETAPAS.filter((e) => e.id !== 'pedido') : ETAPAS;
+  const etapaDoCampo = (k: string) => Math.max(0, etapas.findIndex((e) => e.campos.includes(k)));
+  const planosConvenio = (reserva?.planos ?? []).filter((p) => !ehParticular(p));
+  const particularNome = (reserva?.planos ?? []).find((p) => ehParticular(p)) ?? '';
+  const qr = !part && pedeQr(d.plano, d.carteirinha);
+  const anexosVisiveis = ANEXOS.filter((a) => (part ? a.tipo === 'rg' : a.tipo !== 'qr' || qr));
   const set = (k: keyof Dados, v: string) => { setD((x) => ({ ...x, [k]: v })); setFalta((f) => f.filter((y) => y !== k)); };
   const marca = (k: string) => (falta.includes(k) ? 'ring-2 ring-red-400 border-red-400' : '');
 
@@ -172,7 +179,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
   async function salvar() {
     if (!reserva) return;
     setErro('');
-    const tipos = (Object.keys(arqs) as TipoAnexo[]).filter((t) => t !== 'qr' || qr);
+    const tipos = (Object.keys(arqs) as TipoAnexo[]).filter((t) => (part ? t === 'rg' : t !== 'qr' || qr));
     const f = faltando(d, tipos, reserva.planos);
     if (!aceite) f.push('aceite');
     setFalta(f);
@@ -197,9 +204,10 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
   async function avancar() {
     setErro('');
     if (!reserva) return;
-    if (passo === ETAPAS.length - 1) { await salvar(); return; }
-    const tipos = (Object.keys(arqs) as TipoAnexo[]).filter((t) => t !== 'qr' || qr);
-    const f = faltando(d, tipos, reserva.planos).filter((k) => ETAPAS[passo].campos.includes(k));
+    if (etapas[passo].id === 'plano' && !modo) { setErro('Escolha Particular ou Plano de saúde.'); return; }
+    if (passo === etapas.length - 1) { await salvar(); return; }
+    const tipos = (Object.keys(arqs) as TipoAnexo[]).filter((t) => (part ? t === 'rg' : t !== 'qr' || qr));
+    const f = faltando(d, tipos, reserva.planos).filter((k) => etapas[passo].campos.includes(k));
     setFalta(f);
     if (f.length) return;
     setPasso(passo + 1);
@@ -259,9 +267,9 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
             <div className="grid gap-3 py-6 text-center justify-items-center">
               <div className="w-14 h-14 rounded-full bg-green-100 text-green-700 grid place-items-center text-3xl font-black">✓</div>
               <h2 className="text-lg font-black text-gray-900">Recebemos seus dados!</h2>
-              <p className="text-sm text-gray-600">Nosso time vai validar a autorização junto ao seu plano e entrar em contato pelo <b className="text-green-700">WhatsApp</b> para confirmar o seu agendamento.</p>
+              <p className="text-sm text-gray-600">{part ? 'Nosso time vai entrar em contato' : 'Nosso time vai validar a autorização junto ao seu plano e entrar em contato'} pelo <b className="text-green-700">WhatsApp</b> para confirmar o seu agendamento.</p>
               <p className="text-sm text-gray-600">Enviamos um resumo para o seu e-mail, com as orientações e os documentos.</p>
-              <p className="text-sm font-bold text-[#0f3d63]">📍 Lembre-se: pelo plano de saúde o atendimento é somente presencial, na clínica (não há atendimento online).</p>
+              {!part && <p className="text-sm font-bold text-[#0f3d63]">📍 Lembre-se: pelo plano de saúde o atendimento é somente presencial, na clínica (não há atendimento online).</p>}
               <p className="text-sm font-bold text-gray-800">{reserva.dia}, {reserva.horario}{inicio ? ` · início ${inicio}` : ''} · {reserva.psicologa}</p>
               <button type="button" onClick={onFechar} className="rounded-xl bg-[#0f3d63] text-white font-bold py-3 px-8 mt-2">Fechar</button>
             </div>
@@ -276,30 +284,41 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
 
               {/* Cadastro em etapas (Jorge 10/11/2026): uma parte por vez, sem tirar nenhum dado; só avança com a etapa completa. */}
               <div className="grid gap-1.5">
-                <div className="flex justify-between text-xs font-bold text-gray-500"><span>Etapa {passo + 1} de {ETAPAS.length}</span><span>{ETAPAS[passo].titulo}</span></div>
-                <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden"><div className="h-full bg-[#0f3d63] transition-all" style={{ width: `${((passo + 1) / ETAPAS.length) * 100}%` }} /></div>
+                <div className="flex justify-between text-xs font-bold text-gray-500"><span>Etapa {passo + 1} de {etapas.length}</span><span>{etapas[passo].titulo}</span></div>
+                <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden"><div className="h-full bg-[#0f3d63] transition-all" style={{ width: `${((passo + 1) / etapas.length) * 100}%` }} /></div>
               </div>
 
-              {ETAPAS[passo].id === 'plano' && (
+              {etapas[passo].id === 'plano' && (
                 <div className="grid gap-3">
                   <h3 className="text-base font-black text-gray-900">Como será o atendimento?</h3>
-                  <label className="grid gap-1 text-xs font-bold text-gray-600">
-                    <span>Plano de saúde<i className="not-italic text-red-600"> *</i></span>
-                    <select value={d.plano} onChange={(e) => set('plano', e.target.value)} className={`${campoCls} ${marca('plano')}`}>
-                      <option value="">Escolha o plano</option>
-                      {reserva.planos.map((p) => <option key={p}>{p}</option>)}
-                    </select>
-                  </label>
+                  {particularNome && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {([['particular', 'Particular'], ['plano', 'Plano de saúde']] as const).map(([m, rot]) => (
+                        <button key={m} type="button" aria-pressed={modo === m}
+                          onClick={() => { setErro(''); setModo(m); set('plano', m === 'particular' ? particularNome : (ehParticular(d.plano) ? '' : d.plano)); }}
+                          className={`rounded-xl border-2 py-3.5 font-black text-sm ${modo === m ? 'border-[#0f3d63] bg-blue-50 text-[#0f3d63]' : 'border-gray-300 text-gray-700'}`}>{rot}</button>
+                      ))}
+                    </div>
+                  )}
+                  {(modo === 'plano' || !particularNome) && (
+                    <label className="grid gap-1 text-xs font-bold text-gray-600">
+                      <span>Qual plano?<i className="not-italic text-red-600"> *</i></span>
+                      <select value={part ? '' : d.plano} onChange={(e) => { setModo('plano'); set('plano', e.target.value); }} className={`${campoCls} ${marca('plano')}`}>
+                        <option value="">Escolha o plano</option>
+                        {planosConvenio.map((p) => <option key={p}>{p}</option>)}
+                      </select>
+                    </label>
+                  )}
                   {/* Aviso pedido por Jorge em 06/11/2026: pelo plano de saúde a clínica atende só presencialmente (não faz online). */}
-                  <div className="rounded-xl border-2 border-[#0f3d63] bg-blue-50 text-[#0f3d63] px-3 py-2.5 text-sm grid gap-1" role="note">
+                  {modo === 'plano' && <div className="rounded-xl border-2 border-[#0f3d63] bg-blue-50 text-[#0f3d63] px-3 py-2.5 text-sm grid gap-1" role="note">
                     <b>📍 Atendimento pelo plano de saúde é somente PRESENCIAL</b>
                     <span>A Clínica Hope <b>não realiza atendimento online</b> pelo plano de saúde. As sessões acontecem na clínica: City Office Square, R. Najla Carone Guedert, 1080 – Pagani, Palhoça/SC.</span>
-                  </div>
+                  </div>}
                   {inicio && <p className="text-sm text-gray-700">Início previsto: <b>{inicio}</b> (atendimento semanal, mesmo dia e horário).</p>}
                 </div>
               )}
 
-              {ETAPAS[passo].id === 'paciente' && (
+              {etapas[passo].id === 'paciente' && (
                 <div className="grid gap-3">
                   <h3 className="text-base font-black text-gray-900">Quem vai ser atendido?</h3>
                   {campo('nome', 'Nome completo do paciente', { ph: 'Nome de quem vai ser atendido' })}
@@ -318,7 +337,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
                 </div>
               )}
 
-              {ETAPAS[passo].id === 'endereco' && (
+              {etapas[passo].id === 'endereco' && (
                 <div className="grid gap-3">
                   <h3 className="text-base font-black text-gray-900">Onde o paciente mora? {buscandoCep && <span className="text-xs font-semibold text-gray-500">· buscando…</span>}</h3>
                   <label className="grid gap-1 text-xs font-bold text-gray-600">
@@ -338,7 +357,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
                 </div>
               )}
 
-              {ETAPAS[passo].id === 'contato' && (
+              {etapas[passo].id === 'contato' && (
                 <div className="grid gap-3">
                   <h3 className="text-base font-black text-gray-900">Para onde enviamos a confirmação?</h3>
                   {campo('email', 'E-mail', { tipo: 'email', modo: 'email', ph: 'email@exemplo.com' })}
@@ -346,7 +365,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
                 </div>
               )}
 
-              {ETAPAS[passo].id === 'pedido' && (
+              {etapas[passo].id === 'pedido' && (
                 <div className="grid gap-3">
                   <h3 className="text-base font-black text-gray-900">Pedido médico</h3>
                   <div className="rounded-xl bg-amber-50 text-amber-900 px-3 py-2.5 text-sm font-bold" role="note">Sem o pedido médico o plano não autoriza o atendimento. Este anexo é obrigatório.</div>
@@ -355,23 +374,23 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
                 </div>
               )}
 
-              {ETAPAS[passo].id === 'documentos' && (
+              {etapas[passo].id === 'documentos' && (
                 <div className="grid gap-3">
-                  <h3 className="text-base font-black text-gray-900">Carteirinha e documento do paciente</h3>
-                  {campo('carteirinha', 'Número da carteirinha do paciente', { modo: 'numeric', ph: 'Como está na carteirinha' })}
-                  {anexo('carteirinha')}
+                  <h3 className="text-base font-black text-gray-900">{part ? 'Documento do paciente' : 'Carteirinha e documento do paciente'}</h3>
+                  {!part && campo('carteirinha', 'Número da carteirinha do paciente', { modo: 'numeric', ph: 'Como está na carteirinha' })}
+                  {!part && anexo('carteirinha')}
                   {qr && anexo('qr')}
                   {qr && <p className="text-xs text-gray-600 -mt-1">Carteirinha Unimed que começa com 0025: abra o <b>app da Unimed</b>, vá na carteirinha, tire um <b>print do QR Code</b> e anexe aqui.</p>}
                   {anexo('rg')}
                 </div>
               )}
 
-              {ETAPAS[passo].id === 'confirmar' && (
+              {etapas[passo].id === 'confirmar' && (
                 <div className="grid gap-3">
                   <h3 className="text-base font-black text-gray-900">Confira e finalize</h3>
                   <dl className="grid text-sm">
                     {([
-                      ['Plano', d.plano], ['Paciente', d.nome], ['Nascimento', `${d.nascimento}${idade !== null ? ` (${idade} anos)` : ''}`], ['CPF', d.cpf],
+                      ['Atendimento', part ? 'Particular' : d.plano], ['Paciente', d.nome], ['Nascimento', `${d.nascimento}${idade !== null ? ` (${idade} anos)` : ''}`], ['CPF', d.cpf],
                       ['Endereço', [d.rua, d.numero, d.complemento, d.bairro, d.cidade].filter(Boolean).join(', ')], ['E-mail', d.email], ['WhatsApp', d.telefone],
                       ['Documentos', anexosVisiveis.map((a) => a.nome).join(', ')],
                     ] as [string, string][]).map(([k, v]) => (
@@ -392,7 +411,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
               <div className="flex gap-2">
                 {passo > 0 && <button type="button" onClick={voltar} className="flex-1 rounded-xl border border-gray-300 text-gray-700 font-bold py-3.5">Voltar</button>}
                 <button type="submit" disabled={enviando} className="flex-[2] rounded-xl bg-[#0f3d63] text-white font-black py-3.5 disabled:opacity-60">
-                  {enviando ? 'Enviando…' : passo === ETAPAS.length - 1 ? 'Finalizar agendamento' : 'Continuar'}
+                  {enviando ? 'Enviando…' : passo === etapas.length - 1 ? 'Finalizar agendamento' : 'Continuar'}
                 </button>
               </div>
               <button type="button" onClick={fechar} className="text-sm font-bold text-gray-500 underline">Desistir e liberar o horário</button>
