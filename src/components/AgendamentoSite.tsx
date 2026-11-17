@@ -77,6 +77,15 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
   const [modo, setModo] = useState<'' | 'particular' | 'plano'>('');
   const enviado = useRef(false);
   const caminhoRef = useRef<string | null>(null);
+  // Celular (Jorge 17/11/2026): o cadastro abria como faixa colada no rodapé ("Reservando…") e a pessoa achava que não
+  // tinha aberto. Agora ocupa a tela inteira, a página de trás não rola e cada etapa começa no topo.
+  const caixaRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const antes = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = antes; };
+  }, []);
+  useEffect(() => { caixaRef.current?.scrollTo({ top: 0 }); }, [etapa]);
 
   const chave = `agsite:${slug}|${dia}|${hora}`;
   const ler = (k: string) => { try { return JSON.parse(sessionStorage.getItem(k) || 'null'); } catch { return null; } };
@@ -239,8 +248,8 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
 
   // Abre por cima da página inteira (portal no <body>): dentro do cartão animado/recortado da especialista a janela ficava invisível.
   return createPortal(
-    <div className="fixed inset-0 z-[200] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-label="Agendamento">
-      <div className="bg-white w-full sm:max-w-xl max-h-[100dvh] sm:max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl shadow-2xl">
+    <div className="fixed inset-0 z-[200] bg-black/50 flex items-stretch sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-label="Agendamento">
+      <div ref={caixaRef} className="bg-white w-full sm:max-w-xl h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[92vh] overflow-y-auto overscroll-contain rounded-none sm:rounded-3xl shadow-2xl">
         <div id="agsite-topo" className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-gray-100 px-5 py-3 flex items-center justify-between gap-3">
           <p className="font-black text-[#0f3d63] text-sm">Agendamento · {especialista}</p>
           <button type="button" onClick={fechar} className="text-gray-500 text-2xl leading-none px-2" aria-label="Fechar">×</button>
