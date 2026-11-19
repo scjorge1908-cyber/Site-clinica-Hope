@@ -9,7 +9,7 @@
  *
  * Gera em dist/:
  *   index.html, especialistas.html, abordagens.html, psicoeducacao.html,
- *   <slug-do-especialista>.html, sitemap.xml, llms.txt
+ *   <slug-do-especialista>.html, artigos/<slug-do-artigo>.html, sitemap.xml, llms.txt
  *
  * Se o Firebase não responder, o script avisa e NÃO quebra o deploy
  * (o site continua funcionando como antes, com os arquivos estáticos de public/).
@@ -44,7 +44,19 @@ const CLINIC = {
 };
 const FULL_ADDRESS = `${CLINIC.street}, ${CLINIC.district}, ${CLINIC.city} - ${CLINIC.state}, CEP ${CLINIC.cep}`;
 const DESLIGADAS = new Set([]); // ex.: 'nome-do-link'. Amanda Lobo continua atendendo (Jorge, 22/10/2026).
-const RESERVED = new Set(['index', 'especialistas', 'corpoclinico', 'sublocacao', 'administracao', 'admin', 'login', 'seo', 'abordagens', 'psicoeducacao', 'agendamento', 'home', '404', 'assets', 'sitemap', 'robots', 'llms']);
+const RESERVED = new Set(['index', 'especialistas', 'corpoclinico', 'sublocacao', 'administracao', 'admin', 'login', 'seo', 'abordagens', 'psicoeducacao', 'agendamento', 'home', '404', 'assets', 'sitemap', 'robots', 'llms', 'artigos', 'validar']);
+// Cadastros de teste (nome ainda "Novo Especialista") não viram página nem entram no mapa do site (Jorge, 19/11/2026).
+// Atenção: o link /novo-especialista hoje é da Aline Cristina de Carvalho Gazal (cadastro real); por isso o filtro é pelo NOME.
+const isPlaceholder = (s) => /^novo\s+especialista$/i.test(String(s.name || '').trim());
+// Tags que ficaram com o texto padrão do formulário ("Tag") não são áreas de atuação de verdade.
+const realTags = (s) => (s.tags || []).filter((t) => t && String(t).trim() && String(t).trim().toLowerCase() !== 'tag');
+// Autora padrão dos artigos de psicoeducação: todos os atuais foram escritos pela Beatriz (Jorge, 19/11/2026).
+// Para mudar a autora de um artigo, preencha o campo authorSlug do artigo com o link (slug) da profissional.
+const AUTOR_PADRAO_SLUG = 'beatriz-santiago';
+// Profissionais homens (para o título "Psicólogo"); as demais são tratadas como "Psicóloga".
+const MASCULINOS = new Set(['luciano-jorge-fernandes-moura', 'edson-mendonca-de-oliveira']);
+// Link de cada artigo: /artigos/<titulo-sem-acento>. A mesma regra está em src/App.tsx (slugArtigo).
+const slugArtigo = (title) => String(title || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 // ── Firestore REST (somente leitura pública) ─────────────────────────────────
 function decodeValue(v) {
@@ -107,7 +119,7 @@ async function loadFromFirestore() {
   const specialists = await safe('specialists', () => list('specialists', ['name', 'crp', 'councilType', 'customCouncil', 'noCouncil', 'spec', 'tags', 'desc', 'ageGroups', 'shifts', 'insurancePlans', 'slug']), []);
   const approaches = await safe('approaches', () => list('approaches', ['title', 'desc', 'details']), []);
   const insurance = await safe('insurance_plans', () => list('insurance_plans', ['name']), []);
-  const articles = await safe('psicoeducacao_articles', () => list('psicoeducacao_articles', ['title', 'subtitle', 'content', 'createdAt', 'updatedAt']), []);
+  const articles = await safe('psicoeducacao_articles', () => list('psicoeducacao_articles', ['title', 'subtitle', 'content', 'createdAt', 'updatedAt', 'authorSlug']), []);
   return { settings, specialists, approaches, insurance, articles };
 }
 
@@ -122,6 +134,13 @@ const councilLabel = (s) => {
   const type = s.councilType === 'Outro' ? (s.customCouncil || 'Registro') : (s.councilType || 'CRP');
   return `${type} ${s.crp}`;
 };
+// "Psicóloga"/"Psicólogo" para quem tem CRP; para outros conselhos, usa a especialidade cadastrada.
+const roleLabel = (s) => {
+  const council = councilLabel(s);
+  if (council.startsWith('CRP')) return MASCULINOS.has(String(s.slug || '').toLowerCase()) ? 'Psicólogo' : 'Psicóloga';
+  return s.spec || 'Especialista';
+};
+const toIsoDate = (v) => { const n = Number(v); return n > 0 ? new Date(n).toISOString().slice(0, 10) : undefined; };
 const joinPt = (items) => {
   const list = items.filter(Boolean);
   if (list.length <= 1) return list.join('');
@@ -191,7 +210,25 @@ function buildPages(data) {
   const { settings = {}, approaches = [], articles = [] } = data;
   // Profissionais desligadas não ganham página, nem entram no mapa do site e no llms.txt (Jorge, 22/10/2026).
   // O cadastro continua no Firebase; para voltar, basta tirar o endereço desta lista.
-  const specialists = (data.specialists || []).filter((s) => s && s.name && !DESLIGADAS.has(String(s.slug || '').toLowerCase()));
+  const specialists = (data.specialists || []).filter((s) => s && s.name && !DESLIGADAS.has(String(s.slug || '').toLowerCase()) && !isPlaceholder(s))
+    // Nome limpo para Google/IAs: sem o prefixo "Psi." (o título já diz Psicóloga/Psicólogo) e sem espaços duplos.
+    .map((s) => ({ ...s, name: String(s.name).replace(/^psi\.?\s+/i, '').replace(/\s+/g, ' ').trim(), spec: s.spec ? String(s.spec).replace(/\s+/g, ' ').trim() : s.spec }));
+
+  // Artigos com link próprio e autora (padrão: Beatriz Santiago). Slugs repetidos ganham -2, -3...
+  const specBySlug = new Map(specialists.filter((s) => isValidSlug(s.slug)).map((s) => [String(s.slug).toLowerCase(), s]));
+  const usedArticleSlugs = new Set();
+  const authoredArticles = [...articles].filter((a) => a && a.title).sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)).map((a) => {
+    let slug = slugArtigo(a.title) || String(a.id || '').toLowerCase();
+    if (usedArticleSlugs.has(slug)) { let n = 2; while (usedArticleSlugs.has(`${slug}-${n}`)) n++; slug = `${slug}-${n}`; }
+    usedArticleSlugs.add(slug);
+    const author = specBySlug.get(String(a.authorSlug || AUTOR_PADRAO_SLUG).toLowerCase()) || null;
+    return { ...a, title: String(a.title).replace(/\s+/g, ' ').trim(), slug, author };
+  });
+  const personRef = (s) => {
+    const council = councilLabel(s);
+    return { '@type': 'Person', '@id': `${SITE}/${s.slug}#pessoa`, name: s.name, url: `${SITE}/${s.slug}`, jobTitle: roleLabel(s), ...(council ? { identifier: council } : {}), worksFor: clinicRef };
+  };
+  const byline = (s) => s ? `Escrito por <a href="/${esc(s.slug)}">${esc(s.name)}</a>${councilLabel(s) ? ` · ${esc(councilLabel(s))}` : ''} · ${esc(CLINIC.name)}, ${esc(CLINIC.city)} - ${esc(CLINIC.state)}` : `Publicado por ${esc(CLINIC.name)}, ${esc(CLINIC.city)} - ${esc(CLINIC.state)}`;
 
   // Convênios: coleção insurance_plans + os da home (mesmo id), sem duplicar nomes.
   const plansById = new Map();
@@ -259,16 +296,21 @@ ${contactBlock()}`),
     if (!isValidSlug(s.slug)) continue;
     const council = councilLabel(s);
     const plans = (s.insurancePlans || []).map((id) => plansById.get(id)).filter(Boolean);
+    const tags = realTags(s);
+    const role = roleLabel(s);
+    const myArticles = authoredArticles.filter((a) => a.author && a.author.slug === s.slug);
     pages.push({
       file: `${s.slug}.html`,
       url: `${SITE}/${s.slug}`,
-      title: `${s.name}${s.spec ? ` - ${s.spec}` : ''} em Palhoça | Clínica Hope`,
-      description: clip(`${s.name}${council ? ` (${council})` : ''}${s.spec ? `, ${s.spec}` : ''} na Clínica Hope, Pagani, Palhoça - SC. ${s.desc || ''}`, 158),
+      // Título pensado para quem pesquisa o nome da profissional (nome + registro + cidade).
+      title: `${s.name} – ${role}${council ? ` ${council}` : ''} em Palhoça (SC) | Clínica Hope`,
+      description: clip(`${s.name}${council ? ` (${council})` : ''}, ${role.toLowerCase()}${s.spec && s.spec !== role ? ` – ${s.spec}` : ''}, na Clínica Hope, Pagani, Palhoça - SC. ${s.desc || ''}`, 158),
       body: wrap(`<article>
 <h1>${esc(s.name)}</h1>
-<p class="ssr-muted">${esc([s.spec, council].filter(Boolean).join(' · '))} · ${esc(CLINIC.name)}, ${esc(CLINIC.city)} - ${esc(CLINIC.state)}</p>
+<p class="ssr-muted">${esc([role, s.spec !== role ? s.spec : '', council].filter(Boolean).join(' · '))} · ${esc(CLINIC.name)}, ${esc(CLINIC.city)} - ${esc(CLINIC.state)}</p>
 ${paragraphs(s.desc || '')}
-${(s.tags || []).length ? `<h2>Áreas de atuação</h2><ul>${s.tags.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+${tags.length ? `<h2>Áreas de atuação</h2><ul>${tags.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+${myArticles.length ? `<h2>Artigos escritos por ${esc(s.name)}</h2><ul>${myArticles.map((a) => `<li><a href="/artigos/${esc(a.slug)}">${esc(a.title)}</a></li>`).join('')}</ul>` : ''}
 ${(s.ageGroups || []).length ? `<h2>Público atendido</h2><p>${esc(joinPt(s.ageGroups))}.</p>` : ''}
 ${(s.shifts || []).length ? `<h2>Turnos de atendimento</h2><p>${esc(joinPt(s.shifts))}.</p>` : ''}
 ${plans.length ? `<h2>Convênios</h2><ul>${plans.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
@@ -278,11 +320,12 @@ ${contactBlock()}`),
       jsonld: [{
         '@context': 'https://schema.org',
         '@type': 'Person',
+        '@id': `${SITE}/${s.slug}#pessoa`,
         name: s.name,
         url: `${SITE}/${s.slug}`,
-        ...(s.spec ? { jobTitle: s.spec } : {}),
+        jobTitle: role,
+        ...(s.spec && s.spec !== role ? { knowsAbout: [s.spec, ...tags] } : (tags.length ? { knowsAbout: tags } : {})),
         ...(council ? { identifier: council } : {}),
-        ...((s.tags || []).length ? { knowsAbout: s.tags } : {}),
         ...(s.desc ? { description: clip(s.desc, 300) } : {}),
         worksFor: clinicRef,
         workLocation: { '@type': 'Place', name: CLINIC.name, address: FULL_ADDRESS },
@@ -311,16 +354,61 @@ ${contactBlock()}`),
     description: clip(`Artigos de psicoeducação da Clínica Hope, clínica de psicologia em Palhoça - SC${sortedArticles.length ? `: ${sortedArticles.slice(0, 3).map((a) => a.title).join(', ')}` : ''}.`, 158),
     body: wrap(`<h1>Psicoeducação</h1>
 <p>Conteúdos da Clínica Hope sobre saúde mental e desenvolvimento emocional.</p>
-${sortedArticles.map((a) => `<article><h2>${esc(a.title)}</h2>${a.subtitle ? `<p class="ssr-muted">${esc(a.subtitle)}</p>` : ''}${paragraphs(a.content || '')}</article>`).join('\n')}
+${authoredArticles.map((a) => `<article><h2><a href="/artigos/${esc(a.slug)}">${esc(a.title)}</a></h2>${a.subtitle ? `<p class="ssr-muted">${esc(a.subtitle)}</p>` : ''}<p class="ssr-muted">${byline(a.author)}</p>${paragraphs(a.content || '')}</article>`).join('\n')}
 ${contactBlock()}`),
     jsonld: sortedArticles.length ? [{
       '@context': 'https://schema.org',
       '@type': 'ItemList',
-      itemListElement: sortedArticles.map((a, i) => ({ '@type': 'ListItem', position: i + 1, item: { '@type': 'Article', headline: a.title, ...(a.subtitle ? { description: a.subtitle } : {}), author: clinicRef, publisher: clinicRef } })),
+      itemListElement: authoredArticles.map((a, i) => ({ '@type': 'ListItem', position: i + 1, url: `${SITE}/artigos/${a.slug}`, item: { '@type': 'Article', headline: a.title, url: `${SITE}/artigos/${a.slug}`, ...(a.subtitle ? { description: a.subtitle } : {}), author: a.author ? personRef(a.author) : clinicRef, publisher: clinicRef } })),
     }] : [],
   });
 
-  return { pages, specialists, approaches, planNames, articles: sortedArticles };
+  // Uma página por artigo: /artigos/<slug>, assinada pela autora (para o Google e as IAs citarem).
+  for (const a of authoredArticles) {
+    const s = a.author;
+    const published = toIsoDate(a.createdAt);
+    const modified = toIsoDate(a.updatedAt) || published;
+    pages.push({
+      file: `artigos/${a.slug}.html`,
+      url: `${SITE}/artigos/${a.slug}`,
+      title: `${a.title}${s ? ` – por ${s.name}` : ''} | Clínica Hope Palhoça`,
+      description: clip(`${a.subtitle ? `${a.subtitle}. ` : ''}${s ? `Por ${s.name}${councilLabel(s) ? ` (${councilLabel(s)})` : ''}, ` : ''}Clínica Hope, psicologia em Palhoça - SC. ${a.content || ''}`, 158),
+      body: wrap(`<article>
+<p class="ssr-muted"><a href="/psicoeducacao">Psicoeducação</a></p>
+<h1>${esc(a.title)}</h1>
+${a.subtitle ? `<p class="ssr-muted">${esc(a.subtitle)}</p>` : ''}
+<p class="ssr-muted">${byline(s)}${published ? ` · <time datetime="${published}">${published.split('-').reverse().join('/')}</time>` : ''}</p>
+${paragraphs(a.content || '')}
+</article>
+${s ? `<section aria-labelledby="ssr-autora"><h2 id="ssr-autora">Sobre a autora</h2><p><a href="/${esc(s.slug)}"><strong>${esc(s.name)}</strong></a>${councilLabel(s) ? ` · ${esc(councilLabel(s))}` : ''}</p>${s.desc ? `<p>${esc(clip(s.desc, 300))}</p>` : ''}</section>` : ''}
+<p><a href="/psicoeducacao">Ver todos os artigos</a></p>
+${contactBlock()}`),
+      jsonld: [{
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        headline: a.title,
+        ...(a.subtitle ? { description: a.subtitle } : {}),
+        url: `${SITE}/artigos/${a.slug}`,
+        mainEntityOfPage: `${SITE}/artigos/${a.slug}`,
+        inLanguage: 'pt-BR',
+        ...(published ? { datePublished: published } : {}),
+        ...(modified ? { dateModified: modified } : {}),
+        author: s ? personRef(s) : clinicRef,
+        publisher: { ...clinicRef, logo: { '@type': 'ImageObject', url: `${SITE}/logo-hope.png` } },
+        image: `${SITE}/og-image.png`,
+      }, {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Início', item: `${SITE}/` },
+          { '@type': 'ListItem', position: 2, name: 'Psicoeducação', item: `${SITE}/psicoeducacao` },
+          { '@type': 'ListItem', position: 3, name: a.title, item: `${SITE}/artigos/${a.slug}` },
+        ],
+      }],
+    });
+  }
+
+  return { pages, specialists, approaches, planNames, articles: sortedArticles, authoredArticles };
 }
 
 // ── Aplicar no template gerado pelo Vite ─────────────────────────────────────
@@ -351,7 +439,7 @@ function buildSitemap(pages) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
 
-function buildLlmsTxt({ specialists, approaches, planNames, articles }) {
+function buildLlmsTxt({ specialists, approaches, planNames, articles, authoredArticles = [] }) {
   const lines = [
     '# Clínica Hope — Clínica de Psicologia em Palhoça (SC)',
     '',
@@ -379,6 +467,14 @@ function buildLlmsTxt({ specialists, approaches, planNames, articles }) {
     lines.push('');
   }
   if (approaches.length) lines.push('## Abordagens terapêuticas', ...approaches.map((a) => `- ${a.title}${a.desc ? `: ${clip(a.desc, 160)}` : ''}`), '');
+  if (authoredArticles.length) {
+    lines.push('## Artigos de psicoeducação');
+    for (const a of authoredArticles) {
+      const by = a.author ? ` — por ${a.author.name}${councilLabel(a.author) ? ` (${councilLabel(a.author)})` : ''}` : '';
+      lines.push(`- [${a.title}](${SITE}/artigos/${a.slug})${by}${a.subtitle ? `: ${clip(a.subtitle, 140)}` : ''}`);
+    }
+    lines.push('');
+  }
   lines.push('## Páginas', `- [Início](${SITE}/)`, `- [Especialistas](${SITE}/especialistas)`, `- [Abordagens](${SITE}/abordagens)`, `- [Psicoeducação](${SITE}/psicoeducacao)${articles.length ? ` — ${articles.length} artigo(s)` : ''}`, '');
   return lines.join('\n');
 }
@@ -398,6 +494,7 @@ async function main() {
 
   const result = buildPages(data);
   for (const page of result.pages) {
+    await fs.mkdir(path.dirname(path.join(DIST, page.file)), { recursive: true });
     await fs.writeFile(path.join(DIST, page.file), renderPage(template, page), 'utf8');
   }
   await fs.writeFile(path.join(DIST, 'sitemap.xml'), buildSitemap(result.pages), 'utf8');
