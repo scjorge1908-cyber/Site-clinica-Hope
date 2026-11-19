@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Backups gerados pelo robô (ficam só como artefato no GitHub Actions)
+backup/

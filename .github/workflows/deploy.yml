@@ -35,6 +35,22 @@ jobs:
       - name: Gerar páginas para Google e IAs (dados do Firebase)
         run: node scripts/prerender.mjs
 
+      # Backup diário do conteúdo do site (psicólogas, fotos, artigos, convênios) — guardado 90 dias na aba Actions.
+      # Se o backup falhar, o site continua sendo publicado normalmente.
+      - name: Backup do conteúdo do site (Firebase)
+        continue-on-error: true
+        run: node scripts/backup-firestore.mjs
+
+      - name: Guardar backup (90 dias)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-firestore-${{ github.run_number }}
+          path: backup/
+          retention-days: 90
+          if-no-files-found: warn
+
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
