@@ -266,9 +266,16 @@ const RESERVED_ROUTES: Record<string, Screen> = {
   'contato': Screen.Home,
 };
 
+// Link de cada artigo: /artigos/<titulo-sem-acento>. A mesma regra está em scripts/prerender.mjs (slugArtigo).
+export function slugArtigo(title: string): string {
+  return String(title || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 export function getScreenFromPathname(path: string): Screen | null {
   const cleanPath = path.toLowerCase().replace(/^\/|\/$/g, '').trim();
   if (cleanPath === '' || cleanPath === '/') return Screen.Home;
+  // /artigos/<slug> abre a tela de Psicoeducação já com o artigo aberto (link vindo do Google e das IAs).
+  if (cleanPath.startsWith('artigos/')) return Screen.Psicoeducacao;
   return RESERVED_ROUTES[cleanPath] || null;
 }
 
@@ -1835,6 +1842,25 @@ function AbordagensScreen({ onNavigate, approaches, settings }: { onNavigate: (s
 // ─────────────────────────────────────────────────────────────────────────────
 function PsicoeducacaoScreen({ onNavigate, settings, articles }: ScreenProps & { settings: HomeSettings; articles: PsicoeducacaoArticle[] }) {
   const [openArticle, setOpenArticle] = useState<PsicoeducacaoArticle | null>(null);
+  const articleFromUrlDone = useRef(false);
+
+  // Quem chega por /artigos/<slug> vê o artigo aberto (mesmo visual de quando clica no card).
+  // Títulos repetidos usam -2, -3... como no prerender.
+  useEffect(() => {
+    if (articleFromUrlDone.current || !articles || articles.length === 0) return;
+    const path = window.location.pathname.replace(/^\/|\/$/g, '').toLowerCase();
+    if (!path.startsWith('artigos/')) { articleFromUrlDone.current = true; return; }
+    const wanted = path.slice('artigos/'.length);
+    const ordered = [...articles].filter((a) => a && a.title).sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+    const used = new Set<string>();
+    for (const a of ordered) {
+      let slug = slugArtigo(a.title) || String(a.id || '').toLowerCase();
+      if (used.has(slug)) { let n = 2; while (used.has(`${slug}-${n}`)) n++; slug = `${slug}-${n}`; }
+      used.add(slug);
+      if (slug === wanted) { setOpenArticle(a); break; }
+    }
+    articleFromUrlDone.current = true;
+  }, [articles]);
 
   const renderContent = (rawText: string) => {
     if (!rawText.trim()) return null;
