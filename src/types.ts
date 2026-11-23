@@ -114,6 +114,8 @@ export interface Specialist {
   };
   insurancePlans?: string[];
   slug?: string;
+  /** Link anterior (ex.: "novo-especialista"); quem chega por ele vai para o link atual. */
+  slugAntigo?: string;
   /** Horários vindos do HopeCore (marcação "Agenda no site"); não é gravado no Firebase. */
   agendaHopeCore?: boolean;
   /** Horários que outra pessoa está agendando agora pelo site (trava de 20 min) ou aguardando a equipe. Não vai ao Firebase. */

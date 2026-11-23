@@ -976,7 +976,14 @@ export default function App() {
       const matchedSpecialist = specialists.find(
         (s) => s.slug && s.slug.toLowerCase() === pathname.toLowerCase()
       );
-      if (matchedSpecialist) {
+      // Link antigo (ex.: /novo-especialista): troca o endereço pelo link atual da profissional.
+      const movedSpecialist = !matchedSpecialist && specialists.find(
+        (s) => s.slug && s.slugAntigo && s.slugAntigo.toLowerCase() === pathname.toLowerCase()
+      );
+      if (movedSpecialist) {
+        window.history.replaceState(null, '', `/${movedSpecialist.slug}${window.location.search}`);
+        setCurrentScreen(Screen.CorpoClinico);
+      } else if (matchedSpecialist) {
         setCurrentScreen(Screen.CorpoClinico);
       } else {
         // Fallback seguro caso não encontre nenhum especialista correspondente

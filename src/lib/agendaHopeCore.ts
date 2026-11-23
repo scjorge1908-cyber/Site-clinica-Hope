@@ -22,9 +22,12 @@ const normalizar = (s: string) =>
   (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 /** Acha a agenda publicada de uma especialista do site: pelo endereço (slug) e, se não houver, pelo nome. */
-export function agendaDe(spec: Pick<Specialist, 'slug' | 'name'>, porSlug: Record<string, AgendaPublica>): AgendaPublica | null {
+export function agendaDe(spec: Pick<Specialist, 'slug' | 'name' | 'slugAntigo'>, porSlug: Record<string, AgendaPublica>): AgendaPublica | null {
   const slug = (spec.slug || '').trim().toLowerCase();
   if (slug && porSlug[slug]) return porSlug[slug];
+  // Link trocado no site (ex.: era "novo-especialista"): o HopeCore pode ainda usar o antigo.
+  const antigo = (spec.slugAntigo || '').trim().toLowerCase();
+  if (antigo && porSlug[antigo]) return porSlug[antigo];
   const nome = normalizar(spec.name);
   if (!nome) return null;
   const lista = Object.values(porSlug);

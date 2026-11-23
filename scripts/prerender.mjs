@@ -46,8 +46,18 @@ const FULL_ADDRESS = `${CLINIC.street}, ${CLINIC.district}, ${CLINIC.city} - ${C
 const DESLIGADAS = new Set([]); // ex.: 'nome-do-link'. Amanda Lobo continua atendendo (Jorge, 22/10/2026).
 const RESERVED = new Set(['index', 'especialistas', 'corpoclinico', 'sublocacao', 'administracao', 'admin', 'login', 'seo', 'abordagens', 'psicoeducacao', 'agendamento', 'home', '404', 'assets', 'sitemap', 'robots', 'llms', 'artigos', 'validar']);
 // Cadastros de teste (nome ainda "Novo Especialista") não viram página nem entram no mapa do site (Jorge, 19/11/2026).
-// Atenção: o link /novo-especialista hoje é da Aline Cristina de Carvalho Gazal (cadastro real); por isso o filtro é pelo NOME.
+// Atenção: o link /novo-especialista era da Aline Cristina de Carvalho Gazal (cadastro real); por isso o filtro é pelo NOME.
 const isPlaceholder = (s) => /^novo\s+especialista$/i.test(String(s.name || '').trim());
+// Link "novo-especialista" de cadastro que já tem nome de verdade vira o link do nome; o antigo redireciona
+// para o novo (Jorge, 23/11/2026). Mesma regra em src/lib/firebase.ts (ensureSpecialistsSlugs/generateSlug).
+const SLUG_GENERICO = /^novo-especialista(-[a-z0-9]+)?$/i;
+const slugDoNome = (name) => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+  .replace(/[^a-z0-9\s-]/g, '').replace(/[\s_]+/g, '-').replace(/^(psi|dr|dra|psicologa|psicologo)-\.?/, '').replace(/^-+|-+$/g, '');
+const corrigeSlugGenerico = (s) => {
+  if (!s.slug || !SLUG_GENERICO.test(s.slug) || isPlaceholder(s)) return s;
+  const novo = slugDoNome(s.name);
+  return novo && novo !== s.slug && !SLUG_GENERICO.test(novo) ? { ...s, slug: novo, slugAntigo: s.slug } : s;
+};
 // Tags que ficaram com o texto padrão do formulário ("Tag") não são áreas de atuação de verdade.
 const realTags = (s) => (s.tags || []).filter((t) => t && String(t).trim() && String(t).trim().toLowerCase() !== 'tag');
 // Autora padrão dos artigos de psicoeducação: todos os atuais foram escritos pela Beatriz (Jorge, 19/11/2026).
@@ -116,7 +126,7 @@ async function loadFromFirestore() {
   }
 
   const settings = await safe('settings/home', () => getDoc('settings/home', ['clinicName', 'heroTitle', 'heroSubtitle', 'heroText', 'seoTitle', 'seoText', 'insurancePlans']), {});
-  const specialists = await safe('specialists', () => list('specialists', ['name', 'crp', 'councilType', 'customCouncil', 'noCouncil', 'spec', 'tags', 'desc', 'ageGroups', 'shifts', 'insurancePlans', 'slug']), []);
+  const specialists = await safe('specialists', () => list('specialists', ['name', 'crp', 'councilType', 'customCouncil', 'noCouncil', 'spec', 'tags', 'desc', 'ageGroups', 'shifts', 'insurancePlans', 'slug', 'slugAntigo']), []);
   const approaches = await safe('approaches', () => list('approaches', ['title', 'desc', 'details']), []);
   const insurance = await safe('insurance_plans', () => list('insurance_plans', ['name']), []);
   const articles = await safe('psicoeducacao_articles', () => list('psicoeducacao_articles', ['title', 'subtitle', 'content', 'createdAt', 'updatedAt', 'authorSlug']), []);
@@ -211,6 +221,7 @@ function buildPages(data) {
   // Profissionais desligadas não ganham página, nem entram no mapa do site e no llms.txt (Jorge, 22/10/2026).
   // O cadastro continua no Firebase; para voltar, basta tirar o endereço desta lista.
   const specialists = (data.specialists || []).filter((s) => s && s.name && !DESLIGADAS.has(String(s.slug || '').toLowerCase()) && !isPlaceholder(s))
+    .map(corrigeSlugGenerico)
     // Nome limpo para Google/IAs: sem o prefixo "Psi." (o título já diz Psicóloga/Psicólogo) e sem espaços duplos.
     .map((s) => ({ ...s, name: String(s.name).replace(/^psi\.?\s+/i, '').replace(/\s+/g, ' ').trim(), spec: s.spec ? String(s.spec).replace(/\s+/g, ' ').trim() : s.spec }));
 
@@ -408,7 +419,12 @@ ${contactBlock()}`),
     });
   }
 
-  return { pages, specialists, approaches, planNames, articles: sortedArticles, authoredArticles };
+  // Links antigos (ex.: /novo-especialista) levam ao link atual da profissional; ficam fora do mapa do site.
+  const usados = new Set(pages.map((p) => p.url));
+  const redirects = specialists
+    .filter((s) => isValidSlug(s.slug) && isValidSlug(s.slugAntigo) && s.slugAntigo.toLowerCase() !== s.slug.toLowerCase() && !usados.has(`${SITE}/${s.slugAntigo}`))
+    .map((s) => ({ file: `${s.slugAntigo}.html`, to: `${SITE}/${s.slug}`, name: s.name }));
+  return { pages, redirects, specialists, approaches, planNames, articles: sortedArticles, authoredArticles };
 }
 
 // ── Aplicar no template gerado pelo Vite ─────────────────────────────────────
@@ -497,10 +513,19 @@ async function main() {
     await fs.mkdir(path.dirname(path.join(DIST, page.file)), { recursive: true });
     await fs.writeFile(path.join(DIST, page.file), renderPage(template, page), 'utf8');
   }
+  for (const r of result.redirects) {
+    const to = esc(r.to);
+    await fs.writeFile(path.join(DIST, r.file), `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(r.name)} — ${esc(CLINIC.name)}</title>
+<link rel="canonical" href="${to}"><meta http-equiv="refresh" content="0; url=${to}">
+<script>location.replace(${JSON.stringify(r.to)} + location.search + location.hash)</script></head>
+<body><p>Esta página mudou de endereço: <a href="${to}">${to}</a></p></body></html>
+`, 'utf8');
+  }
   await fs.writeFile(path.join(DIST, 'sitemap.xml'), buildSitemap(result.pages), 'utf8');
   await fs.writeFile(path.join(DIST, 'llms.txt'), buildLlmsTxt(result), 'utf8');
 
-  console.log(`[prerender] OK: ${result.pages.length} páginas (${result.specialists.length} especialistas, ${result.approaches.length} abordagens, ${result.planNames.length} convênios, ${result.articles.length} artigos).`);
+  console.log(`[prerender] OK: ${result.pages.length} páginas, ${result.redirects.length} redirecionamento(s) (${result.specialists.length} especialistas, ${result.approaches.length} abordagens, ${result.planNames.length} convênios, ${result.articles.length} artigos).`);
 }
 
 main().catch((e) => {

@@ -387,11 +387,25 @@ export function generateSlug(name: string, id: string): string {
   return clean || id;
 }
 
+// Mesma regra em scripts/prerender.mjs.
+export const SLUG_GENERICO = /^novo-especialista(-[a-z0-9]+)?$/i;
+const NOME_GENERICO = /^novo\s+especialista$/i;
+
 export function ensureSpecialistsSlugs(specs: any[]): { updated: boolean, specialists: any[] } {
   let updated = false;
   const slugCounts = new Map<string, number>();
   
   const candidates = specs.map(s => {
+    // Cadastro criado com o nome padrão ficou com o link "novo-especialista" mesmo depois de ganhar o nome
+    // de verdade (caso da Aline Gazal, 23/11/2026). Nesses casos o link passa a ser o nome, e o antigo
+    // fica guardado em slugAntigo para quem chegar por ele (Google, links salvos) ser levado ao novo.
+    if (s.slug && SLUG_GENERICO.test(s.slug) && !NOME_GENERICO.test(String(s.name || '').trim())) {
+      const novo = generateSlug(s.name, s.id);
+      if (novo && novo !== s.slug && !SLUG_GENERICO.test(novo)) {
+        updated = true;
+        s = { ...s, slug: novo, slugAntigo: s.slug };
+      }
+    }
     const candidate = s.slug || generateSlug(s.name, s.id);
     slugCounts.set(candidate, (slugCounts.get(candidate) || 0) + 1);
     return { s, candidate };
