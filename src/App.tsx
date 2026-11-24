@@ -1455,6 +1455,25 @@ interface HomeProps extends ScreenProps {
 }
 
 function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlocked, syncingSpecs, onSyncRequest }: HomeProps & { specialists: Specialist[] }) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (specialists.length === 0) {
+      setIndex(0);
+      return;
+    }
+    
+    setIndex(prev => (prev >= specialists.length ? 0 : prev));
+
+    const timer = setInterval(() => {
+      setIndex((prev) => {
+        if (specialists.length === 0) return 0;
+        return (prev + 1) % specialists.length;
+      });
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [specialists.length]);
+
   return (
     <Layout activeScreen={Screen.Home} onNavigate={onNavigate} settings={settings}>
       {/* Modern Hero Section */}
@@ -1579,19 +1598,87 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
         </div>
       </section>
 
-      {/* Especialistas (Jorge 24/11/2026): sem carrossel — só o título e o botão para a página Especialistas */}
-      <section className="px-6 py-12 md:py-16 bg-surface-container-low border-y border-outline-alt/30">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <h2 className="text-4xl font-bold text-primary tracking-tight text-center md:text-left">Especialistas</h2>
-          <button 
-            onClick={() => onNavigate(Screen.CorpoClinico)}
-            id="home-ver-especialistas"
-            data-event="ver_especialistas"
-            className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center"
-          >
-            Ver todos os especialistas
-            <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
-          </button>
+      {/* Compact Equipe Section - Carousel */}
+      <section className="section-padding bg-surface-container-low border-y border-outline-alt/30 overflow-hidden">
+        <div className="max-w-7xl mx-auto space-y-16">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <button
+              onClick={() => onNavigate(Screen.CorpoClinico)}
+              id="home-ver-especialistas"
+              data-event="ver_especialistas"
+              className="group flex items-center gap-3 px-8 py-4 bg-white text-primary border-2 border-primary rounded-full font-bold text-sm hover:bg-primary hover:text-white transition-all active:scale-95 self-center md:self-end"
+            >
+              Ver todos os especialistas
+              <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
+            </button>
+            
+            <button 
+              onClick={() => onNavigate(Screen.CorpoClinico)}
+              id="specialists-list-cta-agendar"
+              data-event="inicio_agendamento"
+              className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center md:self-end"
+            >
+              Agendar Terapia 
+              <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+          
+          <div className="relative">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <AnimatePresence mode="popLayout" initial={false}>
+                {(() => {
+                  if (specialists.length === 0) return null;
+                  
+                  const displayCount = 3; 
+                  const visibleSpecs = [];
+                  const total = specialists.length;
+                  const countToRender = Math.min(total, displayCount);
+                  
+                  for (let i = 0; i < countToRender; i++) {
+                    const specIndex = (index + i) % total;
+                    visibleSpecs.push(specialists[specIndex]);
+                  }
+
+                  return visibleSpecs.map((spec, i) => {
+                    if (!spec) return null;
+                    return (
+                      <motion.div
+                        key={`${spec.id}-${index}`}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        transition={{ duration: 0.4, delay: i * 0.1 }}
+                        className={`${i > 0 ? 'hidden md:block' : 'block'}`}
+                      >
+                        <SpecialistCard 
+                          spec={spec} 
+                          insurancePlans={settings.insurancePlans || []}
+                          isAdminUnlocked={isAdminUnlocked}
+                          isCarousel={true}
+                          onNavigate={onNavigate}
+                          isSyncing={!!syncingSpecs?.[spec.id]}
+                          onSyncRequest={() => onSyncRequest?.(spec.id)}
+                        />
+                      </motion.div>
+                    );
+                  });
+                })()}
+              </AnimatePresence>
+            </div>
+
+            {/* Navigation Dots */}
+            <div className="flex justify-center gap-3 mt-10">
+              {specialists.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setIndex(i)}
+                  className={`h-1.5 rounded-full transition-all duration-500 ${
+                    index === i ? 'bg-primary w-8' : 'bg-outline-alt w-2'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </section>
       
@@ -1888,6 +1975,11 @@ function PsicoeducacaoScreen({ onNavigate, settings, articles }: ScreenProps & {
                   <p className="text-lg text-secondary italic font-medium mb-8 border-l-4 border-secondary/30 pl-4">{openArticle.subtitle}</p>
                 )}
                 <div className="mt-8">{renderContent(openArticle.content)}</div>
+                {(!(openArticle as { authorSlug?: string }).authorSlug || (openArticle as { authorSlug?: string }).authorSlug === 'beatriz-santiago') && (
+                  <p className="mt-10 pt-4 border-t border-outline-alt/30 text-xs text-gray-900">
+                    Beatriz Figueiredo de Lima Santiago · CRP 12/08781
+                  </p>
+                )}
               </div>
             </motion.div>
           )}
