@@ -2157,6 +2157,10 @@ const ORDEM_IDADES = ['criança', 'adolescente', 'adulto', 'idoso'];
 
 export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate, isSyncing, onSyncRequest }: SpecialistCardProps) {
   const [nomeCompleto, setNomeCompleto] = useState(false);
+  // Jorge 24/11/2026: só Adulto e/ou Idoso (sem Criança e Adolescente) → "a partir de 18 anos".
+  const soAdulto = (spec.ageGroups || []).length > 0 && !(spec.ageGroups || []).some((g) => /crian|adolesc/i.test(g || ''));
+  const idadeBase = spec.attendedAges && spec.attendedAges.length > 0 ? Math.min(...spec.attendedAges) : null;
+  const idadeMinima = soAdulto ? Math.max(idadeBase ?? 18, 18) : idadeBase;
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
@@ -2409,13 +2413,13 @@ export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarous
                     </p>
                   </div>
                 )}
-                {spec.attendedAges && spec.attendedAges.length > 0 && (
+                {idadeMinima !== null && (
                   <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-secondary/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
                     <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center shadow-md">
                       <VerifiedUser size={12} className="text-white" />
                     </div>
                     <p className="text-[11px] font-bold text-primary/90">
-                      Atendimento especializado a partir de <span className="text-secondary font-black underline underline-offset-4 decoration-secondary/30">{Math.min(...spec.attendedAges)}</span> anos
+                      Atendimento especializado a partir de <span className="text-secondary font-black underline underline-offset-4 decoration-secondary/30">{idadeMinima}</span> anos
                     </p>
                   </div>
                 )}
