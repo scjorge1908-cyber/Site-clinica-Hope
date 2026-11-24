@@ -1478,7 +1478,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
     <Layout activeScreen={Screen.Home} onNavigate={onNavigate} settings={settings}>
       {/* Modern Hero Section */}
       <section className="relative px-6 pt-28 pb-12 md:py-24 lg:py-32 overflow-hidden bg-background">
-        <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 lg:gap-16 items-center">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 lg:gap-16 items-start">
           <motion.div 
             initial={{ opacity: 0, x: -30 }} 
             animate={{ opacity: 1, x: 0 }}
@@ -1508,18 +1508,6 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
               >
                 Abordagens
               </button>
-              <a
-                href={`${WHATSAPP_URL}?text=${encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => trackWhatsAppClick('hero_button')}
-                id="hero-cta-whatsapp"
-                data-event="contato_whatsapp"
-                className="flex w-full items-center justify-center gap-2 whitespace-nowrap px-4 py-3 rounded-xl bg-[#15803d] text-white font-bold text-sm hover:bg-[#166534] transition-all active:scale-95"
-              >
-                <MessageCircle className="w-5 h-5 shrink-0" />
-                Agendar pelo WhatsApp
-              </a>
             </div>
 
             {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
@@ -1544,7 +1532,7 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="relative"
+            className="relative md:mt-[3.75rem]"
           >
             <div className="aspect-square rounded-[4rem] overflow-hidden soft-shadow relative z-10 border border-outline-alt/30">
               <img 
