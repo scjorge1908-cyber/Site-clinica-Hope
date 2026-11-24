@@ -2297,14 +2297,11 @@ export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarous
           <div className="flex justify-between items-start">
             <div className="flex flex-col min-w-0 relative">
               <h4
-                className="text-2xl font-bold text-primary truncate cursor-default"
+                className={`text-2xl font-bold text-primary cursor-default ${nomeCompleto ? '' : 'truncate'}`}
                 onMouseEnter={() => setNomeCompleto(true)}
                 onMouseLeave={() => setNomeCompleto(false)}
                 onClick={() => setNomeCompleto((v) => !v)}
-              >{nomeCurto(spec.name)}</h4>
-              {nomeCompleto && nomeCurto(spec.name) !== semPsi(spec.name) && (
-                <span className="absolute left-0 top-full z-20 mt-1 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold shadow-lg whitespace-nowrap">{semPsi(spec.name)}</span>
-              )}
+              >{nomeCompleto ? semPsi(spec.name) : nomeCurto(spec.name)}</h4>
               <button 
                 onClick={() => {
                   let scheduleSummary = '';
