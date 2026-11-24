@@ -22,18 +22,6 @@ export const trackWhatsAppClick = (source: string = 'floating_button') => {
   }
 };
 
-// ── Telegram Click ──────────────────────────────────────
-export const trackTelegramClick = (source: string = 'floating_button') => {
-  push({
-    event: 'telegram_click',
-    event_category: 'contato',
-    event_label: source,
-  });
-  if (typeof window.fbq === 'function') {
-    window.fbq('trackCustom', 'TelegramClick', { source });
-  }
-};
-
 // ── Telefone Click ──────────────────────────────────────
 export const trackPhoneClick = (source: string = 'page') => {
   push({
