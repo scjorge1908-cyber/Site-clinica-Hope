@@ -2626,22 +2626,20 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
         {!isCarousel && (
           <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
-            <details className="group">
-              <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2 px-3 py-2.5 rounded-xl border border-secondary/30 bg-white/60 hover:bg-white hover:border-secondary/60 active:scale-[0.99] transition-all">
-                <Info size={14} className="shrink-0" />
-                <span className="flex-1">Informação importante para quem for agendar pelo plano de saúde</span>
-                <span aria-hidden className="shrink-0 text-sm leading-none transition-transform group-open:rotate-180">▾</span>
+            <details className="group rounded-2xl border border-secondary/20 bg-white/70 shadow-sm overflow-hidden transition-colors open:border-secondary/40 open:bg-white">
+              <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none flex items-center gap-3 px-4 py-3 hover:bg-secondary/5 active:bg-secondary/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/40 rounded-2xl">
+                <span aria-hidden className="shrink-0 w-8 h-8 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center">
+                  <AssignmentTurnedIn size={16} />
+                </span>
+                <span className="flex-1 text-sm font-bold text-primary tracking-tight">Atendimento por convênio</span>
+                <span aria-hidden className="shrink-0 w-7 h-7 rounded-full border border-secondary/20 text-secondary flex items-center justify-center text-xs transition-transform duration-200 group-open:rotate-180">▾</span>
               </summary>
-              <div className="mt-3 text-[10px] bg-white/40 p-4 rounded-xl border border-secondary/5 text-primary/80 leading-relaxed space-y-3">
-                <p className="font-bold text-primary">
-                  📍 Pelo plano de saúde, o atendimento na Clínica Hope é somente presencial. A clínica não realiza atendimento online.
+              <div className="px-4 pb-4 pt-1 text-[13px] text-primary/80 leading-relaxed space-y-2.5">
+                <p>Para agendar pelo plano de saúde, é necessário apresentar um <span className="font-bold text-primary">encaminhamento médico para psicoterapia</span>.</p>
+                <p className="bg-secondary/5 border border-secondary/10 rounded-xl px-3 py-2.5">
+                  <span className="font-bold text-primary">Ainda não tem o encaminhamento?</span> Verifique se seu plano oferece telemedicina. Assim, você poderá consultar um médico online e solicitar o documento.
                 </p>
-                <p>
-                  💡 <span className="font-bold">Dica:</span> Verifique se o seu plano oferece telemedicina. Em muitos casos, o atendimento é imediato e funciona 24 horas.
-                </p>
-                <p>
-                  Na consulta, solicite ao médico uma guia de encaminhamento para psicoterapia com o CID do tratamento. Esse é um documento obrigatório para a autorização das sessões pelo plano de saúde.
-                </p>
+                <p className="font-semibold text-primary">Na Clínica Hope, os atendimentos pelos convênios são realizados presencialmente.</p>
               </div>
             </details>
           </div>
