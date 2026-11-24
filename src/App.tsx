@@ -2216,6 +2216,12 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
   const [agendando, setAgendando] = useState<{ dia: string; hora: string; plano: string } | null>(null);
   const periodoDe = (h: string) => (h < '13:00' ? Shift.Morning : h < '18:00' ? Shift.Afternoon : Shift.Night) as string;
   const emAgendamentoDia = (spec.emAgendamento ?? []).filter((e) => e.dia === selectedDay);
+  // Jorge 24/11/2026: agenda do sistema → clicar no horário já abre o Agendamento (o convênio é escolhido lá dentro).
+  const agendaDireta = !!spec.agendaHopeCore && !!(spec.agendaSlug || spec.slug);
+  const clicarHorario = (time: string) => {
+    if (agendaDireta && selectedDay) { trackScheduleClick(spec.name); setSelectedTime(time); setAgendando({ dia: selectedDay, hora: time, plano: selectedPlan && selectedPlan !== 'Particular' ? selectedPlan : '' }); return; }
+    setSelectedTime(time === selectedTime ? null : time);
+  };
   // Jorge 03/11/2026: com dia, hora e CONVÊNIO (plano) escolhidos → já abre o cadastro, sem precisar clicar em "Enviar".
   useEffect(() => {
     if (agendando || !selectedDay || !selectedTime || !selectedPlan || selectedPlan === 'Particular') return;
@@ -2476,8 +2482,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                           className="p-4 bg-surface-container-lowest rounded-2xl border border-outline-alt/20 space-y-3"
                         >
                           {selectedDay && !selectedTime && (
-                            <div className="flex items-center gap-2 mb-2 animate-pulse">
-                              <ArrowForward size={14} className="text-amber-500 animate-bounce" />
+                            <div className="flex items-center gap-2 mb-2">
+                              <ArrowForward size={14} className="text-amber-500" />
                               <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Selecione o horário</p>
                             </div>
                           )}
@@ -2504,7 +2510,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                                   ) : (
                                     <button
                                       key={time}
-                                      onClick={() => setSelectedTime(time === selectedTime ? null : time)}
+                                      onClick={() => clicarHorario(time)}
                                       className={`px-3 py-2 rounded-lg text-[10px] font-medium transition-all ${
                                         selectedTime === time
                                         ? 'bg-secondary text-white shadow-sm'
@@ -2520,8 +2526,9 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                         </motion.div>
                       )}
 
+                      {!agendaDireta && (
                       <div className="space-y-4">
-                        <div className={`space-y-2 p-3 rounded-3xl transition-all duration-500 ${selectedTime && !selectedPlan ? 'bg-amber-400/10 ring-4 ring-amber-400/20 animate-pulse' : ''}`}>
+                        <div className={`space-y-2 p-3 rounded-3xl transition-all duration-500 ${selectedTime && !selectedPlan ? 'bg-amber-400/10 ring-2 ring-amber-400/20' : ''}`}>
                           <button
                             type="button"
                             onClick={() => setIsPlanListOpen(!(isPlanListOpen || (!!selectedTime && !selectedPlan)))}
@@ -2599,6 +2606,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                           )}
                         </div>
                       </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -2607,7 +2615,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
           )}
         </div>
 
-        {!isAgendaFull && !isCarousel && (
+        {!isAgendaFull && !isCarousel && !agendaDireta && (
           <button 
             disabled={!canBook}
             onClick={handleWhatsAppClick}
@@ -2616,7 +2624,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
             className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
               !canBook 
               ? 'bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed mt-2' 
-              : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2 shadow-2xl ring-4 ring-primary/20 animate-pulse'
+              : 'bg-primary text-white hover:shadow-xl hover:-translate-y-0.5 mt-2 shadow-2xl ring-4 ring-primary/20'
             }`}
           >
             <Chat size={18} />
