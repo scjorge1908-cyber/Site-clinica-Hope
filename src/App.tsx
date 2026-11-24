@@ -1455,25 +1455,6 @@ interface HomeProps extends ScreenProps {
 }
 
 function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlocked, syncingSpecs, onSyncRequest }: HomeProps & { specialists: Specialist[] }) {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    if (specialists.length === 0) {
-      setIndex(0);
-      return;
-    }
-    
-    setIndex(prev => (prev >= specialists.length ? 0 : prev));
-
-    const timer = setInterval(() => {
-      setIndex((prev) => {
-        if (specialists.length === 0) return 0;
-        return (prev + 1) % specialists.length;
-      });
-    }, 10000);
-    return () => clearInterval(timer);
-  }, [specialists.length]);
-
   return (
     <Layout activeScreen={Screen.Home} onNavigate={onNavigate} settings={settings}>
       {/* Modern Hero Section */}
@@ -1598,82 +1579,35 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
         </div>
       </section>
 
-      {/* Compact Equipe Section - Carousel */}
-      <section className="section-padding bg-surface-container-low border-y border-outline-alt/30 overflow-hidden">
-        <div className="max-w-7xl mx-auto space-y-16">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-            <div>
-              <h2 className="text-4xl font-bold text-primary tracking-tight">Especialistas</h2>
-            </div>
-            
-            <button 
-              onClick={() => onNavigate(Screen.CorpoClinico)}
-              id="specialists-list-cta-agendar"
-              data-event="inicio_agendamento"
-              className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center md:self-end"
-            >
-              Agendar Terapia 
-              <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
-            </button>
-          </div>
-          
-          <div className="relative">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <AnimatePresence mode="popLayout" initial={false}>
-                {(() => {
-                  if (specialists.length === 0) return null;
-                  
-                  const displayCount = 3; 
-                  const visibleSpecs = [];
-                  const total = specialists.length;
-                  const countToRender = Math.min(total, displayCount);
-                  
-                  for (let i = 0; i < countToRender; i++) {
-                    const specIndex = (index + i) % total;
-                    visibleSpecs.push(specialists[specIndex]);
-                  }
-
-                  return visibleSpecs.map((spec, i) => {
-                    if (!spec) return null;
-                    return (
-                      <motion.div
-                        key={`${spec.id}-${index}`}
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        transition={{ duration: 0.4, delay: i * 0.1 }}
-                        className={`${i > 0 ? 'hidden md:block' : 'block'}`}
-                      >
-                        <SpecialistCard 
-                          spec={spec} 
-                          insurancePlans={settings.insurancePlans || []}
-                          isAdminUnlocked={isAdminUnlocked}
-                          isCarousel={true}
-                          onNavigate={onNavigate}
-                          isSyncing={!!syncingSpecs?.[spec.id]}
-                          onSyncRequest={() => onSyncRequest?.(spec.id)}
-                        />
-                      </motion.div>
-                    );
-                  });
-                })()}
-              </AnimatePresence>
-            </div>
-
-            {/* Navigation Dots */}
-            <div className="flex justify-center gap-3 mt-10">
-              {specialists.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setIndex(i)}
-                  className={`h-1.5 rounded-full transition-all duration-500 ${
-                    index === i ? 'bg-primary w-8' : 'bg-outline-alt w-2'
-                  }`}
-                />
+      {/* Equipe (Jorge 24/11/2026): no lugar do carrossel, um convite para ver todos os especialistas */}
+      <section className="px-6 py-14 md:py-20 bg-surface-container-low border-y border-outline-alt/30">
+        <button
+          type="button"
+          onClick={() => onNavigate(Screen.CorpoClinico)}
+          id="home-ver-especialistas"
+          data-event="ver_especialistas"
+          className="group w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-6 md:gap-10 p-6 md:p-10 rounded-[2.5rem] bg-white border border-outline-alt/40 soft-shadow hover:border-primary/40 hover:-translate-y-0.5 active:scale-[0.99] transition-all text-center md:text-left"
+        >
+          {specialists.length > 0 && (
+            <div className="flex -space-x-4 shrink-0">
+              {specialists.filter((sp) => sp.img).slice(0, 5).map((sp) => (
+                <img key={sp.id} src={sp.img} alt="" loading="lazy" className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover object-top border-4 border-white shadow-md grayscale group-hover:grayscale-0 transition-all duration-500" />
               ))}
+              {specialists.length > 5 && (
+                <span className="w-14 h-14 md:w-16 md:h-16 rounded-full border-4 border-white bg-primary text-white text-sm font-bold flex items-center justify-center shadow-md">+{specialists.length - 5}</span>
+              )}
             </div>
+          )}
+          <div className="flex-1 space-y-1">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Nossa equipe</p>
+            <h2 className="text-2xl md:text-3xl font-bold text-primary tracking-tight">Conheça nossos especialistas</h2>
+            <p className="text-sm text-on-surface-variant font-medium">Veja todos os profissionais, abordagens e horários disponíveis para agendar.</p>
           </div>
-        </div>
+          <span className="shrink-0 inline-flex items-center gap-2 px-6 py-3.5 rounded-full bg-primary text-white font-bold text-sm group-hover:bg-primary/90 transition-all">
+            Ver todos
+            <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
+          </span>
+        </button>
       </section>
       
       {/* Testimonials (Google My Business Style) */}
