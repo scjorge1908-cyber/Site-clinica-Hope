@@ -53,6 +53,8 @@ const realTags = (s) => (s.tags || []).filter((t) => t && String(t).trim() && St
 // Autora padrão dos artigos de psicoeducação: todos os atuais foram escritos pela Beatriz (Jorge, 19/11/2026).
 // Para mudar a autora de um artigo, preencha o campo authorSlug do artigo com o link (slug) da profissional.
 const AUTOR_PADRAO_SLUG = 'beatriz-santiago';
+// Assinatura completa da autora padrão no fim de cada artigo (Jorge, 24/11/2026).
+const AUTORA_PADRAO_ASSINATURA = { nome: 'Beatriz Figueiredo de Lima Santiago', crp: 'CRP 12/08781' };
 // Profissionais homens (para o título "Psicólogo"); as demais são tratadas como "Psicóloga".
 const MASCULINOS = new Set(['luciano-jorge-fernandes-moura', 'edson-mendonca-de-oliveira']);
 // Link de cada artigo: /artigos/<titulo-sem-acento>. A mesma regra está em src/App.tsx (slugArtigo).
@@ -225,8 +227,8 @@ function buildPages(data) {
     return { ...a, title: String(a.title).replace(/\s+/g, ' ').trim(), slug, author };
   });
   const personRef = (s) => {
-    const council = councilLabel(s);
-    return { '@type': 'Person', '@id': `${SITE}/${s.slug}#pessoa`, name: s.name, url: `${SITE}/${s.slug}`, jobTitle: roleLabel(s), ...(council ? { identifier: council } : {}), worksFor: clinicRef };
+    const council = s.slug === AUTOR_PADRAO_SLUG ? AUTORA_PADRAO_ASSINATURA.crp : councilLabel(s);
+    return { '@type': 'Person', '@id': `${SITE}/${s.slug}#pessoa`, name: s.slug === AUTOR_PADRAO_SLUG ? AUTORA_PADRAO_ASSINATURA.nome : s.name, ...(s.slug === AUTOR_PADRAO_SLUG && s.name !== AUTORA_PADRAO_ASSINATURA.nome ? { alternateName: s.name } : {}), url: `${SITE}/${s.slug}`, jobTitle: roleLabel(s), ...(council ? { identifier: council } : {}), worksFor: clinicRef };
   };
   const byline = (s) => s ? `Escrito por <a href="/${esc(s.slug)}">${esc(s.name)}</a>${councilLabel(s) ? ` · ${esc(councilLabel(s))}` : ''} · ${esc(CLINIC.name)}, ${esc(CLINIC.city)} - ${esc(CLINIC.state)}` : `Publicado por ${esc(CLINIC.name)}, ${esc(CLINIC.city)} - ${esc(CLINIC.state)}`;
 
@@ -379,6 +381,7 @@ ${contactBlock()}`),
 ${a.subtitle ? `<p class="ssr-muted">${esc(a.subtitle)}</p>` : ''}
 <p class="ssr-muted">${byline(s)}${published ? ` · <time datetime="${published}">${published.split('-').reverse().join('/')}</time>` : ''}</p>
 ${paragraphs(a.content || '')}
+${!s || s.slug === AUTOR_PADRAO_SLUG ? `<p class="ssr-muted">${esc(AUTORA_PADRAO_ASSINATURA.nome)} · ${esc(AUTORA_PADRAO_ASSINATURA.crp)}</p>` : ''}
 </article>
 ${s ? `<section aria-labelledby="ssr-autora"><h2 id="ssr-autora">Sobre a autora</h2><p><a href="/${esc(s.slug)}"><strong>${esc(s.name)}</strong></a>${councilLabel(s) ? ` · ${esc(councilLabel(s))}` : ''}</p>${s.desc ? `<p>${esc(clip(s.desc, 300))}</p>` : ''}</section>` : ''}
 <p><a href="/psicoeducacao">Ver todos os artigos</a></p>
