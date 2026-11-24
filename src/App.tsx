@@ -2626,11 +2626,13 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
 
         {!isCarousel && (
           <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
-            <div className="space-y-3">
-              <p className="text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2">
-                <Info size={14} /> Informação importante para quem for agendar pelo plano de saúde
-              </p>
-              <div className="text-[10px] bg-white/40 p-4 rounded-xl border border-secondary/5 text-primary/80 leading-relaxed space-y-3">
+            <details className="group">
+              <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none text-[11px] font-black uppercase text-secondary tracking-widest flex items-center gap-2 px-3 py-2.5 rounded-xl border border-secondary/30 bg-white/60 hover:bg-white hover:border-secondary/60 active:scale-[0.99] transition-all">
+                <Info size={14} className="shrink-0" />
+                <span className="flex-1">Informação importante para quem for agendar pelo plano de saúde</span>
+                <span aria-hidden className="shrink-0 text-sm leading-none transition-transform group-open:rotate-180">▾</span>
+              </summary>
+              <div className="mt-3 text-[10px] bg-white/40 p-4 rounded-xl border border-secondary/5 text-primary/80 leading-relaxed space-y-3">
                 <p className="font-bold text-primary">
                   📍 Pelo plano de saúde, o atendimento na Clínica Hope é somente presencial. A clínica não realiza atendimento online.
                 </p>
@@ -2641,7 +2643,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                   Na consulta, solicite ao médico uma guia de encaminhamento para psicoterapia com o CID do tratamento. Esse é um documento obrigatório para a autorização das sessões pelo plano de saúde.
                 </p>
               </div>
-            </div>
+            </details>
           </div>
         )}
       </div>
