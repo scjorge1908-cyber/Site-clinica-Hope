@@ -62,6 +62,12 @@ export function nascimentoValido(v: string, hoje = new Date()) {
 
 /** Plano PARTICULAR (sem convênio) — mesma regra do banco (agendamento_link_enviar, migration 183). */
 export const ehParticular = (plano: string) => /^particular$/i.test(String(plano ?? '').trim())
+/** Especialistas que atendem SÓ Particular, sem plano de saúde (Jorge, 24/11/2026): no site não aparece a opção de plano. */
+export const SO_PARTICULAR = ['monique', 'sandra']
+export const atendeSoParticular = (nome: string) => {
+  const n = String(nome ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  return SO_PARTICULAR.some((x) => n.split(/[^a-z]+/).includes(x))
+}
 
 /** O que falta (chaves) para enviar. `anexos` = tipos já escolhidos. */
 export function faltando(d: Partial<Dados>, anexos: TipoAnexo[], planos: string[]): string[] {
