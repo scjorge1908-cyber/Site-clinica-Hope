@@ -107,6 +107,7 @@ import {
 import { onAuthStateChanged } from 'firebase/auth';
 import { useAgendaHopeCore, comAgendaHopeCore, agendaDe } from './lib/agendaHopeCore';
 import { AgendamentoSite } from './components/AgendamentoSite';
+import { atendeSoParticular } from './lib/agendamentoRegras';
 import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit, trackSpecialistProfileView } from './analytics';
 import { WHATSAPP_URL, WHATSAPP_DISPLAY_NUMBER } from './contact';
@@ -2200,6 +2201,8 @@ export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarous
   const [sheetSchedule, setSheetSchedule] = useState<Specialist['schedule'] | null>(spec.schedule || null);
   
   const particularPlan = insurancePlans?.find(p => (p?.name || '').toLowerCase() === 'particular');
+  // Só Particular (Jorge, 24/11/2026): o cartão não oferece plano de saúde para estas especialistas.
+  const soParticular = atendeSoParticular(spec.name);
   
   useEffect(() => {
     setSheetSchedule(spec.schedule || null);
@@ -2614,7 +2617,7 @@ export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarous
 
                           {(isPlanListOpen || (!!selectedTime && !selectedPlan)) && (
                           <div className="grid grid-cols-2 gap-2 pt-2">
-                            {(!spec.insurancePlans || (particularPlan && spec.insurancePlans.includes(particularPlan.id))) && (
+                            {(soParticular || !spec.insurancePlans || (particularPlan && spec.insurancePlans.includes(particularPlan.id))) && (
                               <button
                                 type="button"
                                 onClick={() => { setSelectedPlan(selectedPlan === 'Particular' ? null : 'Particular'); setIsPlanListOpen(false); }}
@@ -2630,6 +2633,7 @@ export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarous
                             )}
                             {insurancePlans
                               .filter(p => p.name.toLowerCase() !== 'particular')
+                              .filter(() => !soParticular)
                               .filter(plan => {
                                 if (spec.insurancePlans) {
                                   return spec.insurancePlans.includes(plan.id);

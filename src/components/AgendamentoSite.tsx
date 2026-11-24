@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ANEXOS, MAX_ANEXO_BYTES, MAX_TOTAL_BYTES, SEXOS, ehParticular, faltando, mascaraCep, mascaraCpf, mascaraData, mascaraTelefone, nomeCampo, pedeQr,
+  ANEXOS, MAX_ANEXO_BYTES, MAX_TOTAL_BYTES, SEXOS, atendeSoParticular, ehParticular, faltando, mascaraCep, mascaraCpf, mascaraData, mascaraTelefone, nomeCampo, pedeQr,
   type Dados, type TipoAnexo,
 } from '../lib/agendamentoRegras';
 
@@ -159,8 +159,11 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
   useEffect(() => { if (etapa === 'form' && !modo && d.plano) setModo(ehParticular(d.plano) ? 'particular' : 'plano'); }, [etapa, d.plano]); // eslint-disable-line react-hooks/exhaustive-deps
   const etapas = part ? ETAPAS.filter((e) => e.id !== 'pedido') : ETAPAS;
   const etapaDoCampo = (k: string) => Math.max(0, etapas.findIndex((e) => e.campos.includes(k)));
-  const planosConvenio = (reserva?.planos ?? []).filter((p) => !ehParticular(p) && planoAtivo(p));
+  // Especialista que atende só Particular (Jorge, 24/11/2026): nenhum plano de saúde é oferecido.
+  const soParticular = atendeSoParticular(especialista);
+  const planosConvenio = soParticular ? [] : (reserva?.planos ?? []).filter((p) => !ehParticular(p) && planoAtivo(p));
   const particularNome = (reserva?.planos ?? []).find((p) => ehParticular(p)) ?? '';
+  useEffect(() => { if (etapa === 'form' && soParticular && particularNome && (modo !== 'particular' || d.plano !== particularNome)) { setModo('particular'); setD((x) => ({ ...x, plano: particularNome })); } }, [etapa, soParticular, particularNome, modo, d.plano]);
   const qr = !part && pedeQr(d.plano, d.carteirinha);
   const anexosVisiveis = ANEXOS.filter((a) => (part ? a.tipo === 'rg' : a.tipo !== 'qr' || qr));
   const set = (k: keyof Dados, v: string) => { setD((x) => ({ ...x, [k]: v })); setFalta((f) => f.filter((y) => y !== k)); };
@@ -307,15 +310,15 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
                 <div className="grid gap-3">
                   <h3 className="text-base font-black text-gray-900">Como será o atendimento?</h3>
                   {particularNome && (
-                    <div className="grid grid-cols-2 gap-2">
-                      {([['particular', 'Particular'], ['plano', 'Plano de saúde']] as const).map(([m, rot]) => (
+                    <div className={`grid gap-2 ${soParticular ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                      {([['particular', 'Particular'], ['plano', 'Plano de saúde']] as const).filter(([m]) => !soParticular || m === 'particular').map(([m, rot]) => (
                         <button key={m} type="button" aria-pressed={modo === m}
                           onClick={() => { setErro(''); setModo(m); set('plano', m === 'particular' ? particularNome : (ehParticular(d.plano) ? '' : d.plano)); }}
                           className={`rounded-xl border-2 py-3.5 font-black text-sm ${modo === m ? 'border-[#0f3d63] bg-blue-50 text-[#0f3d63]' : 'border-gray-300 text-gray-700'}`}>{rot}</button>
                       ))}
                     </div>
                   )}
-                  {(modo === 'plano' || !particularNome) && (
+                  {!soParticular && (modo === 'plano' || !particularNome) && (
                     <label className="grid gap-1 text-xs font-bold text-gray-600">
                       <span>Qual plano?<i className="not-italic text-red-600"> *</i></span>
                       <select value={part ? '' : d.plano} onChange={(e) => { setModo('plano'); set('plano', e.target.value); }} className={`${campoCls} ${marca('plano')}`}>
