@@ -108,8 +108,8 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useAgendaHopeCore, comAgendaHopeCore, agendaDe } from './lib/agendaHopeCore';
 import { AgendamentoSite } from './components/AgendamentoSite';
 import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
-import { trackWhatsAppClick, trackTelegramClick, trackScheduleClick, trackFormSubmit, trackSpecialistProfileView } from './analytics';
-import { WHATSAPP_URL, WHATSAPP_DISPLAY_NUMBER, TELEGRAM_URL } from './contact';
+import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit, trackSpecialistProfileView } from './analytics';
+import { WHATSAPP_URL, WHATSAPP_DISPLAY_NUMBER } from './contact';
 
 // Placeholder/Fallback components for Sublocação since it might not be deployed yet in all environments
 const SublocacaoSystemWrapper = ({ onNavigate }: any) => {
@@ -1520,18 +1520,6 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
                 <MessageCircle className="w-5 h-5 shrink-0" />
                 Agendar pelo WhatsApp
               </a>
-              <a
-                href={`${TELEGRAM_URL}?text=${encodeURIComponent('Olá, estou vindo pelo site da Hope clinicahopebrasil.com.br e gostaria de agendar uma consulta')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => trackTelegramClick('hero_button')}
-                id="hero-cta-telegram"
-                data-event="contato_telegram"
-                className="flex w-full items-center justify-center gap-2 whitespace-nowrap px-4 py-3 rounded-xl bg-[#0077b6] text-white font-bold text-sm hover:bg-[#006fa6] transition-all active:scale-95"
-              >
-                <Send className="w-5 h-5 shrink-0" />
-                Agendar pelo Telegram
-              </a>
             </div>
 
             {settings?.insurancePlans && settings.insurancePlans.length > 0 && (
@@ -2766,14 +2754,14 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
 
   return (
     <Layout activeScreen={Screen.CorpoClinico} onNavigate={onNavigate} settings={settings}>
-      <header id="topo-especialistas" className="section-padding bg-background pt-32 pb-12">
-        <div className="max-w-7xl mx-auto text-center px-6 space-y-6">
+      <header id="topo-especialistas" className="section-padding bg-background !pt-28 !pb-6">
+        <div className="max-w-7xl mx-auto text-center px-6 space-y-4">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <span className="inline-block px-4 py-1.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-widest shadow-sm">
               Encontre o especialista certo
             </span>
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold text-primary tracking-tight mt-8">Especialistas</h1>
-            <p className="text-base md:text-lg text-on-surface-variant font-medium max-w-2xl mx-auto mt-6 leading-relaxed">
+            <h1 className="text-3xl md:text-5xl font-extrabold text-primary tracking-tight mt-4">Especialistas</h1>
+            <p className="text-sm md:text-base text-on-surface-variant font-medium max-w-2xl mx-auto mt-2 leading-relaxed">
               Especialistas dedicados ao acolhimento singular e ético.
             </p>
           </motion.div>
@@ -2782,7 +2770,7 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
 
       {/* Guide Stepper */}
       <section className="px-6 pb-20">
-        <div className="max-w-4xl mx-auto bg-white rounded-[3.5rem] shadow-xl border border-outline-alt/30 overflow-hidden">
+        <div className="max-w-4xl mx-auto bg-white rounded-[2.5rem] shadow-xl border border-outline-alt/30 overflow-hidden">
           <div className="h-2 bg-surface-container">
             <motion.div 
               className="h-full bg-primary"
@@ -2790,10 +2778,10 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
             />
           </div>
           
-          <div className="p-8 md:p-16 space-y-12">
-            <div className="text-center space-y-4">
+          <div className="p-5 md:p-8 space-y-6">
+            <div className="text-center space-y-2">
               <span className="text-xs font-bold text-secondary uppercase tracking-[0.3em]">Passo {Math.floor(step)} de 3</span>
-              <h2 className="text-3xl font-bold text-primary">
+              <h2 className="text-xl md:text-2xl font-bold text-primary">
                 {step === 1 && "Para quem você busca atendimento?"}
                 {step === 1.5 && "Qual a idade do paciente?"}
                 {step === 3 && "Preferência de horário?"}
@@ -2802,20 +2790,20 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
 
             <AnimatePresence mode="wait">
               {step === 1 && (
-                <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="grid grid-cols-4 gap-2 md:gap-4">
                   {Object.values(AgeGroup).map(age => (
                     <button 
                       key={age} 
                       onClick={() => handleAgeGroupSelect(age)} 
-                      className={`p-8 rounded-[2rem] border-2 flex flex-col items-center gap-4 font-bold text-xl transition-all ${
+                      className={`px-1 py-3 md:p-4 rounded-2xl border-2 flex flex-col items-center gap-2 font-bold text-[10px] sm:text-sm md:text-base transition-all ${
                         selectedAge === age ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-outline-alt/50 text-primary hover:border-primary'
                       }`}
                     >
-                      <div className={`p-4 rounded-2xl ${selectedAge === age ? 'bg-white/20' : 'bg-primary/5'}`}>
-                        {age.toLowerCase().includes('criança') && <Baby size={32} />}
-                        {age.toLowerCase().includes('adolescente') && <Users size={32} />}
-                        {age.toLowerCase().includes('adulto') && <User size={32} />}
-                        {age.toLowerCase().includes('idoso') && <Users size={32} />}
+                      <div className={`p-2 rounded-xl ${selectedAge === age ? 'bg-white/20' : 'bg-primary/5'}`}>
+                        {age.toLowerCase().includes('criança') && <Baby size={22} />}
+                        {age.toLowerCase().includes('adolescente') && <Users size={22} />}
+                        {age.toLowerCase().includes('adulto') && <User size={22} />}
+                        {age.toLowerCase().includes('idoso') && <Users size={22} />}
                       </div>
                       {age}
                     </button>
@@ -2875,9 +2863,9 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
         </div>
 
         {/* Results List */}
-        <div id="lista-especialistas" className="max-w-7xl mx-auto mt-32 space-y-20">
-          <div className="flex justify-between items-end border-b border-outline-alt/50 pb-8">
-            <h2 className="text-4xl font-bold text-primary tracking-tight">Especialistas Recomendados</h2>
+        <div id="lista-especialistas" className="max-w-7xl mx-auto mt-12 space-y-12">
+          <div className="flex justify-between items-end border-b border-outline-alt/50 pb-4">
+            <h2 className="text-2xl md:text-3xl font-bold text-primary tracking-tight">Especialistas Recomendados</h2>
             <button onClick={resetFilters} className="text-secondary font-bold text-sm underline">Limpar filtros</button>
           </div>
 
