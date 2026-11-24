@@ -1579,35 +1579,20 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
         </div>
       </section>
 
-      {/* Equipe (Jorge 24/11/2026): no lugar do carrossel, um convite para ver todos os especialistas */}
-      <section className="px-6 py-14 md:py-20 bg-surface-container-low border-y border-outline-alt/30">
-        <button
-          type="button"
-          onClick={() => onNavigate(Screen.CorpoClinico)}
-          id="home-ver-especialistas"
-          data-event="ver_especialistas"
-          className="group w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-6 md:gap-10 p-6 md:p-10 rounded-[2.5rem] bg-white border border-outline-alt/40 soft-shadow hover:border-primary/40 hover:-translate-y-0.5 active:scale-[0.99] transition-all text-center md:text-left"
-        >
-          {specialists.length > 0 && (
-            <div className="flex -space-x-4 shrink-0">
-              {specialists.filter((sp) => sp.img).slice(0, 5).map((sp) => (
-                <img key={sp.id} src={sp.img} alt="" loading="lazy" className="w-14 h-14 md:w-16 md:h-16 rounded-full object-cover object-top border-4 border-white shadow-md grayscale group-hover:grayscale-0 transition-all duration-500" />
-              ))}
-              {specialists.length > 5 && (
-                <span className="w-14 h-14 md:w-16 md:h-16 rounded-full border-4 border-white bg-primary text-white text-sm font-bold flex items-center justify-center shadow-md">+{specialists.length - 5}</span>
-              )}
-            </div>
-          )}
-          <div className="flex-1 space-y-1">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Nossa equipe</p>
-            <h2 className="text-2xl md:text-3xl font-bold text-primary tracking-tight">Conheça nossos especialistas</h2>
-            <p className="text-sm text-on-surface-variant font-medium">Veja todos os profissionais, abordagens e horários disponíveis para agendar.</p>
-          </div>
-          <span className="shrink-0 inline-flex items-center gap-2 px-6 py-3.5 rounded-full bg-primary text-white font-bold text-sm group-hover:bg-primary/90 transition-all">
-            Ver todos
+      {/* Especialistas (Jorge 24/11/2026): sem carrossel — só o título e o botão para a página Especialistas */}
+      <section className="px-6 py-12 md:py-16 bg-surface-container-low border-y border-outline-alt/30">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <h2 className="text-4xl font-bold text-primary tracking-tight text-center md:text-left">Especialistas</h2>
+          <button 
+            onClick={() => onNavigate(Screen.CorpoClinico)}
+            id="home-ver-especialistas"
+            data-event="ver_especialistas"
+            className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center"
+          >
+            Ver todos os especialistas
             <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
-          </span>
-        </button>
+          </button>
+        </div>
       </section>
       
       {/* Testimonials (Google My Business Style) */}
