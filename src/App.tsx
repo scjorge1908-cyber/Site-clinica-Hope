@@ -249,6 +249,8 @@ function getActiveShifts(spec: Specialist): Shift[] {
 
 // SublocaHope fora do ar por enquanto. Para reativar no site, mude para true.
 const SUBLOCACAO_ATIVA = false;
+// Jorge 24/11/2026: a sublocação do site é o Subloca Fácil do HopeCore (mesmas salas, regras e pagamentos), versão web do Hope App.
+const SUBLOCACAO_URL = 'https://hopecore.com.br/app';
 
 const RESERVED_ROUTES: Record<string, Screen> = {
   'especialistas': Screen.CorpoClinico,
@@ -1282,6 +1284,16 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
                 </button>
               );
             })}
+            <a
+              href={SUBLOCACAO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              id="menu-sublocacao"
+              data-event="sublocacao_hopecore"
+              className="text-sm font-bold tracking-tight text-on-surface-variant/70 hover:text-primary transition-all"
+            >
+              Sublocação de salas
+            </a>
           </nav>
 
           <div className="flex items-center gap-4">
@@ -1343,6 +1355,16 @@ function Layout({ children, activeScreen, onNavigate, settings }: LayoutProps) {
                     )}
                   </button>
                 ))}
+                <a
+                  href={SUBLOCACAO_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setMenuOpen(false)}
+                  data-event="sublocacao_hopecore"
+                  className="flex items-center p-5 rounded-3xl text-lg font-bold transition-all bg-surface-container-low text-primary hover:bg-surface-container"
+                >
+                  Sublocação de salas
+                </a>
               </div>
               
               <div className="mt-auto pt-10 space-y-6">
@@ -1670,6 +1692,28 @@ function HomeScreen({ onNavigate, settings, approaches, specialists, isAdminUnlo
         </div>
       </section>
       
+      {/* Sublocação (Jorge 24/11/2026): leva ao Subloca Fácil do HopeCore */}
+      <section className="px-6 py-12 md:py-16 bg-background">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6 text-center md:text-left">
+          <div className="space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Para profissionais de saúde</p>
+            <h2 className="text-3xl md:text-4xl font-bold text-primary tracking-tight">Sublocação de salas</h2>
+            <p className="text-on-surface-variant font-medium max-w-xl">Veja as salas livres, reserve por hora e pague por Pix, cartão ou boleto.</p>
+          </div>
+          <a
+            href={SUBLOCACAO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            id="home-sublocacao"
+            data-event="sublocacao_hopecore"
+            className="group flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-full font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 soft-shadow self-center"
+          >
+            Ver salas disponíveis
+            <ArrowForward size={18} className="group-hover:translate-x-1 transition-transform" />
+          </a>
+        </div>
+      </section>
+
       {/* Testimonials (Google My Business Style) */}
       <section className="section-padding bg-white overflow-hidden">
         <div className="max-w-7xl mx-auto space-y-12">
