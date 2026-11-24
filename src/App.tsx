@@ -250,7 +250,7 @@ function getActiveShifts(spec: Specialist): Shift[] {
 // SublocaHope fora do ar por enquanto. Para reativar no site, mude para true.
 const SUBLOCACAO_ATIVA = false;
 // Jorge 24/11/2026: a sublocação do site é o Subloca Fácil do HopeCore (mesmas salas, regras e pagamentos), versão web do Hope App.
-const SUBLOCACAO_URL = 'https://www.hopecore.com.br/app';
+const SUBLOCACAO_URL = 'https://www.hopecore.com.br/app/#/subloca';
 
 const RESERVED_ROUTES: Record<string, Screen> = {
   'especialistas': Screen.CorpoClinico,
