@@ -38,7 +38,13 @@ type Reserva = { caminho: string; expira_em: string; psicologa: string; dia: str
 
 const normalizar = (s: string) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 /** Convênio escolhido no site → nome do convênio no sistema da clínica (ex.: "Unimed" → "UNIMED GRANDE FLORIANOPOLIS"). */
-function planoDoSistema(site: string, planos: string[]): string {
+/** Convênios que a clínica não atende mais — não aparecem no site. */
+const PLANOS_FORA = ['select'];
+const planoAtivo = (p: string) => !PLANOS_FORA.includes(normalizar(p));
+/** Nome mostrado no site (o valor enviado continua o nome do sistema). */
+const rotuloPlano = (p: string) => (normalizar(p).startsWith('unimed') ? 'Unimed' : p);
+function planoDoSistema(site: string, todos: string[]): string {
+  const planos = todos.filter(planoAtivo);
   const n = normalizar(site);
   if (!n) return '';
   return planos.find((p) => normalizar(p) === n) ?? planos.find((p) => normalizar(p).startsWith(n + ' ') || normalizar(p).includes(n)) ?? '';
@@ -153,7 +159,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
   useEffect(() => { if (etapa === 'form' && !modo && d.plano) setModo(ehParticular(d.plano) ? 'particular' : 'plano'); }, [etapa, d.plano]); // eslint-disable-line react-hooks/exhaustive-deps
   const etapas = part ? ETAPAS.filter((e) => e.id !== 'pedido') : ETAPAS;
   const etapaDoCampo = (k: string) => Math.max(0, etapas.findIndex((e) => e.campos.includes(k)));
-  const planosConvenio = (reserva?.planos ?? []).filter((p) => !ehParticular(p));
+  const planosConvenio = (reserva?.planos ?? []).filter((p) => !ehParticular(p) && planoAtivo(p));
   const particularNome = (reserva?.planos ?? []).find((p) => ehParticular(p)) ?? '';
   const qr = !part && pedeQr(d.plano, d.carteirinha);
   const anexosVisiveis = ANEXOS.filter((a) => (part ? a.tipo === 'rg' : a.tipo !== 'qr' || qr));
@@ -314,7 +320,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
                       <span>Qual plano?<i className="not-italic text-red-600"> *</i></span>
                       <select value={part ? '' : d.plano} onChange={(e) => { setModo('plano'); set('plano', e.target.value); }} className={`${campoCls} ${marca('plano')}`}>
                         <option value="">Escolha o plano</option>
-                        {planosConvenio.map((p) => <option key={p}>{p}</option>)}
+                        {planosConvenio.map((p) => <option key={p} value={p}>{rotuloPlano(p)}</option>)}
                       </select>
                     </label>
                   )}
@@ -399,7 +405,7 @@ export function AgendamentoSite({ slug, especialista, dia, hora, planoSite, onFe
                   <h3 className="text-base font-black text-gray-900">Confira e finalize</h3>
                   <dl className="grid text-sm">
                     {([
-                      ['Atendimento', part ? 'Particular' : d.plano], ['Paciente', d.nome], ['Nascimento', `${d.nascimento}${idade !== null ? ` (${idade} anos)` : ''}`], ['CPF', d.cpf],
+                      ['Atendimento', part ? 'Particular' : rotuloPlano(d.plano)], ['Paciente', d.nome], ['Nascimento', `${d.nascimento}${idade !== null ? ` (${idade} anos)` : ''}`], ['CPF', d.cpf],
                       ['Endereço', [d.rua, d.numero, d.complemento, d.bairro, d.cidade].filter(Boolean).join(', ')], ['E-mail', d.email], ['WhatsApp', d.telefone],
                       ['Documentos', anexosVisiveis.map((a) => a.nome).join(', ')],
                     ] as [string, string][]).map(([k, v]) => (

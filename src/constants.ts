@@ -17,7 +17,6 @@ export const DEFAULT_HOME_SETTINGS: HomeSettings = {
     { id: '1', name: 'Particular', logo: 'https://cdn-icons-png.flaticon.com/512/2854/2854580.png' },
     { id: '2', name: 'Unimed', logo: 'https://vagasprofissoes.com.br/wp-content/uploads/2019/12/Logo-Unimed.png' },
     { id: '3', name: 'Bradesco', logo: 'https://vagasprofissoes.com.br/wp-content/uploads/2020/01/logo-bradesco-saude.png' },
-    { id: '4', name: 'Select', logo: 'https://www.saudebradesco.com.br/wp-content/uploads/2021/04/bradesco-saude-select.png' },
     { id: '5', name: 'Geap', logo: 'https://www.geap.com.br/wp-content/uploads/2018/11/GEAP-Logomarca-Site-Colorida-2x.png' },
     { id: '6', name: 'Celos', logo: 'https://www.celos.com.br/wp-content/uploads/2018/05/celos_logo_site.png' }
   ]
