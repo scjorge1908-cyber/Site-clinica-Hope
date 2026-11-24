@@ -2141,7 +2141,22 @@ function sortKeys(obj: any): any {
   }, {});
 }
 
-function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate, isSyncing, onSyncRequest }: SpecialistCardProps) {
+/** Jorge 24/11/2026: card padronizado — primeiro + último nome (sem "Psi."), abordagem curta. O nome completo aparece ao passar o mouse/dedo. */
+const semPsi = (n: string) => (n || '').replace(/^\s*psi(c[oó]log[oa])?\.?\s+/i, '').trim();
+const nomeCurto = (n: string) => {
+  const p = semPsi(n).split(/\s+/).filter(Boolean);
+  return p.length <= 2 ? p.join(' ') : `${p[0]} ${p[p.length - 1]}`;
+};
+const abordagemCurta = (a: string) => {
+  const t = (a || '').toLowerCase();
+  if (t.includes('cognitivo') || /\btcc\b/.test(t)) return 'TCC';
+  if (t.includes('psican')) return 'Psicanálise';
+  return a;
+};
+const ORDEM_IDADES = ['criança', 'adolescente', 'adulto', 'idoso'];
+
+export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate, isSyncing, onSyncRequest }: SpecialistCardProps) {
+  const [nomeCompleto, setNomeCompleto] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
@@ -2277,11 +2292,19 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
           </div>
         )}
       </div>
-      <div className="p-8 space-y-6 flex-grow flex flex-col justify-between">
+      <div className="p-8 space-y-6 flex-grow flex flex-col justify-start">
         <div className="space-y-4">
           <div className="flex justify-between items-start">
-            <div className="flex flex-col">
-              <h4 className="text-2xl font-bold text-primary">{spec.name}</h4>
+            <div className="flex flex-col min-w-0 relative">
+              <h4
+                className="text-2xl font-bold text-primary truncate cursor-default"
+                onMouseEnter={() => setNomeCompleto(true)}
+                onMouseLeave={() => setNomeCompleto(false)}
+                onClick={() => setNomeCompleto((v) => !v)}
+              >{nomeCurto(spec.name)}</h4>
+              {nomeCompleto && nomeCurto(spec.name) !== semPsi(spec.name) && (
+                <span className="absolute left-0 top-full z-20 mt-1 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold shadow-lg whitespace-nowrap">{semPsi(spec.name)}</span>
+              )}
               <button 
                 onClick={() => {
                   let scheduleSummary = '';
@@ -2327,19 +2350,20 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
                 Compartilhar
               </button>
             </div>
-            <Verified size={20} className="text-secondary" />
+            <Verified size={20} className="text-secondary shrink-0" />
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest rounded-full">
+            <span title={spec.spec} className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-container text-white text-[10px] font-bold uppercase tracking-widest rounded-full max-w-full whitespace-nowrap">
               {getSpecialtyIcon(spec.spec)}
-              {spec.spec}
+              <span className="truncate">{abordagemCurta(spec.spec)}</span>
             </span>
           </div>
 
           <div className="space-y-2">
-            <p className={`text-on-surface-variant text-sm font-medium leading-relaxed italic ${!isDescExpanded ? 'line-clamp-3' : ''}`}>
+            <p className={`text-on-surface-variant text-sm font-medium leading-relaxed italic ${!isDescExpanded ? 'line-clamp-3 h-[4.27rem]' : ''}`}>
               "{spec.desc}"
             </p>
+            {!(spec.desc && spec.desc.length > 120) && <div className="h-[15px]" aria-hidden />}
             {spec.desc && spec.desc.length > 120 && (
               <button 
                 onClick={() => setIsDescExpanded(!isDescExpanded)}
@@ -2354,8 +2378,8 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
         
         <div className="space-y-6">
           {!isCarousel && (
-            <div className="flex flex-wrap gap-2">
-              {(spec.ageGroups || []).map(g => (
+            <div className="flex flex-wrap gap-2 content-start min-h-[3.5rem]">
+              {[...(spec.ageGroups || [])].sort((a, b) => ORDEM_IDADES.findIndex((o) => (a || '').toLowerCase().includes(o)) - ORDEM_IDADES.findIndex((o) => (b || '').toLowerCase().includes(o))).map(g => (
                 <span key={g} className="inline-flex items-center gap-1.5 bg-surface-container text-on-surface-variant px-3 py-1 rounded-full text-[10px] font-bold uppercase">
                   {(g || '').toLowerCase().includes('criança') && <Baby size={12} />}
                   {(g || '').toLowerCase().includes('adolescente') && <Users size={12} />}
@@ -2633,7 +2657,7 @@ function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onN
         )}
 
         {!isCarousel && (
-          <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-6 p-6 border-t border-secondary/10">
+          <div className="bg-secondary-container/5 -mx-8 -mb-8 mt-auto p-6 border-t border-secondary/10">
             <details className="group rounded-2xl border border-secondary/20 bg-white/70 shadow-sm overflow-hidden transition-colors open:border-secondary/40 open:bg-white">
               <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none flex items-center gap-3 px-4 py-3 hover:bg-secondary/5 active:bg-secondary/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary/40 rounded-2xl">
                 <span aria-hidden className="shrink-0 w-8 h-8 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center">
