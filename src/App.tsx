@@ -108,6 +108,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useAgendaHopeCore, comAgendaHopeCore, agendaDe } from './lib/agendaHopeCore';
 import { AgendamentoSite } from './components/AgendamentoSite';
 import { atendeSoParticular } from './lib/agendamentoRegras';
+import { instagramUsuario, instagramLink } from './lib/instagram';
 import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit, trackSpecialistProfileView } from './analytics';
 import { WHATSAPP_URL, WHATSAPP_DISPLAY_NUMBER } from './contact';
@@ -2384,6 +2385,20 @@ export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarous
                 </div>
                 Compartilhar
               </button>
+              {instagramUsuario(spec.instagram) && (
+                <a
+                  href={instagramLink(instagramUsuario(spec.instagram))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-event="especialista_instagram"
+                  className="group flex items-center gap-2 text-[#C13584] hover:text-[#962D6E] transition-all text-[9px] font-black uppercase tracking-[0.1em] mt-1.5 w-fit"
+                >
+                  <div className="w-5 h-5 rounded-full bg-pink-100 flex items-center justify-center group-hover:bg-pink-200 transition-colors">
+                    <Instagram size={10} />
+                  </div>
+                  <span className="normal-case tracking-normal text-[11px] font-bold">@{instagramUsuario(spec.instagram)}</span>
+                </a>
+              )}
             </div>
             <Verified size={20} className="text-secondary shrink-0" />
           </div>
@@ -4417,6 +4432,13 @@ function AdminScreen({
                       <div className="space-y-1">
                         <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Tags (separadas por vírgula)</label>
                         <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={(s.tags || []).join(', ')} onChange={e => updateSpecialist(s.id, { tags: e.target.value.split(',').map(t => t.trim()) })} placeholder="Tags" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Instagram profissional</label>
+                        <input className="w-full p-2 border-b border-outline focus:border-primary outline-none" value={s.instagram || ''} onChange={e => updateSpecialist(s.id, { instagram: e.target.value.trim() })} placeholder="@usuario ou link do perfil" />
+                        {s.instagram && !instagramUsuario(s.instagram) && (
+                          <p className="text-[10px] text-red-600 ml-1">Não reconheci esse Instagram. Use só o @usuario.</p>
+                        )}
                       </div>
                       <div className="md:col-span-2 space-y-1">
                         <label className="text-[9px] font-black uppercase text-secondary/70 ml-1">Minibiografia</label>

@@ -118,7 +118,7 @@ async function loadFromFirestore() {
   }
 
   const settings = await safe('settings/home', () => getDoc('settings/home', ['clinicName', 'heroTitle', 'heroSubtitle', 'heroText', 'seoTitle', 'seoText', 'insurancePlans']), {});
-  const specialists = await safe('specialists', () => list('specialists', ['name', 'crp', 'councilType', 'customCouncil', 'noCouncil', 'spec', 'tags', 'desc', 'ageGroups', 'shifts', 'insurancePlans', 'slug']), []);
+  const specialists = await safe('specialists', () => list('specialists', ['name', 'crp', 'councilType', 'customCouncil', 'noCouncil', 'spec', 'tags', 'desc', 'ageGroups', 'shifts', 'insurancePlans', 'slug', 'instagram']), []);
   const approaches = await safe('approaches', () => list('approaches', ['title', 'desc', 'details']), []);
   const insurance = await safe('insurance_plans', () => list('insurance_plans', ['name']), []);
   const articles = await safe('psicoeducacao_articles', () => list('psicoeducacao_articles', ['title', 'subtitle', 'content', 'createdAt', 'updatedAt', 'authorSlug']), []);
@@ -130,6 +130,8 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 const stripTags = (s) => String(s ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '').replace(/[*_#>`]/g, '').replace(/&nbsp;/g, ' ').trim();
 const clip = (s, n) => { const t = stripTags(s).replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, '') + '…' : t; };
 const paragraphs = (s) => stripTags(s).split(/\n{1,}/).map((p) => p.trim()).filter(Boolean).map((p) => `<p>${esc(p)}</p>`).join('\n');
+// Instagram: aceita @usuario, usuario ou link; mesma regra de src/lib/instagram.ts.
+const instagramUsuario = (v) => { let u = String(v || '').trim(); const m = u.match(/instagram\.com\/([^/?#\s]+)/i); if (m) u = m[1]; u = u.replace(/^@+/, '').trim(); return /^[a-z0-9._]{1,30}$/i.test(u) ? u : ''; };
 const isValidSlug = (slug) => typeof slug === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(slug) && !RESERVED.has(slug.toLowerCase());
 const councilLabel = (s) => {
   if (s.noCouncil || !s.crp) return '';
@@ -316,6 +318,7 @@ ${myArticles.length ? `<h2>Artigos escritos por ${esc(s.name)}</h2><ul>${myArtic
 ${(s.ageGroups || []).length ? `<h2>Público atendido</h2><p>${esc(joinPt(s.ageGroups))}.</p>` : ''}
 ${(s.shifts || []).length ? `<h2>Turnos de atendimento</h2><p>${esc(joinPt(s.shifts))}.</p>` : ''}
 ${plans.length ? `<h2>Convênios</h2><ul>${plans.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
+${instagramUsuario(s.instagram) ? `<p>Instagram: <a href="https://www.instagram.com/${esc(instagramUsuario(s.instagram))}/" rel="noopener">@${esc(instagramUsuario(s.instagram))}</a></p>` : ''}
 </article>
 <p><a href="/especialistas">Ver todos os especialistas</a></p>
 ${contactBlock()}`),
@@ -329,6 +332,7 @@ ${contactBlock()}`),
         ...(s.spec && s.spec !== role ? { knowsAbout: [s.spec, ...tags] } : (tags.length ? { knowsAbout: tags } : {})),
         ...(council ? { identifier: council } : {}),
         ...(s.desc ? { description: clip(s.desc, 300) } : {}),
+        ...(instagramUsuario(s.instagram) ? { sameAs: [`https://www.instagram.com/${instagramUsuario(s.instagram)}/`] } : {}),
         worksFor: clinicRef,
         workLocation: { '@type': 'Place', name: CLINIC.name, address: FULL_ADDRESS },
       }],
