@@ -114,6 +114,8 @@ export interface Specialist {
   };
   insurancePlans?: string[];
   slug?: string;
+  /** Instagram profissional (@usuario ou link). Aparece no cartão/página do profissional. */
+  instagram?: string;
   /** Horários vindos do HopeCore (marcação "Agenda no site"); não é gravado no Firebase. */
   agendaHopeCore?: boolean;
   /** Horários que outra pessoa está agendando agora pelo site (trava de 20 min) ou aguardando a equipe. Não vai ao Firebase. */
