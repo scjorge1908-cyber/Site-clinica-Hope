@@ -109,6 +109,7 @@ import { useAgendaHopeCore, comAgendaHopeCore, agendaDe } from './lib/agendaHope
 import { AgendamentoSite } from './components/AgendamentoSite';
 import { atendeSoParticular } from './lib/agendamentoRegras';
 import { instagramUsuario, instagramLink } from './lib/instagram';
+import { mapaLinksCurtos } from './lib/linkCurto';
 import { onSnapshot, collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { trackWhatsAppClick, trackScheduleClick, trackFormSubmit, trackSpecialistProfileView } from './analytics';
 import { WHATSAPP_URL, WHATSAPP_DISPLAY_NUMBER } from './contact';
@@ -281,6 +282,25 @@ export function getScreenFromPathname(path: string): Screen | null {
   // /artigos/<slug> abre a tela de Psicoeducação já com o artigo aberto (link vindo do Google e das IAs).
   if (cleanPath.startsWith('artigos/')) return Screen.Psicoeducacao;
   return RESERVED_ROUTES[cleanPath] || null;
+}
+
+/** Acha o profissional pelo endereço: o link completo (slug) ou o link curto (nome-sobrenome, ex.: /brenna-vasconcelo). */
+function especialistaDoEndereco(lista: Specialist[] | null | undefined, endereco: string | null | undefined): Specialist | undefined {
+  const e = String(endereco || '').toLowerCase().trim();
+  if (!e || !lista || getScreenFromPathname(e)) return undefined;
+  const porSlug = lista.find((s) => s.slug && s.slug.toLowerCase() === e);
+  if (porSlug) return porSlug;
+  const id = mapaLinksCurtos(lista, (c) => !!getScreenFromPathname(c)).get(e);
+  return id ? lista.find((s) => s.id === id) : undefined;
+}
+
+/** Depois que a pessoa sai da tela aberta pelo link da profissional, a tela Especialistas volta a mostrar todos. */
+let linkProfissionalJaUsado = false;
+
+/** Profissional aberto pelo link (/<link> ou ?psi=<link>), se houver. */
+function especialistaDoLink(lista: Specialist[] | null | undefined): Specialist | undefined {
+  const pathname = window.location.pathname.replace(/^\/|\/$/g, '').trim();
+  return especialistaDoEndereco(lista, pathname) || especialistaDoEndereco(lista, new URLSearchParams(window.location.search).get('psi'));
 }
 
 export default function App() {
@@ -977,9 +997,7 @@ export default function App() {
 
     // 2. Verifica se o pathname bate com o slug de algum especialista
     if (pathname !== '') {
-      const matchedSpecialist = specialists.find(
-        (s) => s.slug && s.slug.toLowerCase() === pathname.toLowerCase()
-      );
+      const matchedSpecialist = especialistaDoEndereco(specialists, pathname);
       if (matchedSpecialist) {
         setCurrentScreen(Screen.CorpoClinico);
       } else {
@@ -992,9 +1010,7 @@ export default function App() {
 
     // 3. Fallback de redundância para ?psi=slug
     if (psiParam) {
-      const matchedSpecialist = specialists.find(
-        (s) => s.slug && s.slug.toLowerCase() === psiParam.toLowerCase()
-      );
+      const matchedSpecialist = especialistaDoEndereco(specialists, psiParam);
       if (matchedSpecialist) {
         setCurrentScreen(Screen.CorpoClinico);
       } else {
@@ -2163,6 +2179,8 @@ interface SpecialistCardProps {
   onNavigate?: (screen: Screen, transition?: TransitionType, scroll?: boolean) => void;
   isSyncing?: boolean;
   onSyncRequest?: () => void;
+  /** Aberto pelo link da profissional (completo ou curto): destaca e abre a descrição. */
+  focado?: boolean;
 }
 
 function sortKeys(obj: any): any {
@@ -2188,7 +2206,7 @@ const abordagemCurta = (a: string) => {
 };
 const ORDEM_IDADES = ['criança', 'adolescente', 'adulto', 'idoso'];
 
-export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate, isSyncing, onSyncRequest }: SpecialistCardProps) {
+export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarousel, onNavigate, isSyncing, onSyncRequest, focado }: SpecialistCardProps) {
   const [nomeCompleto, setNomeCompleto] = useState(false);
   // Jorge 24/11/2026: só Adulto e/ou Idoso (sem Criança e Adolescente) → "a partir de 18 anos".
   const soAdulto = (spec.ageGroups || []).length > 0 && !(spec.ageGroups || []).some((g) => /crian|adolesc/i.test(g || ''));
@@ -2226,7 +2244,7 @@ export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarous
     const isPathnameMatch = !isReserved && pathname !== '' && spec.slug && pathname.toLowerCase() === spec.slug.toLowerCase();
     const isQueryParamMatch = psiParam && spec.slug && psiParam.toLowerCase() === spec.slug.toLowerCase();
 
-    if (isPathnameMatch || isQueryParamMatch) {
+    if (isPathnameMatch || isQueryParamMatch || focado) {
       setIsDescExpanded(true);
       const scrollTimer = setTimeout(() => {
         if (cardRef.current) {
@@ -2242,7 +2260,7 @@ export function SpecialistCard({ spec, insurancePlans, isAdminUnlocked, isCarous
       }, 600);
       return () => clearTimeout(scrollTimer);
     }
-  }, [spec.slug, spec.name]);
+  }, [spec.slug, spec.name, focado]);
 
   const activeSchedule = useMemo(() => {
     if (sheetSchedule && Object.keys(sheetSchedule).length > 0) return sheetSchedule;
@@ -2752,6 +2770,16 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
   const [selectedSpecificAges, setSelectedSpecificAges] = useState<number[]>([]);
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [step, setStep] = useState<number>(1);
+  // Aberto pelo link de uma profissional (ex.: /brenna-vasconcelo): mostra só o cartão dela até clicar em "Ver todos".
+  // Vale só na primeira vez que a tela abre pelo link; depois a lista completa aparece normalmente.
+  const [verTodos, setVerTodos] = useState(linkProfissionalJaUsado);
+  useEffect(() => () => { linkProfissionalJaUsado = true; }, []);
+  const focada = verTodos ? undefined : especialistaDoLink(specialists);
+  const mostrarTodos = () => {
+    setVerTodos(true);
+    try { window.history.replaceState(null, '', '/especialistas'); } catch (e) {}
+    setTimeout(() => document.getElementById('topo-especialistas')?.scrollIntoView({ behavior: 'smooth' }), 50);
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // CORREÇÃO APLICADA: usa getActiveShifts() em vez de s.shifts diretamente.
@@ -2832,6 +2860,25 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
 
       {/* Guide Stepper */}
       <section className="px-6 pb-20">
+        {focada ? (
+          <div className="max-w-7xl mx-auto space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="lg:col-start-2">
+                <SpecialistCard
+                  spec={focada}
+                  insurancePlans={settings.insurancePlans || []}
+                  isAdminUnlocked={isAdminUnlocked}
+                  isSyncing={!!syncingSpecs?.[focada.id]}
+                  onSyncRequest={() => onSyncRequest?.(focada.id)}
+                  focado
+                />
+              </div>
+            </div>
+            <div className="flex justify-center">
+              <button onClick={mostrarTodos} className="btn-secondary">Ver todos os especialistas</button>
+            </div>
+          </div>
+        ) : (<>
         <div className="max-w-4xl mx-auto bg-white rounded-[2.5rem] shadow-xl border border-outline-alt/30 overflow-hidden">
           <div className="h-2 bg-surface-container">
             <motion.div 
@@ -2953,6 +3000,7 @@ function CorpoClinicoScreen({ onNavigate, specialists, approaches, settings, isA
             </div>
           )}
         </div>
+        </>)}
       </section>
     </Layout>
   );
