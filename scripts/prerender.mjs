@@ -132,6 +132,13 @@ const clip = (s, n) => { const t = stripTags(s).replace(/\s+/g, ' ').trim(); ret
 const paragraphs = (s) => stripTags(s).split(/\n{1,}/).map((p) => p.trim()).filter(Boolean).map((p) => `<p>${esc(p)}</p>`).join('\n');
 // Instagram: aceita @usuario, usuario ou link; mesma regra de src/lib/instagram.ts.
 const instagramUsuario = (v) => { let u = String(v || '').trim(); const m = u.match(/instagram\.com\/([^/?#\s]+)/i); if (m) u = m[1]; u = u.replace(/^@+/, '').trim(); return /^[a-z0-9._]{1,30}$/i.test(u) ? u : ''; };
+// Link curto: primeiro nome + último sobrenome (ex.: /brenna-vasconcelo). Mesma regra de src/lib/linkCurto.ts.
+const linkCurto = (nome) => {
+  const p = String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+  while (p.length && ['psi', 'psic', 'psicologa', 'psicologo', 'dr', 'dra'].includes(p[0])) p.shift();
+  const u = p.filter((w) => !['da', 'de', 'do', 'das', 'dos', 'e'].includes(w));
+  return !u.length ? '' : u.length === 1 ? u[0] : `${u[0]}-${u[u.length - 1]}`;
+};
 const isValidSlug = (slug) => typeof slug === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(slug) && !RESERVED.has(slug.toLowerCase());
 const councilLabel = (s) => {
   if (s.noCouncil || !s.crp) return '';
@@ -504,6 +511,19 @@ async function main() {
     await fs.mkdir(path.dirname(path.join(DIST, page.file)), { recursive: true });
     await fs.writeFile(path.join(DIST, page.file), renderPage(template, page), 'utf8');
   }
+  // Link curto de cada profissional: mesma página do link completo (canonical aponta para o completo; fora do sitemap).
+  const todos = (data.specialists || []).filter((s) => s && s.name);
+  const contagem = new Map();
+  for (const s of todos) { const c = linkCurto(s.name); if (c) contagem.set(c, (contagem.get(c) || 0) + 1); }
+  const slugs = new Set(todos.map((s) => String(s.slug || '').toLowerCase()).filter(Boolean));
+  let curtos = 0;
+  for (const s of result.specialists) {
+    const c = linkCurto(s.name);
+    if (!isValidSlug(s.slug) || !c || c === String(s.slug).toLowerCase() || contagem.get(c) > 1 || slugs.has(c) || RESERVED.has(c)) continue;
+    await fs.copyFile(path.join(DIST, `${s.slug}.html`), path.join(DIST, `${c}.html`));
+    curtos++;
+  }
+  console.log(`[prerender] ${curtos} links curtos de profissionais.`);
   await fs.writeFile(path.join(DIST, 'sitemap.xml'), buildSitemap(result.pages), 'utf8');
   await fs.writeFile(path.join(DIST, 'llms.txt'), buildLlmsTxt(result), 'utf8');
 
